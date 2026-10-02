@@ -44,6 +44,14 @@ PostgreSQL server (`infra/platform.sh`, `infra/platform.bicep`, `infra/database.
 unchanged. No Supabase account, no project limits, and the whole stack moves to AWS or GCP as it is.
 Set up a stage's database with `./infra/platform.sh --stage <s> --init` then `./infra/platform-db.sh --stage <s>`.
 
+**Where uploaded files live.** Storage objects (KYC documents, POD photos, signatures) sit in a private
+Azure Blob container (`margix[-test]-objects`), behind a small internal S3→Blob translator app
+(`margix[-test]-s3proxy`): the Storage API runs with its S3 backend pointed at that proxy. Its file
+backend can't run on an Azure Files share — it stores each object's metadata as filesystem extended
+attributes, which SMB rejects (EINVAL), so every upload used to 500. The s3proxy credentials are
+`S3PROXY_IDENTITY`/`S3PROXY_CREDENTIAL` in `infra/platform.<stage>.env`; `platform.sh` generates and
+appends them to older env files on its next run.
+
 **Why the backend runs as exactly one copy per environment.** The scheduler, rate limits, map tile cache
 and login codes live in the server's memory. Don't raise `maxReplicas` until that state moves to Redis.
 

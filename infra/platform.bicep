@@ -1,7 +1,10 @@
 // The app's data platform for one stage, on Azure Container Apps next to the backend:
 //   <p>-gateway  public  https://<p>-gateway.<env domain>: /auth/v1 /rest/v1 /realtime/v1 /storage/v1
 //   <p>-auth     sign-in (GoTrue)          <p>-rest      REST API over Postgres (PostgREST)
-//   <p>-rt       live updates (Realtime)   <p>-storage   files (Storage API, on an Azure Files share)
+//   <p>-rt       live updates (Realtime)   <p>-storage   files (Storage API, S3 backend)
+//   <p>-s3proxy  internal S3→Azure Blob translator; objects live in a private blob container.
+//   (The Storage API's file backend can't run on Azure Files: it stores metadata as filesystem
+//   extended attributes, which SMB rejects with EINVAL, so every upload 500s.)
 // These are the same open-source services the app was built against, so supabase-js and the backend
 // work unchanged with the gateway URL and this stage's keys. Data lives in the stage's Azure PostgreSQL
 // server (infra/database.bicep). Deployed by infra/platform.sh; secrets come from infra/platform.<stage>.env.
@@ -40,6 +43,10 @@ param storageAdminPassword string
 param realtimeAdminPassword string
 @secure()
 param realtimeSecretKeyBase string
+@secure()
+param s3proxyIdentity string
+@secure()
+param s3proxyCredential string
 
 @description('Optional SMTP for password reset emails (e.g. smtp.resend.com); empty disables mail')
 param smtpHost string = ''
@@ -51,15 +58,18 @@ param smtpSender string = ''
 var p = stage == 'live' ? prefix : '${prefix}-test'
 var gatewayHost = empty(dataDomain) ? '${p}-gateway.${env.properties.defaultDomain}' : dataDomain
 var minReplicas = stage == 'live' ? 1 : 0
-var storageAccountName = take(toLower(replace('${p}files${uniqueString(resourceGroup().id, p)}', '-', '')), 24)
+var blobAccountName = take(toLower(replace('${p}objects${uniqueString(resourceGroup().id, p)}', '-', '')), 24)
+var objectsContainer = '${p}-objects'
 
 resource env 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: envName
 }
 
-// ── Files: an Azure Files share mounted into the storage service ─────────────
-resource sa 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: storageAccountName
+// ── Files: a private blob container holding the storage service's objects ────
+// (The old <p>files… Azure Files accounts held nothing — uploads never worked there —
+// and can be deleted by hand once this is live.)
+resource blobSa 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: blobAccountName
   location: location
   kind: 'StorageV2'
   sku: { name: 'Standard_LRS' }
@@ -67,26 +77,13 @@ resource sa 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
     supportsHttpsTrafficOnly: true
+    accessTier: 'Hot'
   }
 }
 
-resource share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
-  name: '${sa.name}/default/storage'
-  properties: { shareQuota: 100 }
-}
-
-resource envStorage 'Microsoft.App/managedEnvironments/storages@2024-03-01' = {
-  parent: env
-  name: '${p}-files'
-  properties: {
-    azureFile: {
-      accountName: sa.name
-      accountKey: sa.listKeys().keys[0].value
-      shareName: 'storage'
-      accessMode: 'ReadWrite'
-    }
-  }
-  dependsOn: [share]
+resource objects 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  name: '${blobSa.name}/default/${objectsContainer}'
+  properties: { publicAccess: 'None' }
 }
 
 var dbBase = 'postgres://{0}:{1}@${pgHost}:5432/postgres?sslmode=require'
@@ -226,6 +223,44 @@ resource rt 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// ── Files: S3→Azure Blob translator ─────────────────────────────────────
+// The Storage API speaks S3; s3proxy answers it on the internal network and keeps the
+// objects in the blob container above. Reachable only inside the environment.
+resource s3proxy 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${p}-s3proxy'
+  location: location
+  properties: {
+    managedEnvironmentId: env.id
+    configuration: {
+      ingress: { external: false, targetPort: 80, transport: 'http' }
+      secrets: [
+        { name: 's3-identity', value: s3proxyIdentity }
+        { name: 's3-credential', value: s3proxyCredential }
+        { name: 'blob-key', value: blobSa.listKeys().keys[0].value }
+      ]
+    }
+    template: {
+      containers: [{
+        name: 's3proxy'
+        image: 'andrewgaul/s3proxy:2.7.0'
+        resources: { cpu: json('0.25'), memory: '0.5Gi' }
+        env: [
+          { name: 'S3PROXY_ENDPOINT', value: 'http://0.0.0.0:80' }
+          { name: 'S3PROXY_AUTHORIZATION', value: 'aws-v2-or-v4' }
+          { name: 'S3PROXY_IDENTITY', secretRef: 's3-identity' }
+          { name: 'S3PROXY_CREDENTIAL', secretRef: 's3-credential' }
+          { name: 'JCLOUDS_PROVIDER', value: 'azureblob' }
+          { name: 'JCLOUDS_IDENTITY', value: blobSa.name }
+          { name: 'JCLOUDS_CREDENTIAL', secretRef: 'blob-key' }
+          { name: 'JCLOUDS_ENDPOINT', value: 'https://${blobSa.name}.blob.${environment().suffixes.storage}' }
+        ]
+      }]
+      scale: { minReplicas: minReplicas, maxReplicas: 1 }
+    }
+  }
+  dependsOn: [objects]
+}
+
 // ── Files ──────────────────────────────────────────────────────────────
 resource storage 'Microsoft.App/containerApps@2024-03-01' = {
   name: '${p}-storage'
@@ -239,6 +274,8 @@ resource storage 'Microsoft.App/containerApps@2024-03-01' = {
         { name: 'jwt-secret', value: jwtSecret }
         { name: 'anon-key', value: anonKey }
         { name: 'service-key', value: serviceRoleKey }
+        { name: 's3-identity', value: s3proxyIdentity }
+        { name: 's3-credential', value: s3proxyCredential }
       ]
     }
     template: {
@@ -254,20 +291,22 @@ resource storage 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'AUTH_JWT_SECRET', secretRef: 'jwt-secret' }
           { name: 'DATABASE_URL', secretRef: 'db-url' }
           { name: 'FILE_SIZE_LIMIT', value: '52428800' }
-          { name: 'STORAGE_BACKEND', value: 'file' }
-          { name: 'FILE_STORAGE_BACKEND_PATH', value: '/var/lib/storage' }
+          { name: 'STORAGE_BACKEND', value: 's3' }
+          { name: 'GLOBAL_S3_BUCKET', value: objectsContainer }
+          { name: 'GLOBAL_S3_ENDPOINT', value: 'http://${p}-s3proxy' }
+          { name: 'GLOBAL_S3_FORCE_PATH_STYLE', value: 'true' }
+          { name: 'AWS_ACCESS_KEY_ID', secretRef: 's3-identity' }
+          { name: 'AWS_SECRET_ACCESS_KEY', secretRef: 's3-credential' }
           { name: 'TENANT_ID', value: 'stub' }
-          { name: 'REGION', value: 'local' }
-          { name: 'GLOBAL_S3_BUCKET', value: 'stub' }
+          { name: 'REGION', value: 'us-east-1' }
           { name: 'ENABLE_IMAGE_TRANSFORMATION', value: 'false' }
           { name: 'DB_INSTALL_ROLES', value: 'false' }
         ]
-        volumeMounts: [{ volumeName: 'files', mountPath: '/var/lib/storage' }]
       }]
-      volumes: [{ name: 'files', storageType: 'AzureFile', storageName: envStorage.name }]
       scale: { minReplicas: minReplicas, maxReplicas: 1 }
     }
   }
+  dependsOn: [s3proxy]
 }
 
 // ── Gateway: one public address, the paths supabase-js expects ──────────────
