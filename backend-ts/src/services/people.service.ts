@@ -370,7 +370,7 @@ export async function checkNewPerson(actor: Actor, body: Record<string, any>) {
   if (phone) clearance = await assertPhoneAvailable(phone, null);
   if (email) {
     const { data: clash } = await supabase.from('users').select('id, full_name, role, status').eq('email', email).maybeSingle();
-    if (clash) throw duplicateError(`${clash.full_name ?? 'Someone'} already has this email address`, clash as PersonRow);
+    if (clash) throw await duplicateError(`${clash.full_name ?? 'Someone'} already has this email address`, clash as PersonRow, 'This email address is already registered to someone else');
   }
   return { role, fullName, phone, email, profilePatch, clearance };
 }
@@ -536,7 +536,7 @@ export async function updatePerson(actor: Actor, id: string, body: Record<string
       newEmail = parseEmail(body.email);
       if (newEmail !== (subject.email ?? '').toLowerCase()) {
         const { data: clash } = await supabase.from('users').select('id, full_name, role, status').eq('email', newEmail).maybeSingle();
-        if (clash && clash.id !== id) throw duplicateError(`${clash.full_name ?? 'Someone'} already has this email address`, clash as PersonRow);
+        if (clash && clash.id !== id) throw await duplicateError(`${clash.full_name ?? 'Someone'} already has this email address`, clash as PersonRow, 'This email address is already registered to someone else');
         userPatch.email = newEmail;
         changed.push('email');
       } else newEmail = null;
