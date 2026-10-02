@@ -256,7 +256,7 @@ export async function handoverOut(id: string, input: unknown, user: TokenData): 
 }
 
 /** Puts a vendor load's weight on a vehicle (the mirror of releaseVehicleLoad). */
-async function reserveVehicleLoad(vehicleId: string, weightKg: number): Promise<void> {
+export async function reserveVehicleLoad(vehicleId: string, weightKg: number): Promise<void> {
   if (!(weightKg > 0)) return;
   const { data: veh } = await supabase.from('vehicles').select('current_load_kg, capacity_kg').eq('id', vehicleId).maybeSingle();
   if (!veh) return;
@@ -373,6 +373,10 @@ export async function handoverIn(id: string, input: unknown, user: TokenData): P
     if (c.kind === 'manifest') {
       await releaseVehicleLoad(transfer.from_vehicle_id, Number(c.row.capacity_kg) || 0);
       if (transfer.to_vehicle_id) await reserveVehicleLoad(transfer.to_vehicle_id, Number(c.row.capacity_kg) || kg);
+      // The vendor's request follows the load onto the relief truck (a lot moves on its own; the request keeps the truck that still holds the rest)
+      if (transfer.to_vehicle_id && c.row.vendor_request_id && !c.parentId) {
+        await supabase.from('vendor_shipment_requests').update({ assigned_vehicle_id: transfer.to_vehicle_id }).eq('id', c.row.vendor_request_id);
+      }
     } else if (transfer.to_vehicle_id) {
       const planned = await planStopsOnVehicle(await openDropPoints(c.id, c.rto), transfer.to_vehicle_id, actor, { start, note: `Transfer ${transfer.code}` });
       newRouteId = newRouteId ?? planned.route_id;
