@@ -12,6 +12,8 @@
  *     return people to active, and old document files are deleted after retention
  *   - every ODOMETER_SYNC_INTERVAL_MINUTES, each vehicle's odometer takes in the distance it has
  *     driven since its last update (odometer-sync.service)
+ *   - every 15 minutes, order routing (loads/order-routing): quotes past their validity become expired, and a load that
+ *     asked for quotes and got none by its deadline is escalated once to the platform admins
  * The steps only touch rows that are still waiting, so running a tick twice, or
  * two servers ticking at once, does no harm. Started from index.ts only; the
  * test app never starts it.
@@ -23,12 +25,16 @@ import { runPeopleDailyJob } from './people-jobs.service';
 import { todayKey } from './people-docs.service';
 import { syncAllOdometers } from './odometer-sync.service';
 import { settings } from '../core/config';
+import { escalateQuietLoads, expireQuotes } from './loads/order-routing';
 
 export const SCHEDULER_INTERVAL_MS = 60_000;
+/** How often quotes are expired and quiet loads escalated. */
+export const ROUTING_INTERVAL_MS = 15 * 60_000;
 
 let running = false;
 let documentsCheckedOn = '';
 let odometersSyncedAt = 0;
+let routingCheckedAt = 0;
 
 /** One pass. Never throws; a failure in one step does not stop the other. Skips if the previous pass is still running. */
 export async function runSchedulerTick(): Promise<{ windowsClosed: number } | null> {
@@ -78,6 +84,15 @@ export async function runSchedulerTick(): Promise<{ windowsClosed: number } | nu
         odometersSyncedAt = Date.now();
       } catch (e: any) {
         console.error('[scheduler] Odometer sync failed:', e.message);
+      }
+    }
+    if (Date.now() - routingCheckedAt >= ROUTING_INTERVAL_MS) {
+      try {
+        await expireQuotes();
+        await escalateQuietLoads();
+        routingCheckedAt = Date.now();
+      } catch (e: any) {
+        console.error('[scheduler] Order routing check failed:', e.message);
       }
     }
     return { windowsClosed };

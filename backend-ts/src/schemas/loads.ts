@@ -85,8 +85,12 @@ export const LoadDraftBase = z.object({
   quote_requested: z.boolean().optional().default(false),
   loading_help: z.boolean().optional().default(false),
   unloading_help: z.boolean().optional().default(false),
-  /** The companies chosen to receive the load; stored now, routed to them in Phase 3. */
-  company_ids: z.array(z.string().uuid('A chosen company is not valid')).max(20).optional().default([]),
+  /**
+   * Who may quote: `open` (every company serving the lane) or `chosen` (the companies in company_ids, at most 10, each
+   * checked as an active logistic company). Left out, naming companies means chosen.
+   */
+  routing: z.enum(['open', 'chosen']).optional(),
+  company_ids: z.array(z.string().uuid('A chosen company is not valid')).max(10, 'You can send a load to at most 10 companies').optional().default([]),
   reposted_from: z.string().uuid().optional().nullable(),
 });
 
@@ -138,3 +142,26 @@ export const BusinessProfileSchema = z.object({
   }
 });
 export type BusinessProfileInput = z.infer<typeof BusinessProfileSchema>;
+
+// ── Quotes (docs/order-routing.md) ──────────────────────────
+
+const MAX_QUOTE_INR = 10_000_000;
+
+/** A company's quote on a load. valid_until is an ISO date or time; pickup_eta is a date (YYYY-MM-DD). */
+export const QuoteSchema = z.object({
+  amount_inr: z.number({ invalid_type_error: 'Enter the amount in rupees' }).positive('The amount must be more than 0').max(MAX_QUOTE_INR, 'The amount is too large'),
+  valid_until: z.string().trim().refine(v => !Number.isNaN(Date.parse(v)), 'valid_until must be a date or time').optional().nullable().transform(v => v || null),
+  vehicle_class: optText(40),
+  pickup_eta: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'pickup_eta must be a date as YYYY-MM-DD').optional().nullable().transform(v => v || null),
+  notes: optText(500),
+});
+export type QuoteBody = z.infer<typeof QuoteSchema>;
+
+/** A direct accept: the amount is optional (the vendor's budget is used when it is left out). */
+export const DirectAcceptSchema = z.object({
+  amount_inr: z.number({ invalid_type_error: 'Enter the amount in rupees' }).positive('The amount must be more than 0').max(MAX_QUOTE_INR, 'The amount is too large').optional().nullable(),
+});
+
+export const MarketQuery = z.object({
+  tab: z.enum(['new', 'quoted', 'won', 'lost']).optional().default('new'),
+});

@@ -464,7 +464,12 @@ class MockSupabase {
         try { args = raw ? JSON.parse(raw) : null; } catch { /* not JSON */ }
         this.rpcCalls.push({ name, fn: name, args });
         const handler = this.rpcHandlers.get(name);
-        return send(200, handler ? handler(args) : null);
+        const out = handler ? handler(args) : null;
+        // A handler raises a database error the way plpgsql RAISE EXCEPTION does: { __rpcError: 'message' }
+        if (out && typeof out === 'object' && '__rpcError' in (out as object)) {
+          return send(400, { code: 'P0001', message: (out as { __rpcError: string }).__rpcError, details: null, hint: null });
+        }
+        return send(200, out);
       }
       // Magic-link sessions (createSupabaseSession): off unless a test turns `sessions` on
       if (this.sessions && url.pathname === '/auth/v1/admin/generate_link') {
