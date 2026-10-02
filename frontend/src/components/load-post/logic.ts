@@ -12,8 +12,12 @@ export const LAST_STEP = STEP_LABELS.length - 1
 export const EWAY_THRESHOLD_INR = 50_000
 export const MAX_ITEMS = 50
 export const MAX_WEIGHT_KG = 60_000
-/** GST rates a person may pick when entering an HSN code by hand. */
-export const MANUAL_RATES = [0, 5, 12, 18, 28, 40]
+/**
+ * GST rates a person may pick when entering an HSN code by hand: the GST 2.0 rates on goods (notification
+ * 9/2025-Central Tax (Rate) and its amendments; docs/gst-rates.md). 12% is only the bricks rate (14/2025); the 28%
+ * schedule was omitted from 1 Feb 2026 (19/2025).
+ */
+export const MANUAL_RATES = [0, 0.25, 1.5, 3, 5, 12, 18, 40]
 export const UNITS = ['bags', 'boxes', 'cartons', 'cans', 'drums', 'pallets', 'pieces', 'rolls', 'bundles', 'kg', 'tonnes', 'litres']
 
 export const randomId = (): string => {

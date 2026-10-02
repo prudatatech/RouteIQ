@@ -3,8 +3,10 @@
  *
  *   npm run import:hsn -- path/to/hsn.csv [--dry-run]
  *
- * Columns (header row required, order free): hsn_code, description, gst_rates, category.
- *   - gst_rates: one rate or several separated by ; | or / ("5;12"). The first is the default rate (gst_rate).
+ * Columns (header row required, order free): hsn_code, description, gst_rates, category; optionally gst_rate and
+ * rate_note (as in supabase/seed/hsn_master.csv, which migration 20261005010000_hsn_master_gst2.sql already loads).
+ *   - gst_rates: one rate or several separated by ; | or / ("5;18"), or a Postgres array ("{5,18}"). The default rate
+ *     (gst_rate) is the gst_rate column when there is one, else the first rate.
  *   - category: a goods_categories key ("textiles") or its name ("Textiles & Garments"); optional. A row without one
  *     keeps the category it already has (new codes get "general").
  * The CBIC / GST portal HSN list is the usual source; the owner supplies the file.
@@ -21,6 +23,7 @@ export interface HsnCsvRow {
   gst_rate: number;
   gst_rates: number[];
   category: string | null;
+  rate_note?: string | null;
 }
 
 /** RFC 4180-ish: quoted fields, doubled quotes, commas and line breaks inside quotes. */
@@ -56,6 +59,7 @@ export function rowsFromCsv(text: string, categoryKeys: (name: string) => string
   const col = (name: string) => header.indexOf(name);
   for (const need of ['hsn_code', 'description', 'gst_rates']) if (col(need) < 0) throw new Error(`The CSV needs a "${need}" column`);
   const iCode = col('hsn_code'), iDesc = col('description'), iRates = col('gst_rates'), iCat = col('category');
+  const iDefault = col('gst_rate'), iNote = col('rate_note');
 
   const rows: HsnCsvRow[] = [];
   const skipped: string[] = [];
@@ -67,11 +71,15 @@ export function rowsFromCsv(text: string, categoryKeys: (name: string) => string
     if (!/^\d{2,8}$/.test(code)) return void skipped.push(`line ${line}: "${code}" is not an HSN code`);
     if (!description) return void skipped.push(`line ${line}: ${code} has no description`);
     if (seen.has(code)) return void skipped.push(`line ${line}: ${code} is repeated`);
-    const rates = (r[iRates] ?? '').split(/[;|/]|,(?=\s*\d)/).map(s => s.replace('%', '').trim()).filter(Boolean).map(Number);
+    const rates = (r[iRates] ?? '').replace(/[{}]/g, '').split(/[;|/]|,(?=\s*\d)/).map(s => s.replace('%', '').trim()).filter(Boolean).map(Number);
     if (!rates.length || rates.some(x => !Number.isFinite(x) || x < 0 || x > 100)) return void skipped.push(`line ${line}: ${code} has no valid GST rate`);
+    const given = iDefault >= 0 && (r[iDefault] ?? '').trim() !== '' ? Number(r[iDefault]) : rates[0];
+    if (!rates.includes(given)) return void skipped.push(`line ${line}: ${code} has a default rate that is not one of its rates`);
     seen.add(code);
     const rawCat = iCat >= 0 ? (r[iCat] ?? '').trim() : '';
-    rows.push({ hsn_code: code, description, gst_rate: rates[0], gst_rates: [...new Set(rates)], category: rawCat ? (categoryKeys(rawCat) ?? null) : null });
+    const row: HsnCsvRow = { hsn_code: code, description, gst_rate: given, gst_rates: [...new Set(rates)], category: rawCat ? (categoryKeys(rawCat) ?? null) : null };
+    if (iNote >= 0) row.rate_note = (r[iNote] ?? '').trim() || null;
+    rows.push(row);
   });
   return { rows, skipped };
 }
