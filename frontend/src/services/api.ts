@@ -12,6 +12,9 @@ import type {
 } from '@/types/loadDocuments'
 import type { CompanyProfile, InvoiceDetail, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
 import type { QuoteRequest, QuoteResponse } from '@/services/pricing'
+import type {
+  CompanyGroup, ExcludedPartner, Grouped, NetDriver, NetStatement, NetVehicle, NetVehicleInput, PartnerFleetSummary, AffiliationRules, StatementDeduction,
+} from '@/types/network'
 import type { CustomerProfile, CustomerProfileInput } from '@/utils/customerProfile'
 import type {
   AssistResult, BulkResult, BusinessProfile, BusinessProfileView, GoodsCategory, HsnHit, LoadListPage, LoadPayload, LoadSummary, PincodeInfo, PostedLoad, VehicleClass, VendorSession,
@@ -1082,6 +1085,7 @@ export interface TplOffer {
   request_id: string | null
   shipment_id: string | null
   corridor_name: string | null
+  company_name?: string | null
   pickup_location: string | null
   drop_location: string | null
   weight_kg: number | null
@@ -1098,6 +1102,7 @@ export interface TplOrder {
   offer_id: string
   partner_id: string
   partner_name?: string | null
+  company_name?: string | null
   source_type: 'request' | 'shipment'
   request_id: string | null
   shipment_id: string | null
@@ -1141,17 +1146,29 @@ export interface TplEarnings {
 
 const sourceParams = (source: TplSource) => ({ ...source })
 
+/** Both answers are accepted: a flat list (old servers) or { items, companies: [{ org_id, name, offers|orders }] }. */
+export function groupByCompany<T>(data: unknown, key: 'offers' | 'orders'): Grouped<T> {
+  if (Array.isArray(data)) return { items: data as T[], companies: [] }
+  const d = (data ?? {}) as { items?: T[]; companies?: { org_id: string; name: string; offers?: T[]; orders?: T[]; items?: T[] }[] }
+  const companies: CompanyGroup<T>[] = (d.companies ?? []).map(c => ({ org_id: c.org_id, name: c.name, items: c[key] ?? c.items ?? [] }))
+  return { items: d.items ?? companies.flatMap(c => c.items), companies }
+}
+
 export const tplNetworkAPI = {
   settings: (): Promise<{ auto_escalate: boolean }> => api.get('/tpl-network/settings').then(r => r.data),
   saveSettings: (auto_escalate: boolean): Promise<{ auto_escalate: boolean }> => api.put('/tpl-network/settings', { auto_escalate }).then(r => r.data),
   // Staff
   escalations: (source: TplSource): Promise<{ offers: TplOffer[]; order: TplOrder | null }> =>
     api.get('/tpl-network/escalations', { params: sourceParams(source) }).then(r => r.data),
-  preview: (source: TplSource): Promise<{ pickup: string; drop: string; distance_km: number | null; partners: { partner_id: string; company_name: string; corridor_name: string; price: number | null; rate: { amount: number; unit: 'per_trip' | 'per_km' } | null }[] }> =>
+  preview: (source: TplSource): Promise<{ pickup: string; drop: string; distance_km: number | null; excluded?: ExcludedPartner[]; partners: { partner_id: string; company_name: string; corridor_name: string; price: number | null; rate: { amount: number; unit: 'per_trip' | 'per_km' } | null }[] }> =>
     api.get('/tpl-network/escalations/preview', { params: sourceParams(source) }).then(r => r.data),
   /** `vendor_price` (requests only) is what the vendor pays for the load, which their invoice is made from. */
-  escalate: (source: TplSource, vendorPrice?: number): Promise<{ created: number; already_offered: number; matched: number }> =>
-    api.post('/tpl-network/escalations', vendorPrice ? { ...source, vendor_price: vendorPrice } : source).then(r => r.data),
+  escalate: (source: TplSource, vendorPrice?: number, partnerIds?: string[]): Promise<{ created: number; already_offered: number; matched: number }> =>
+    api.post('/tpl-network/escalations', {
+      ...source,
+      ...(vendorPrice ? { vendor_price: vendorPrice } : {}),
+      ...(partnerIds && partnerIds.length > 0 ? { partner_ids: partnerIds } : {}),
+    }).then(r => r.data),
   setVendorPrice: (requestId: string, cost: number): Promise<{ request_id: string; cost: number; invoice: string | null }> =>
     api.put(`/tpl-network/requests/${requestId}/price`, { cost }).then(r => r.data),
   withdrawAll: (source: TplSource) => api.post('/tpl-network/escalations/withdraw', source).then(r => r.data),
@@ -1165,15 +1182,53 @@ export const tplNetworkAPI = {
   allStats: (): Promise<Record<string, TplPartnerStats>> => api.get('/tpl-network/partners/stats').then(r => r.data),
   partnerStats: (partnerId: string): Promise<TplPartnerStats> => api.get(`/tpl-network/partners/${partnerId}/stats`).then(r => r.data),
   // Partner
-  myOffers: (): Promise<TplOffer[]> => api.get('/tpl-network/my/offers').then(r => r.data),
-  accept: (offerId: string, data: { pickup_eta?: string; delivery_eta?: string; agreed_amount?: number }): Promise<TplOrder> =>
+  myOffers: (): Promise<Grouped<TplOffer>> => api.get('/tpl-network/my/offers').then(r => groupByCompany<TplOffer>(r.data, 'offers')),
+  /** The vehicle and driver must be the partner's own and fit the load: the server answers 400 or 409 with the reason. */
+  accept: (offerId: string, data: { vehicle_id: string; driver_id: string; pickup_eta?: string; delivery_eta?: string; agreed_amount?: number }): Promise<TplOrder> =>
     api.post(`/tpl-network/my/offers/${offerId}/accept`, data).then(r => r.data),
   decline: (offerId: string, reason: string) => api.post(`/tpl-network/my/offers/${offerId}/decline`, { reason }).then(r => r.data),
-  myOrders: (): Promise<TplOrder[]> => api.get('/tpl-network/my/orders').then(r => r.data),
+  myOrders: (): Promise<Grouped<TplOrder>> => api.get('/tpl-network/my/orders').then(r => groupByCompany<TplOrder>(r.data, 'orders')),
   updateOrder: (orderId: string, status: 'picked_up' | 'in_transit' | 'delivered', note?: string): Promise<TplOrder> =>
     api.post(`/tpl-network/my/orders/${orderId}/status`, { status, note }).then(r => r.data),
   myEarnings: (): Promise<TplEarnings> => api.get('/tpl-network/my/earnings').then(r => r.data),
   myStats: (): Promise<TplPartnerStats> => api.get('/tpl-network/my/stats').then(r => r.data),
+}
+
+const itemsOf = <T,>(data: unknown): T[] =>
+  (Array.isArray(data) ? data : Array.isArray((data as { items?: unknown })?.items) ? (data as { items: T[] }).items : []) as T[]
+
+/** The 3PL partner's own fleet, drivers and statements. `id` is the partner id in the portal address. */
+export const tplPortalAPI = {
+  vehicles: (id: string): Promise<NetVehicle[]> => api.get(`/tpl-portal/${id}/vehicles`).then(r => itemsOf<NetVehicle>(r.data)),
+  addVehicle: (id: string, data: NetVehicleInput): Promise<NetVehicle> => api.post(`/tpl-portal/${id}/vehicles`, data).then(r => r.data),
+  updateVehicle: (id: string, vehicleId: string, data: Partial<NetVehicleInput>): Promise<NetVehicle> =>
+    api.patch(`/tpl-portal/${id}/vehicles/${vehicleId}`, data).then(r => r.data),
+  drivers: (id: string): Promise<NetDriver[]> => api.get(`/tpl-portal/${id}/drivers`).then(r => itemsOf<NetDriver>(r.data)),
+  inviteDriver: (id: string, data: { name: string; phone: string }) => api.post(`/tpl-portal/${id}/drivers/invite`, data).then(r => r.data),
+  statements: (id: string): Promise<NetStatement[]> => api.get(`/tpl-portal/${id}/statements`).then(r => itemsOf<NetStatement>(r.data)),
+  /** The statement as a PDF file. */
+  statementPdf: (id: string, statementId: string): Promise<Blob> =>
+    api.get(`/tpl-portal/${id}/statements/${statementId}/pdf`, { responseType: 'blob' }).then(r => r.data as Blob),
+}
+
+/** The company's side of its 3PL partners: their fleet counts, the rules for offers, and statements. `tplId` is the partner id. */
+export const networkAPI = {
+  fleet: (tplId: string): Promise<PartnerFleetSummary> => api.get(`/org/tpl-affiliations/${tplId}/fleet`).then(r => r.data),
+  rules: (tplId: string): Promise<AffiliationRules> =>
+    api.get(`/org/tpl-affiliations/${tplId}`).then(r => (r.data?.rules ?? {}) as AffiliationRules),
+  saveRules: (tplId: string, rules: AffiliationRules): Promise<AffiliationRules> =>
+    api.patch(`/org/tpl-affiliations/${tplId}/rules`, rules).then(r => r.data),
+  statements: (tplId: string): Promise<NetStatement[]> => api.get(`/org/tpl-affiliations/${tplId}/statements`).then(r => itemsOf<NetStatement>(r.data)),
+  buildStatement: (tplId: string, period: string): Promise<NetStatement> =>
+    api.post(`/org/tpl-affiliations/${tplId}/statements`, { period }).then(r => r.data),
+  setDeductions: (tplId: string, statementId: string, deductions: StatementDeduction[]): Promise<NetStatement> =>
+    api.patch(`/org/tpl-affiliations/${tplId}/statements/${statementId}`, { deductions }).then(r => r.data),
+  issueStatement: (tplId: string, statementId: string): Promise<NetStatement> =>
+    api.post(`/org/tpl-affiliations/${tplId}/statements/${statementId}/issue`).then(r => r.data),
+  markStatementPaid: (tplId: string, statementId: string, reference: string): Promise<NetStatement> =>
+    api.post(`/org/tpl-affiliations/${tplId}/statements/${statementId}/mark-paid`, { reference }).then(r => r.data),
+  statementPdf: (tplId: string, statementId: string): Promise<Blob> =>
+    api.get(`/org/tpl-affiliations/${tplId}/statements/${statementId}/pdf`, { responseType: 'blob' }).then(r => r.data as Blob),
 }
 
 export const telemetryWS = {
