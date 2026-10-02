@@ -488,6 +488,16 @@ class MockSupabase {
         this.signedUploads.push(objectPath);
         return send(200, { url: `/object/upload/sign/${objectPath}?token=test-upload-token` });
       }
+      // Storage: listing a folder (the files that were signed for upload under it, matched by `search`)
+      const listPrefix = '/storage/v1/object/list/';
+      if (req.method === 'POST' && url.pathname.startsWith(listPrefix)) {
+        let body: { prefix?: string; search?: string } = {};
+        try { body = raw ? JSON.parse(raw) : {}; } catch { /* not JSON */ }
+        const bucket = decodeURIComponent(url.pathname.slice(listPrefix.length));
+        const folder = `${bucket}/${(body.prefix ?? '').replace(/\/$/, '')}/`;
+        const names = this.signedUploads.filter(p => p.startsWith(folder)).map(p => p.slice(folder.length)).filter(n => !n.includes('/') && (!body.search || n.includes(body.search)));
+        return send(200, names.map(name => ({ name, id: name })));
+      }
       // Storage: signed download URLs (records the requested object path)
       const readPrefix = '/storage/v1/object/sign/';
       if (req.method === 'POST' && url.pathname.startsWith(readPrefix)) {

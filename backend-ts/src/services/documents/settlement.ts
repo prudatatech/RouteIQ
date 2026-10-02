@@ -217,6 +217,10 @@ export async function approveExtraCharge(access: LoadAccess, rawIdx: unknown): P
 export async function addDeduction(access: LoadAccess, raw: unknown): Promise<SettlementView> {
   const input = parseBody(deductionBody, raw);
   const current = await openSettlement(access);
+  // What can be deducted is what the carrier is owed for the trip (freight and approved extras): more than that is a mistake
+  const owed = current.agreed_freight + current.extra_charges.filter(isApproved).reduce((sum, e) => sum + e.amount, 0);
+  const deducted = current.deductions.reduce((sum, d) => sum + d.amount, 0) + toPaise(input.amount);
+  if (deducted > owed) throw new HttpError(400, `The deductions (₹${toRupees(deducted)}) are more than the freight and approved extras (₹${toRupees(owed)})`);
   const deduction: Deduction = { label: input.label, amount: toPaise(input.amount), reason: input.reason, added_by: access.userId, added_at: new Date().toISOString() };
   const row = await save(access, current, { deductions: [...current.deductions, deduction] });
   await audit(access, 'trip_deduction_added', { settlement_id: row.id, label: input.label, amount: input.amount });

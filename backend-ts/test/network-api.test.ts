@@ -384,10 +384,9 @@ describe('the rules editor', () => {
 
 describe('partner statements', () => {
   const order = (id: string, offerId: string, amount: number | string, extra: Row = {}): Row => ({
-    id, offer_id: offerId, partner_id: P, status: 'delivered', agreed_amount: amount, delivered_at: '2026-10-10T10:00:00Z', paid_at: null,
-    pickup_location: 'Okhla, New Delhi', drop_location: 'Andheri, Mumbai', accepted_at: '2026-10-09T10:00:00Z', carrier_org_id: offerCompany[offerId] ?? ORG.companyA, ...extra,
+    id, offer_id: offerId, partner_id: P, status: 'delivered', agreed_amount: amount, delivered_at: '2026-10-10T10:00:00Z', paid_at: null, carrier_org_id: ORG.companyA,
+    pickup_location: 'Okhla, New Delhi', drop_location: 'Andheri, Mumbai', accepted_at: '2026-10-09T10:00:00Z', ...extra,
   });
-  const offerCompany: Record<string, string> = { o3: ORG.companyB };
   const offer = (id: string, company: string): Row => ({ id, carrier_org_id: company, partner_id: P, status: 'accepted' });
   const base = '/org/tpl-affiliations';
 
@@ -397,7 +396,7 @@ describe('partner statements', () => {
       tpl_orders: [
         order('t1', 'o1', '41200.50'),
         order('t2', 'o2', 19.99),
-        order('t3', 'o3', 5000), // handed over by company B
+        order('t3', 'o3', 5000, { carrier_org_id: ORG.companyB }), // handed over by company B
         order('t4', 'o4', 3000, { delivered_at: '2026-09-30T10:00:00Z' }), // another month
         order('t5', 'o5', 700, { paid_at: '2026-10-12T00:00:00Z' }), // already paid on its own
         order('t6', 'o1', 900, { status: 'in_transit', delivered_at: null }),
@@ -484,9 +483,14 @@ describe('partner statements', () => {
 
   it('blocks marking an order paid on its own once it is inside an issued statement', async () => {
     const { id } = (await build()).body;
-    const single = (orderId: string, who = adminA()) => request(app).post(api(`/tpl-network/orders/${orderId}/paid`)).set(who).send({ paid: true, reference: 'X' });
+    const single = (orderId: string) => request(app).post(api(`/tpl-network/orders/${orderId}/paid`)).set(adminA()).send({ paid: true, reference: 'X' });
+    expect((await request(app).post(api('/tpl-network/orders/t3/rate')).set(adminA()).send({ rating: 5 })).status).toBe(404);
+    expect((await request(app).post(api('/tpl-network/orders/t5/rate')).set(adminA()).send({ rating: 4 })).status).toBe(200);
+    // Another company's order is a 404 and stays unpaid
+    expect((await single('t3')).status).toBe(404);
+    expect(supabaseMock.rows('tpl_orders').find(o => o.id === 't3')!.paid_at).toBeNull();
     // Inside a draft it is still the order\'s own business; outside any statement too
-    expect((await single('t3', adminB())).status).toBe(200);
+    expect((await single('t5')).status).toBe(200);
     await request(app).post(api(`${base}/${P}/statements/${id}/issue`)).set(adminA());
     const blocked = await single('t1');
     expect(blocked.status).toBe(409);

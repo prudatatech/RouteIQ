@@ -852,9 +852,9 @@ export const tplNetworkService = {
     const { data: order, error: oErr } = await supabase
       .from('tpl_orders')
       .insert({
-        ...carrierStamp(),
-        // The order belongs to the company that made the offer (the partner's own organisation is only who carries it)
-        ...(offer.carrier_org_id ? { carrier_org_id: offer.carrier_org_id } : {}),
+        // The order belongs to the company that handed the work over (its offer), not to the partner who accepts it:
+        // the company's lists, statements and payments find it by this, and the partner portal groups by it
+        ...(offer.carrier_org_id ? { carrier_org_id: offer.carrier_org_id } : carrierStamp()),
         offer_id: offerId,
         partner_id: partner.id,
         source_type: sourceType,
@@ -1089,11 +1089,11 @@ export const tplNetworkService = {
   },
 
   async rateOrder(orderId: string, ratingInput: unknown, noteInput: unknown, staffId: string) {
-    await assertVisible('tpl_orders', orderId, OWNED.carrier, 'Order not found');
     const rating = Number(ratingInput);
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new HttpError(400, 'Rating must be a whole number from 1 to 5');
     const note = typeof noteInput === 'string' ? noteInput.trim() : '';
     if (note.length > 500) throw new HttpError(400, 'The note can be at most 500 characters');
+    await assertVisible('tpl_orders', orderId, OWNED.carrier, 'Order not found');
     const now = new Date().toISOString();
     const { data, error } = await supabase
       .from('tpl_orders')
@@ -1109,6 +1109,7 @@ export const tplNetworkService = {
   },
 
   async markPaid(orderId: string, paid: boolean, referenceInput: unknown) {
+    // Another company's order is the same 404 as a missing one (this writes, so it is checked before anything else)
     await assertVisible('tpl_orders', orderId, OWNED.carrier, 'Order not found');
     // An order inside an issued statement is settled by that statement, not one order at a time
     const statement = await statementCoveringOrder(orderId);
@@ -1117,10 +1118,10 @@ export const tplNetworkService = {
     }
     const reference = typeof referenceInput === 'string' ? referenceInput.trim().slice(0, 100) : '';
     const now = new Date().toISOString();
-    const { data, error } = await supabase
+    const { data, error } = await scopeQuery(supabase
       .from('tpl_orders')
       .update({ paid_at: paid ? now : null, paid_reference: paid && reference ? reference : null, updated_at: now })
-      .eq('id', orderId).eq('status', 'delivered').select().maybeSingle();
+      .eq('id', orderId).eq('status', 'delivered'), OWNED.carrier).select().maybeSingle();
     if (error) dbError('Failed to update payment', error);
     if (!data) {
       const { data: existing } = await supabase.from('tpl_orders').select('status').eq('id', orderId).maybeSingle();

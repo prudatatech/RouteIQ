@@ -352,15 +352,15 @@ export const vendorService = {
     if (company) requests = await filterVisibleToCompany(requests, company);
     if (requests.length === 0) return [];
 
-    const vendorIds = [...new Set(requests.map(r => r.vendor_id))];
-    const { data: profiles, error: profError } = await supabase
-      .from('vendor_profiles')
-      .select('id, company_name')
-      .in('id', vendorIds);
-      
+    // A load can have no vendor user (posted for a vendor organisation): `.in('id', [null])` is a uuid syntax error
+    const vendorIds = [...new Set(requests.map(r => r.vendor_id).filter(Boolean))];
+    const { data: profiles, error: profError } = vendorIds.length === 0
+      ? { data: [] as any[], error: null }
+      : await supabase.from('vendor_profiles').select('id, company_name').in('id', vendorIds);
+
     if (profError) throw new Error(profError.message);
-    
-    const profileMap = profiles.reduce((acc: any, p: any) => {
+
+    const profileMap = (profiles ?? []).reduce((acc: any, p: any) => {
       acc[p.id] = p;
       return acc;
     }, {});

@@ -96,8 +96,10 @@ DECLARE t text;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN CREATE PUBLICATION supabase_realtime; END IF;
   FOREACH t IN ARRAY ARRAY['cargo_manifest','driver_confirmations','messages','notifications','routes','sos_alerts',
-                           'system_settings','telemetry','tpl_offers','tpl_orders','vehicles','vendor_shipment_requests'] LOOP
-    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = t) THEN
+                           'system_settings','telemetry','tpl_offers','tpl_orders','vehicles','vendor_shipment_requests',
+                           'shipments','route_stops','cargo_exceptions','customer_bookings','capacity_windows','capacity_bids',
+                           'invoices','invoice_payment_reports','user_documents','vendor_profiles','tpl_partners','tpl_corridors','tpl_documents'] LOOP
+    IF to_regclass('public.' || t) IS NOT NULL AND NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = t) THEN
       EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', t);
     END IF;
   END LOOP;

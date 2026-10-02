@@ -132,6 +132,8 @@ describe('accepting with a vehicle and driver', () => {
     });
     expect(res.body).toMatchObject({ vehicle_id: V_OK, driver_id: DRIVER, manifest_id: manifest.id, status: 'accepted' });
     expect(supabaseMock.rows('tpl_orders')[0]).toMatchObject({ vehicle_id: V_OK, driver_id: DRIVER, manifest_id: manifest.id });
+    // The order belongs to the company that made the offer, not to the partner that accepted it (lists, statements, payments)
+    expect(supabaseMock.rows('tpl_orders')[0].carrier_org_id).toBe(ORG.companyA);
     expect(supabaseMock.rows('vendor_shipment_requests')[0].status).toBe('assigned_to_partner');
     // The load sits on the partner's vehicle and the driver is told
     expect(one('vehicles', V_OK)).toMatchObject({ current_load_kg: 800, available_capacity_kg: 4200, status: 'on_route' });
