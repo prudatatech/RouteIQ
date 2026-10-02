@@ -12,6 +12,7 @@ import { requireAuth, requireRole } from '../core/auth';
 import { HttpError, sendError } from '../core/errors';
 import { STAFF_ROLES, canAccessRoute, canAccessShipment, getDriverVehicleIds, isStaff } from '../core/ownership';
 import { notificationService } from '../services/notification.service';
+import { OWNED, isScoped, scopeQuery } from '../core/org-scope';
 
 const router = Router();
 router.use(requireAuth, requireRole('driver', ...STAFF_ROLES));
@@ -109,6 +110,33 @@ async function driverOpenRouteIds(driverId: string): Promise<string[]> {
   return [...(routes ?? []), ...(manifests ?? [])].map(r => r.id as string);
 }
 
+/**
+ * Only the messages on this company's own trips, loads and shipments. A thread belongs to the company that runs
+ * its trip, so another company's staff never see a driver's message in their unread count.
+ */
+async function ofThisCompany(rows: Message[]): Promise<Message[]> {
+  if (!isScoped(OWNED.carrier) || rows.length === 0) return rows;
+  const routeIds = [...new Set(rows.map(m => m.route_id).filter((v): v is string => !!v))];
+  const shipmentIds = [...new Set(rows.filter(m => !m.route_id).map(m => m.shipment_id).filter((v): v is string => !!v))];
+  const mineRoutes = new Set<string>();
+  const mineShipments = new Set<string>();
+  if (routeIds.length > 0) {
+    const [routes, loads] = await Promise.all([
+      scopeQuery(supabase.from('routes').select('id').in('id', routeIds), OWNED.carrier),
+      scopeQuery(supabase.from('cargo_manifest').select('id').in('id', routeIds), OWNED.carrier),
+    ]);
+    if (routes.error) throw new Error(`Failed to load trips: ${routes.error.message}`);
+    if (loads.error) throw new Error(`Failed to load loads: ${loads.error.message}`);
+    for (const r of [...(routes.data ?? []), ...(loads.data ?? [])]) mineRoutes.add(r.id as string);
+  }
+  if (shipmentIds.length > 0) {
+    const { data, error } = await scopeQuery(supabase.from('shipments').select('id').in('id', shipmentIds), OWNED.carrier);
+    if (error) throw new Error(`Failed to load shipments: ${error.message}`);
+    for (const r of data ?? []) mineShipments.add(r.id as string);
+  }
+  return rows.filter(m => (m.route_id ? mineRoutes.has(m.route_id) : !!m.shipment_id && mineShipments.has(m.shipment_id)));
+}
+
 // ── GET /messages/unread — unread count, and per thread for staff ──
 router.get('/unread', async (req: Request, res: Response) => {
   try {
@@ -122,7 +150,7 @@ router.get('/unread', async (req: Request, res: Response) => {
         .order('created_at', { ascending: false })
         .limit(UNREAD_LIMIT);
       if (error) throw new Error(`Failed to load messages: ${error.message}`);
-      rows = (data ?? []) as Message[];
+      rows = await ofThisCompany((data ?? []) as Message[]);
     } else {
       const routeIds = await driverOpenRouteIds(req.user!.user_id);
       if (routeIds.length > 0) {

@@ -106,7 +106,7 @@ router.get('/delivery-points', requireAuth, requireRole(...STAFF_ROLES), async (
     // A delivery point has no owner column: it is the company's when its shipment or a stop of one of its trips is
     const limited = isScoped(OWNED.carrier);
     const { data, error } = await supabase.from('delivery_points')
-      .select(limited ? '*, shipments(carrier_org_id), route_stops(routes(carrier_org_id))' : '*');
+      .select(limited ? '*, shipments!delivery_points_shipment_id_fkey(carrier_org_id), route_stops(routes(carrier_org_id))' : '*');
     if (error) throw error;
     if (!limited) { res.json(data || []); return; }
     const mine = (rows: any): boolean => (Array.isArray(rows) ? rows : rows ? [rows] : []).some((r: any) => r?.carrier_org_id === orgFilter(OWNED.carrier)?.id);

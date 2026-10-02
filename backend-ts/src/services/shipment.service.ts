@@ -18,6 +18,7 @@ import type { Shipment, ShipmentLog, Parcel, DeliveryPoint } from '../db/types';
 import type { ShipmentCreate } from '../schemas';
 import { carrierStamp } from '../core/org-context';
 import { OWNED, scopeQuery } from '../core/org-scope';
+import { haversineKm } from './geo';
 
 const getDist = (lat1: number, lon1: number, lat2: number, lon2: number): string => {
   if (!lat1 || !lon1 || !lat2 || !lon2) return "Pending";
@@ -232,6 +233,24 @@ export async function releaseShipmentsFromRoute(routeId: string, actor?: LogActo
   return released;
 }
 
+const one = <T>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? v[0] ?? null : v ?? null);
+
+/** Average truck speed and the time spent at each stop, for the estimate of a trip nobody has planned on a map. */
+const ESTIMATE_KMH = 40;
+const ESTIMATE_STOP_MINUTES = 15;
+
+/** Straight-line distance from `start` through `points`, and the driving and stopping time it takes. */
+export function estimateLegs(start: { lat: number; lng: number } | null, points: { lat: number; lng: number }[]): { distance_km: number; duration_minutes: number } {
+  let km = 0;
+  let prev = start;
+  for (const p of points) {
+    if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
+    if (prev) km += haversineKm(prev, p);
+    prev = p;
+  }
+  return { distance_km: km, duration_minutes: Math.round((km / ESTIMATE_KMH) * 60 + points.length * ESTIMATE_STOP_MINUTES) };
+}
+
 /** The vehicle classes the database knows (vehicles.vehicle_type). */
 const VEHICLE_CLASSES = ['truck', 'van', 'bike', 'car'] as const;
 
@@ -309,26 +328,40 @@ export class ShipmentService {
    * checking whether it would fit.
    */
   static async activeLoadKg(vehicleId: string, excludeShipmentId?: string): Promise<number> {
+    const ids = new Set<string>();
+
     const { data: routes } = await supabase
       .from('routes')
       .select('id')
       .eq('vehicle_id', vehicleId)
       .in('status', ['active', 'pending']);
-    if (!routes || routes.length === 0) return 0;
+    if (routes && routes.length > 0) {
+      // A failed stop belongs to an exception shipment whose load is still on the vehicle
+      const { data: stops } = await supabase
+        .from('route_stops')
+        .select('delivery_point_id')
+        .in('route_id', routes.map((r: any) => r.id))
+        .in('status', ['pending', 'failed']);
+      if (stops && stops.length > 0) {
+        const { data: dps } = await supabase
+          .from('delivery_points')
+          .select('shipment_id')
+          .in('id', stops.map((s: any) => s.delivery_point_id));
+        for (const dp of dps || []) if ((dp as any).shipment_id) ids.add((dp as any).shipment_id);
+      }
+    }
 
-    // A failed stop belongs to an exception shipment whose load is still on the vehicle
-    const { data: stops } = await supabase
-      .from('route_stops')
-      .select('delivery_point_id')
-      .in('route_id', routes.map((r: any) => r.id))
-      .in('status', ['pending', 'failed']);
-    if (!stops || stops.length === 0) return 0;
+    // Goods physically on the vehicle count whatever happened to their trip: a cancelled trip or a breakdown
+    // leaves them on the truck (on hold), and the truck is not empty until a transfer, hub drop or return.
+    const { data: aboard } = await supabase
+      .from('shipments')
+      .select('id')
+      .eq('current_vehicle_id', vehicleId)
+      .eq('current_holder', 'vehicle');
+    for (const s of aboard || []) ids.add((s as any).id);
 
-    const { data: dps } = await supabase
-      .from('delivery_points')
-      .select('shipment_id')
-      .in('id', stops.map((s: any) => s.delivery_point_id));
-    const shipmentIds = Array.from(new Set((dps || []).map((dp: any) => dp.shipment_id).filter((id: any) => id && id !== excludeShipmentId)));
+    if (excludeShipmentId) ids.delete(excludeShipmentId);
+    const shipmentIds = Array.from(ids);
     if (shipmentIds.length === 0) return 0;
 
     const { data: shipments } = await supabase
@@ -361,12 +394,21 @@ export class ShipmentService {
       .single();
     if (!vehicle) return;
 
-    const totalLoad = await ShipmentService.activeLoadKg(vehicleId);
+    // Shipments and vendor loads (cargo manifests, a master's weight is carried by its lots) share the truck
+    const { data: loads } = await supabase
+      .from('cargo_manifest')
+      .select('capacity_kg')
+      .eq('vehicle_id', vehicleId)
+      .in('status', ['scheduled', 'in_transit'])
+      .neq('is_master', true);
+    const loadsKg = (loads || []).reduce((sum: number, l: any) => sum + (Number(l.capacity_kg) || 0), 0);
+    const totalLoad = (await ShipmentService.activeLoadKg(vehicleId)) + loadsKg;
     const available = Math.max(0, vehicle.capacity_kg - totalLoad);
 
+    // current_load_kg is what the vehicle carries or has reserved: the screens and the load checks read it
     await supabase
       .from('vehicles')
-      .update({ available_capacity_kg: available, capacity_updated_at: new Date().toISOString() })
+      .update({ current_load_kg: totalLoad, available_capacity_kg: available, capacity_updated_at: new Date().toISOString() })
       .eq('id', vehicleId);
 
     if (available === vehicle.capacity_kg) {
@@ -722,7 +764,7 @@ export class ShipmentService {
     // Find active or pending route for this vehicle
     const { data: existingRoutes } = await supabase
       .from('routes')
-      .select('id, status')
+      .select('id, status, plan, total_distance_km, total_duration_minutes')
       .eq('vehicle_id', vehicleId)
       .in('status', ['pending', 'active'])
       .order('created_at', { ascending: false })
@@ -753,8 +795,14 @@ export class ShipmentService {
     }
 
     // Add route stops after any the route already has
-    const { data: taken } = await supabase.from('route_stops').select('sequence').eq('route_id', routeId);
+    const { data: taken } = await supabase.from('route_stops').select('sequence, delivery_points(latitude, longitude)').eq('route_id', routeId);
     const firstSequence = (taken || []).reduce((max: number, r: any) => Math.max(max, Number(r.sequence) || 0), 0) + 1;
+    // Where the new legs start: the route's last stop so far, or the pickup of this shipment on an empty route
+    const lastTaken = [...(taken || [])].sort((a: any, b: any) => (Number(b.sequence) || 0) - (Number(a.sequence) || 0))[0] as any;
+    const lastPoint = lastTaken ? one(lastTaken.delivery_points) : null;
+    const legStart = lastPoint?.latitude != null && lastPoint?.longitude != null
+      ? { lat: Number(lastPoint.latitude), lng: Number(lastPoint.longitude) }
+      : shipment.origin_lat != null && shipment.origin_lng != null ? { lat: Number(shipment.origin_lat), lng: Number(shipment.origin_lng) } : null;
     const routeStops = deliveryPoints.map((dp, index) => ({
       id: uuidv4(),
       route_id: routeId,
@@ -765,6 +813,19 @@ export class ShipmentService {
     const { error: stopErr } = await supabase.from('route_stops').insert(routeStops);
 
     if (stopErr) throw new Error(`Failed to create route stops: ${stopErr.message}`);
+
+    // A trip made here has no planner figures: give it an estimate (straight lines through its stops, 40 km/h and
+    // 15 minutes a stop) so it shows a distance and a time and its stops get planned arrivals when it is sent.
+    // A trip saved from the route planner keeps the planner's own figures.
+    const route = existingRoutes?.[0];
+    if (!route?.plan) {
+      const added = estimateLegs(legStart, deliveryPoints.map(dp => ({ lat: Number(dp.latitude), lng: Number(dp.longitude) })));
+      const { error: estErr } = await supabase.from('routes').update({
+        total_distance_km: Math.round(((Number(route?.total_distance_km) || 0) + added.distance_km) * 10) / 10,
+        total_duration_minutes: (Number(route?.total_duration_minutes) || 0) + added.duration_minutes,
+      }).eq('id', routeId);
+      if (estErr) console.error(`[shipment] Could not store the estimate of route ${routeId}: ${estErr.message}`);
+    }
 
     await markAssigned(
       { id: shipmentId, status: String(shipment.status), origin_lat: shipment.origin_lat ?? null, origin_lng: shipment.origin_lng ?? null },
