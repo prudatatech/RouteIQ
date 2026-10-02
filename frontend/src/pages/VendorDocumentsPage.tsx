@@ -15,8 +15,9 @@ import { Alert, Button, Card, Checkbox, ErrorState, FileButton, IfscField, BankB
 import type { ResolvedPlace } from '@/services/geocoding'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { gstinError } from '@/utils/gstin'
+import { KycInfoRequests, useKycRequests } from '@/components/vendor/KycInfoRequests'
 
-type KycStatus = 'pending' | 'submitted' | 'approved' | 'rejected'
+type KycStatus = 'pending' | 'submitted' | 'info_requested' | 'approved' | 'rejected'
 
 interface DocRef { name: string; path: string }
 
@@ -127,6 +128,7 @@ export default function VendorDocumentsPage() {
   const [viewer, setViewer] = useState<{ url: string; name: string } | null>(null)
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
   const draftRestoredRef = useRef(false)
+  const openRequests = useKycRequests(hasProfile).data ?? []
 
   const setField = <K extends keyof KycFormData>(key: K, value: KycFormData[K]) =>
     setForm(prev => ({ ...prev, [key]: value }))
@@ -142,7 +144,7 @@ export default function VendorDocumentsPage() {
       if (!profile) { setHasProfile(false); setLoading(false); return }
       setHasProfile(true)
       const status = String(profile.kyc_status ?? 'pending').toLowerCase() as KycStatus
-      setKycStatus(['pending', 'submitted', 'approved', 'rejected'].includes(status) ? status : 'pending')
+      setKycStatus(['pending', 'submitted', 'info_requested', 'approved', 'rejected'].includes(status) ? status : 'pending')
       setKycRejectionReason(profile.kyc_rejection_reason ?? null)
 
       if (!isEditingRef.current) {
@@ -211,7 +213,7 @@ export default function VendorDocumentsPage() {
     if (draftKey) { try { localStorage.removeItem(draftKey) } catch { /* ignore */ } }
   }
 
-  const readOnly = mode === 'documents' && hasProfile && (kycStatus === 'submitted' || kycStatus === 'approved') && !isEditing
+  const readOnly = mode === 'documents' && hasProfile && (kycStatus === 'submitted' || kycStatus === 'info_requested' || kycStatus === 'approved') && !isEditing
 
   // --- Step validation -----------------------------------------------------
   const stepErrors = useMemo(() => {
@@ -437,7 +439,7 @@ export default function VendorDocumentsPage() {
   }
 
   // A company that is already verified or in review has done its setup: send it to Company, not an empty wizard
-  if (mode === 'onboarding' && hasProfile && (kycStatus === 'approved' || kycStatus === 'submitted')) {
+  if (mode === 'onboarding' && hasProfile && (kycStatus === 'approved' || kycStatus === 'submitted' || kycStatus === 'info_requested')) {
     return <Navigate to="/vendor/company" replace />
   }
 
@@ -480,6 +482,7 @@ export default function VendorDocumentsPage() {
           Your documents are being reviewed. We will notify you once a decision is made.
         </Alert>
       )}
+      {hasProfile && (kycStatus === 'info_requested' || openRequests.length > 0) && <KycInfoRequests requests={openRequests} />}
       {hasProfile && kycStatus === 'rejected' && (
         <Alert tone="danger" title="KYC rejected">
           {kycRejectionReason || 'Please review and correct your details below, then resubmit.'}

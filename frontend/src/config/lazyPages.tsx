@@ -41,6 +41,7 @@ export const tplPartnerDetail = page(() => import('@/pages/TplPartnerDetailPage'
 export const adminUsers = page(() => import('@/pages/admin/UsersPage'))
 export const adminPerson = page(() => import('@/pages/admin/PersonPage'))
 export const adminKyc = page(() => import('@/pages/admin/KycReviewPage'))
+export const adminVendorReview = page(() => import('@/pages/admin/VendorReviewPage'))
 export const adminAudit = page(() => import('@/pages/admin/AuditLogPage'))
 export const adminOrganisation = page(() => import('@/pages/admin/OrganisationPage'))
 export const platformOrganisations = page(() => import('@/pages/platform/OrganisationsPage'))

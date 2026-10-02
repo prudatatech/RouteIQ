@@ -49,6 +49,9 @@ const request = (source: 'customer' | 'vendor', key: 'booking_id' | 'request_id'
 
 const invoiceReport: Resolver = d => (str(d.invoice_id) ? `/money/invoices/${encodeURIComponent(str(d.invoice_id)!)}` : '/money?tab=invoices&reports=open')
 
+/** A vendor's review page; the list when the notification names no vendor. */
+const kycPage: Resolver = d => (str(d.profile_id) ? `/admin/kyc/${encodeURIComponent(str(d.profile_id)!)}` : '/admin/kyc')
+
 const STAFF: Record<string, Resolver> = {
   sos: d => withOpen('/emergency', d.alert_id),
   vendor_request: request('vendor', 'request_id'),
@@ -58,7 +61,8 @@ const STAFF: Record<string, Resolver> = {
   capacity_bid: d => withOpen(`${RETURN_TRIPS}?tab=bids`, d.bid_id),
   capacity_window_closed: d => withOpen(`${RETURN_TRIPS}?tab=bids`, d.window_id),
   stop_flagged: d => withOpen(`${RETURN_TRIPS}?tab=bids`, d.bid_id ?? d.window_id),
-  kyc_submitted: d => withOpen('/admin/kyc', d.profile_id),
+  kyc_submitted: kycPage,
+  kyc_info_answered: kycPage,
   // A new application or a change request goes to the partners tab, which opens that partner; the rest go to the partner
   tpl_application: d => withOpen(`${RETURN_TRIPS}?tab=partners`, d.partner_id),
   tpl_update: d => withOpen(`${RETURN_TRIPS}?tab=partners`, d.partner_id),
@@ -119,6 +123,7 @@ const VENDOR: Record<string, Resolver> = {
   // KYC
   kyc_approved: () => '/vendor/company',
   kyc_rejected: () => '/vendor/company',
+  kyc_info_requested: () => '/vendor/company',
   // Return trips and bids. Winning a bid creates a load: open it, else the bid
   bid_accepted: d => (str(d.shipment_id) ? `/vendor/loads/${encodeURIComponent(str(d.shipment_id)!)}` : vendorBid(d)),
   bid_lost: vendorBid,

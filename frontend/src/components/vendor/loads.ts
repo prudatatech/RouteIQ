@@ -221,6 +221,8 @@ export function actionItems(state: BoardState): ActionItem[] {
     items.push({ id: 'kyc', tone: 'danger', title: 'Your KYC needs changes', detail: state.kycRejectionReason || 'Open Company to see what to fix, then submit again.', to: '/vendor/company', cta: 'Fix KYC' })
   } else if (state.kyc === 'pending') {
     items.push({ id: 'kyc', tone: 'warning', title: 'Finish your KYC', detail: 'You can post loads and bid once it is approved.', to: '/vendor/company', cta: 'Finish KYC' })
+  } else if (state.kyc === 'info_requested') {
+    items.push({ id: 'kyc', tone: 'warning', title: 'The review team needs more details', detail: 'Send them on the Company page so your KYC can be approved.', to: '/vendor/company', cta: 'Send details' })
   } else if (state.kyc === 'submitted') {
     items.push({ id: 'kyc', tone: 'info', title: 'Your KYC is in review', detail: 'You can post loads and bid once we approve it. We will tell you.', to: null })
   }

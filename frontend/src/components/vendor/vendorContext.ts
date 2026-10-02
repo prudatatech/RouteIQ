@@ -1,6 +1,6 @@
 import { useOutletContext } from 'react-router-dom'
 
-export type KycStatus = 'pending' | 'submitted' | 'approved' | 'rejected'
+export type KycStatus = 'pending' | 'submitted' | 'info_requested' | 'approved' | 'rejected'
 
 export interface VendorProfileSummary {
   id: string
