@@ -323,7 +323,8 @@ describe('complete-stop on a route', () => {
     const res = await complete({ stop_id: 'stop-1' });
     expect(res.body).toMatchObject({ status: 'completed', route_completed: true });
     expect(supabaseMock.rows('routes')[0]).toMatchObject({ status: 'completed' });
-    expect(vehicle()).toMatchObject({ status: 'on_route', current_load_kg: 20 });
+    // ship-1 (10 kg) is delivered; ship-2 (10 kg) is still aboard on the other route: the load is what is aboard
+    expect(vehicle()).toMatchObject({ status: 'on_route', current_load_kg: 10 });
     await complete({ stop_id: 'stop-2' });
     expect(vehicle()).toMatchObject({ status: 'available', current_load_kg: 0 });
   });
