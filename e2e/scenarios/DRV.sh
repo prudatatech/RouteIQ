@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # UAT scenario: the driver (trip list, accept, pickup, stops, counts, delivery code, SOS, fuel, odometer, pay, return trips).
-# Calls are the ones driver-app/src/services/api.ts makes. Runs after the 75-step story. Read e2e/out/scenario.txt.
+# Calls are the ones driver-app/src/services/api.ts makes. Runs after the 91-step story. Read e2e/out/scenario.txt.
 set -u
 source "$(dirname "$0")/lib.sh"
 DA=$(uid driverA); DB=$(uid driverB)

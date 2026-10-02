@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # UAT scenario: the customer (booking, tracking, receipt, claims, invoices, notifications, account).
-# Runs after the 75-step story on the throwaway stack. Prints CHECK lines; read e2e/out/scenario.txt.
+# Runs after the 91-step story on the throwaway stack. Prints CHECK lines; read e2e/out/scenario.txt.
 set -u
 source "$(dirname "$0")/lib.sh"
 CUST=$(uid customer); CUST2=$(uid customer2)

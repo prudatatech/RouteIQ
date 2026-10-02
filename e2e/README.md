@@ -3,7 +3,7 @@
 `run.mjs` walks one shipment story through the real backend and a real (local) Supabase: a multi-drop
 booking, assign without sending, pickup, an accident, a transfer with a short count, delivery with a
 delivery code, a partial delivery, receipt and claim, invoices, driver pay, a vendor load, a return trip
-and permission checks. 75 steps, each PASS or FAIL.
+permission checks and a 3PL network leg (partner fleet, targeted offer, signed POD, statement). 91 steps, each PASS or FAIL.
 
 ## Safety
 
