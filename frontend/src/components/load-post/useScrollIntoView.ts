@@ -19,6 +19,14 @@ export function stickyHeaderHeight(): number {
   return header instanceof HTMLElement ? header.getBoundingClientRect().height : 0
 }
 
+/** Height of the sticky Back/Next bar at the bottom of the form on phones (0 when it is not sticky). */
+export function stickyBarHeight(): number {
+  if (typeof document === 'undefined') return 0
+  const bar = document.querySelector('[data-testid="step-actions"]')
+  if (!(bar instanceof HTMLElement) || getComputedStyle(bar).position !== 'sticky') return 0
+  return bar.getBoundingClientRect().height
+}
+
 /** Space the visible area leaves below `offset` px from its top, using the visual viewport (the phone keyboard shrinks it). */
 export const visibleHeight = (): number => (typeof window === 'undefined' ? 800 : window.visualViewport?.height ?? window.innerHeight)
 

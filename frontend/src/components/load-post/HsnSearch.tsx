@@ -8,7 +8,7 @@ import { applyHsnHit } from './helpers'
 import HsnList, { FIRST_HITS } from './HsnList'
 import WhyHsn from './WhyHsn'
 import { claimHsnList, releaseHsnList } from './hsnOpen'
-import { scrollElementIntoView, stickyHeaderHeight, visibleHeight } from './useScrollIntoView'
+import { scrollElementIntoView, stickyBarHeight, stickyHeaderHeight, visibleHeight } from './useScrollIntoView'
 
 export interface HsnFieldErrors { name?: string; hsn?: string; rate?: string }
 
@@ -77,7 +77,7 @@ export default function HsnSearch({ row, index, onChange, onPicked, errors = {},
     const wrapper = field.current
     if (!wrapper) return
     if (!scrolled.current) { scrolled.current = true; scrollElementIntoView(wrapper) }
-    const room = visibleHeight() - stickyHeaderHeight() - 12 - wrapper.offsetHeight - 52
+    const room = visibleHeight() - stickyHeaderHeight() - 12 - wrapper.offsetHeight - 52 - stickyBarHeight()
     setMaxHeight(Math.round(Math.min(420, Math.max(192, room))))
   }
 
