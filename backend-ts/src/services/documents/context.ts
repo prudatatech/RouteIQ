@@ -1,8 +1,10 @@
 /**
  * margixindia — A vendor load as the documents see it, and who may act on it.
  *
- * "Load" is a vendor_shipment_requests row. Once a truck is assigned a cargo_manifest (vendor_request_id) carries
- * it, and the manifest's carrier_org_id is the logistic company running it (else the assigned vehicle's company).
+ * "Load" is a vendor_shipment_requests row. The logistic company running it is the load's carrier_org_id, set when the
+ * vendor accepts its quote or it accepts directly (docs/order-routing.md), so it can generate the LR before a truck is
+ * assigned. Older loads fall back to the carrying manifest's carrier_org_id, then the assigned vehicle's company.
+ * Once a truck is assigned a cargo_manifest (vendor_request_id) carries the load.
  * Access is by organisation: the vendor organisation that posted the load, the carrier organisation running it,
  * and platform admins. Anyone else gets a 404, never a 403, so ids cannot be probed.
  */

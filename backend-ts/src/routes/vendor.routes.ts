@@ -16,6 +16,7 @@ import {
   bulkTemplateCsv, callerOf, createLoad, getPostedLoad, listMyLoads, repostDraft, runBulk,
 } from '../services/loads/loads.service';
 import { getBusinessProfile, saveBusinessProfile } from '../services/loads/business-profile.service';
+import { acceptQuote, listVendorQuotes } from '../services/loads/order-routing';
 import {
   KycDocumentsSchema, KycSubmitSchema, ShipmentRequestSchema, VendorLocationSchema, VendorProfileSchema,
   assertKycContent, parseBody,
@@ -197,6 +198,24 @@ router.post('/loads/:id/repost', requireAuth, requireRole('vendor'), async (req:
   }
 });
 
+// The quotes on the vendor's load: company name and completed trips, amount, validity, ETA, notes (withdrawn ones are left out)
+router.get('/loads/:id/quotes', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    res.json(await listVendorQuotes(callerOf(req), uuidParam(req.params.id, 'Load not found')));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Pick a quote: awards the load to that company (atomic, only one award can happen), declines the other quotes
+router.post('/loads/:id/quotes/:quoteId/accept', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    res.json(await acceptQuote(callerOf(req), uuidParam(req.params.id, 'Load not found'), uuidParam(req.params.quoteId, 'Quote not found')));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // One load. A posted load answers { ...board fields (vendor only), load, items }. A load the caller may not see (not their
 // vendor organisation, not the carrier of its manifest, not a platform admin) is a 404. Return-trip space (a bid) keeps its old shape.
 router.get('/loads/:id', requireAuth, requireRole('vendor', ...STAFF_ROLES), async (req: any, res: any) => {
@@ -272,7 +291,7 @@ router.put('/shipment-request/:id/cancel', requireAuth, requireRole('vendor'), a
 router.put('/shipment-request/:id/approve', requireAuth, requireRole(...STAFF_ROLES), async (req: any, res: any) => {
   try {
     const { cost, cost_per_km } = req.body ?? {};
-    const request = await vendorService.approveRequest(uuidParam(req.params.id, 'Request not found'), cost, cost_per_km);
+    const request = await vendorService.approveRequest(uuidParam(req.params.id, 'Request not found'), cost, cost_per_km, req.user.user_id);
     res.json(request);
   } catch (error: any) {
     sendError(req, res, error, 'error');

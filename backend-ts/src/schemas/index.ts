@@ -56,6 +56,9 @@ export type ThirdPartyAgreementCreate = z.infer<typeof ThirdPartyAgreementCreate
 
 // ── Vehicles ───────────────────────────────────────────────
 
+/** How the vehicle's body is built; ODC needs open or trailer (services/loads/vehicle-fit.ts). */
+export const VehicleBodyType = z.enum(['closed', 'open', 'container', 'reefer', 'tanker', 'trailer']);
+
 export const VehicleCreateSchema = z.object({
   plate_number: z.string().min(4).max(20),
   vehicle_type: z.enum(['truck', 'van', 'bike', 'car']),
@@ -71,6 +74,9 @@ export const VehicleCreateSchema = z.object({
   container_length_ft: z.number().min(0).max(60).optional().nullable(),
   container_width_ft: z.number().min(0).max(15).optional().nullable(),
   container_height_ft: z.number().min(0).max(15).optional().nullable(),
+  hazmat_certified: z.boolean().optional(),
+  is_reefer: z.boolean().optional(),
+  body_type: VehicleBodyType.optional().nullable(),
   current_load_kg: z.number().min(0).max(50000).optional().default(0),
   rc_number: z.string().max(50).optional().nullable(),
   rc_expiry: z.string().optional().nullable(),
@@ -135,6 +141,9 @@ export const VehicleUpdateSchema = z.object({
   container_length_ft: z.number().min(0).max(60).optional().nullable(),
   container_width_ft: z.number().min(0).max(15).optional().nullable(),
   container_height_ft: z.number().min(0).max(15).optional().nullable(),
+  hazmat_certified: z.boolean().optional(),
+  is_reefer: z.boolean().optional(),
+  body_type: VehicleBodyType.optional().nullable(),
   current_load_kg: z.number().min(0).max(50000).optional().nullable(),
   rc_number: z.string().max(50).optional().nullable(),
   rc_expiry: z.string().optional().nullable(),

@@ -16,6 +16,7 @@ import { notificationService } from '../notification.service';
 import { emailService, escapeHtml } from '../email.service';
 import { sendLoadPosted } from '../whatsapp.service';
 import { loadVehicleClasses } from '../goods/master';
+import { HOLD_UNVERIFIED, assertChosenCompanies, loadVisibleToAnyCompany, notifyCompanies, quoteDeadline } from './order-routing';
 import { assessLoad, type LoadAssessment } from './assess';
 import { csvLine, parseCsv } from './csv';
 import { LoadDraftSchema, MAX_BULK_ROWS, type LoadDraftInput } from '../../schemas/loads';
@@ -23,7 +24,7 @@ import { LoadDraftSchema, MAX_BULK_ROWS, type LoadDraftInput } from '../../schem
 /** The same client_request_id inside this window returns the first load. */
 export const DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
 /** Marks a load whose vendor organisation is not active yet: it stays out of the companies' queue until it is. */
-export const HOLD_UNVERIFIED = 'vendor_unverified';
+export { HOLD_UNVERIFIED };
 export const HOLD_NOTE = 'Business verification pending. Your load is saved and goes to logistic companies once your business is verified.';
 
 export const OPEN_NOTE = 'It is open to logistic companies serving this lane. We will notify you when one accepts.';
@@ -34,6 +35,8 @@ export interface Caller {
   /** The vendor organisation the caller acts for (null before organisations are set up). */
   vendorOrg: OrgSummary | null;
   orgIds: string[];
+  /** The active logistic companies the caller works for. */
+  companyIds: string[];
   isPlatformAdmin: boolean;
   /** True when the caller has no organisation at all (organisations not set up): staff then see every load, as before. */
   noOrgs: boolean;
@@ -48,6 +51,7 @@ export function callerOf(req: Request): Caller {
     role: req.user!.role,
     vendorOrg,
     orgIds: memberships.map(m => m.org.id),
+    companyIds: memberships.filter(m => m.org.kind === 'logistic_company' && m.org.status === 'active').map(m => m.org.id),
     isPlatformAdmin: !!req.isPlatformAdmin,
     noOrgs: !req.org && memberships.length === 0,
   };
@@ -63,11 +67,18 @@ async function itemsOf(loadId: string) {
   return data ?? [];
 }
 
-/** Whether the caller may see this load: its vendor organisation, the carrier organisation of its manifest, or a platform admin. */
+/**
+ * Whether the caller may see this load, by the same rule as the database function app.can_see_load: its vendor
+ * organisation, the company it was awarded to (or the carrier of its manifest), a company's staff while it is open to
+ * their company (chosen, or open to all; pending, not held, vendor organisation active), or a platform admin.
+ */
 export async function canSeeLoad(c: Caller, row: Record<string, any>): Promise<boolean> {
   if (c.isPlatformAdmin) return true;
   if (row.vendor_id === c.userId) return true;
   if (row.vendor_org_id && c.orgIds.includes(row.vendor_org_id)) return true;
+  // The company the load was awarded to sees it before it has a vehicle; staff of a company it is routed to see it too
+  if (row.carrier_org_id && c.orgIds.includes(row.carrier_org_id)) return true;
+  if (['superadmin', ...STAFF_ROLES].includes(c.role as any) && (await loadVisibleToAnyCompany(row, c.companyIds))) return true;
   if (c.orgIds.length) {
     const { data, error } = await supabase.from('cargo_manifest').select('id, carrier_org_id').eq('vendor_request_id', row.id);
     if (error) throw new Error(`Failed to check load access: ${error.message}`);
@@ -149,6 +160,11 @@ export async function createLoad(c: Caller, input: LoadDraftInput, opts: CreateO
     }
   }
 
+  // Who may quote: chosen companies (checked), or every company serving the lane. Naming companies without a routing means chosen.
+  const routing = input.routing ?? (input.company_ids.length > 0 ? 'chosen' : 'open');
+  const companyIds = routing === 'chosen' ? [...new Set(input.company_ids)] : [];
+  if (routing === 'chosen') await assertChosenCompanies(companyIds);
+
   // Never trust the client's totals, tax or e-way flag: work them out again
   const assessment = await assessLoad(input);
   const verified = await vendorVerified(c);
@@ -218,7 +234,10 @@ export async function createLoad(c: Caller, input: LoadDraftInput, opts: CreateO
     tax_basis: assessment.tax.basis,
     eway_required: assessment.eway.required,
     hazmat_mixed: assessment.hazmat_mixed,
-    company_ids: input.company_ids,
+    company_ids: companyIds,
+    routing,
+    // The quote clock starts when the load reaches the companies: now, or when the vendor is verified
+    quote_deadline: verified ? quoteDeadline(input.quote_requested) : null,
     source: opts.source ?? input.source ?? 'web',
     client_request_id: crid,
     bulk_batch_id: opts.bulkBatchId ?? null,
@@ -255,13 +274,8 @@ async function announceLoad(c: Caller, row: Record<string, any>, verified: boole
       'load_posted', { request_id: row.id, load_number: row.load_number },
     ),
   ];
-  if (verified) {
-    tasks.push(notificationService.notifyStaff(
-      'New vendor load',
-      `A vendor posted load ${row.load_number}: ${Math.round(Number(row.total_weight_kg ?? row.required_capacity_kg)).toLocaleString('en-IN')} kg, ${route}.`,
-      'vendor_request', { request_id: row.id },
-    ));
-  }
+  // Only the matching companies hear about it (never every staff member), and never a held load
+  if (verified) tasks.push(notifyCompanies(row));
   tasks.push((async () => {
     const { data: user } = await supabase.from('users').select('phone, email').eq('id', c.userId).maybeSingle();
     const vehicle = await vehicleLabel(row.vehicle_class);
@@ -291,18 +305,22 @@ async function vehicleLabel(key: string | null | undefined): Promise<string> {
 
 const shortPlace = (p: string | null | undefined) => (p ?? '').split(',')[0].trim() || 'pickup';
 
-/** Loads held for business verification go to the companies' queue once the vendor is verified. */
+/** Loads held for business verification go to the matching companies once the vendor is verified; the quote clock starts then. */
 export async function releaseHeldLoads(vendorId: string): Promise<number> {
-  const { data, error } = await supabase.from('vendor_shipment_requests').select('id, load_number, metadata, total_weight_kg, required_capacity_kg, pickup_city, delivery_city')
+  const { data, error } = await supabase.from('vendor_shipment_requests').select('*')
     .eq('vendor_id', vendorId).eq('status', 'pending');
   if (error) throw new Error(error.message);
   const held = (data ?? []).filter((r: any) => r.metadata?.hold === HOLD_UNVERIFIED);
   for (const r of held) {
     const { hold: _hold, ...metadata } = r.metadata;
-    await supabase.from('vendor_shipment_requests').update({ metadata }).eq('id', r.id);
-    await notificationService.notifyStaff('New vendor load',
-      `A vendor posted load ${r.load_number}: ${Math.round(Number(r.total_weight_kg ?? r.required_capacity_kg)).toLocaleString('en-IN')} kg, ${r.pickup_city ?? 'pickup'} → ${r.delivery_city ?? 'drop'}.`,
-      'vendor_request', { request_id: r.id });
+    const deadline = quoteDeadline(!!r.quote_requested);
+    const { error: upErr } = await supabase.from('vendor_shipment_requests').update({ metadata, quote_deadline: deadline }).eq('id', r.id);
+    if (upErr) throw new Error(upErr.message);
+    try {
+      await notifyCompanies({ ...r, metadata, quote_deadline: deadline });
+    } catch (e) {
+      console.error('[loads] announcing a released load failed:', e);
+    }
   }
   return held.length;
 }
@@ -333,7 +351,7 @@ export async function repostDraft(c: Caller, id: string) {
     load_type: l.load_type, vehicle_class: l.vehicle_class, capacity_t: num(l.capacity_t),
     temp_mode: l.metadata?.temp_mode ?? null, temp_min_c: num(l.temp_min_c), temp_max_c: num(l.temp_max_c), special_handling: l.special_handling ?? [],
     budget_inr: num(l.budget_inr), quote_requested: !!l.quote_requested, loading_help: !!l.loading_help, unloading_help: !!l.unloading_help,
-    company_ids: l.company_ids ?? [],
+    routing: l.routing ?? 'open', company_ids: l.company_ids ?? [],
   };
 }
 

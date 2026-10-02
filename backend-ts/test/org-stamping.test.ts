@@ -62,7 +62,7 @@ describe('a load a vendor asked for', () => {
     supabaseMock.reset(orgWorld({
       vendor_shipment_requests: [{
         id: REQUEST, vendor_id: uid('vendor-1'), vendor_org_id: ORG.vendorV, pickup_location: 'Bhiwandi', pickup_lat: 19.3, pickup_lng: 73.06,
-        drop_location: 'Pune', drop_lat: 18.52, drop_lng: 73.85, required_capacity_kg: 400, status: 'approved', cost: 9000, assigned_vehicle_id: null,
+        drop_location: 'Pune', drop_lat: 18.52, drop_lng: 73.85, required_capacity_kg: 400, status: 'approved', cost: 9000, assigned_vehicle_id: null, carrier_org_id: ORG.companyB,
       }],
       vehicles: [{ id: VEHICLE, driver_id: uid('driver-b'), status: 'available', capacity_kg: 1000, current_load_kg: 0, available_capacity_kg: 1000, carrier_org_id: ORG.companyB }],
       cargo_manifest: [],
