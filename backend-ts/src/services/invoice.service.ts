@@ -251,6 +251,12 @@ export function partialDeliveryNote(row: { pieces_total?: unknown; pieces_delive
 function logIssueFailure(what: string, e: unknown): void {
   if (e instanceof HttpError && e.extra?.code === COMPANY_PROFILE_INCOMPLETE) {
     console.warn(`[invoice] ${what} not invoiced yet: ${e.message}`);
+    // A delivery without an invoice is money waiting: tell the company's admins once, don't just log
+    notificationService.notifyStaffOnce(
+      'Invoice not issued',
+      `A delivery (${what}) has no invoice yet: ${e.message}`,
+      'invoice_blocked', { what }, 'what',
+    ).catch(err => console.error('[invoice] could not tell staff:', err));
     return;
   }
   console.error(`[invoice] ${what}:`, e);
