@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { Alert, Card, Input, Select, Button } from '@/components/ui'
+import { Alert, Card, Input, Select, Button, Checkbox } from '@/components/ui'
 import type { LoadDraft } from '@/types/load'
 import { isWeekend, taxBasisLocal, todayIso } from './logic'
 import type { StepErrors } from './validate'
 import AddressBlock from './AddressBlock'
-import { ArrowUp, ArrowDown, ShieldCheck } from 'lucide-react'
+import { ArrowUp, ArrowDown, ShieldCheck, User, Calendar, AlertCircle } from 'lucide-react'
 
 const SLOTS = [
   { value: 'morning', label: 'Morning, 6am–12pm' },
@@ -29,9 +29,26 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
   const set = (patch: Record<string, unknown>) => onChange(patch as Partial<LoadDraft>)
 
   return (
-    <div className="space-y-8">
-      {/* 1. Addresses */}
-      <Card padded className="!p-6">
+    <div className="mx-auto max-w-4xl space-y-6 pb-20">
+      {/* Page Header */}
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <div className="mb-3 inline-flex items-center rounded-full bg-brand-fill/20 px-3 py-1 text-xs font-semibold text-brand-dark">
+            <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-brand-dark"></span> Step 1 of 4: Booking Details
+          </div>
+          <h1 className="text-2xl font-bold text-text">Logistics Dispatch Setup</h1>
+          <p className="text-sm text-muted">Specify pickup scheduling, verified contact parties, and fleet priority routing.</p>
+        </div>
+        <div className="hidden items-center gap-2 rounded-full border border-border bg-surface px-4 py-1.5 text-sm font-medium shadow-sm md:flex">
+          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-success text-white">
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+          </span>
+          Autosaved draft
+        </div>
+      </div>
+
+      {/* Addresses */}
+      <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
         <div className="relative space-y-6">
           {/* Vertical dashed line */}
           <div className="absolute bottom-10 left-4 top-10 w-px border-l-2 border-dashed border-border" />
@@ -96,71 +113,155 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
             </div>
           </div>
         </div>
-      </Card>
+      </div>
 
-      {/* 2. Schedule & Timing */}
-      <div className="space-y-3">
-        <h3 className="text-xs font-semibold uppercase text-muted">Schedule & Timing</h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input
-            label="Pickup Date *" type="date" min={todayIso()}
-            value={draft.pickup_date} onChange={e => onChange({ pickup_date: e.target.value })}
-            error={errors.pickup_date}
-            hint={draft.pickup_date && isWeekend(draft.pickup_date) ? 'Weekends have limited availability.' : undefined}
-          />
-          <Select
-            label="Pickup Time Slot" value={draft.pickup_slot} placeholder="Any time (Flexible slot)"
-            onChange={e => onChange({ pickup_slot: e.target.value as LoadDraft['pickup_slot'] })} options={SLOTS}
-            hint="Driver arrival window"
-          />
+      {/* 1. Schedule & Timing */}
+      <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm space-y-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-fill/20 text-lg font-bold text-brand-dark">1</div>
+            <div>
+              <h3 className="text-lg font-bold text-text">Pickup Date & Time Window</h3>
+              <p className="text-sm text-muted">Choose when the carrier should pick up the freight</p>
+            </div>
+          </div>
+          <div className="flex items-center rounded-full border border-border bg-surface-subtle p-1 text-sm font-medium">
+            <button type="button" className="rounded-full px-4 py-1.5 hover:bg-surface" onClick={() => onChange({ pickup_date: todayIso() })}>Today</button>
+            <button type="button" className="rounded-full px-4 py-1.5 hover:bg-surface" onClick={() => {
+              const tmrw = new Date(); tmrw.setDate(tmrw.getDate() + 1);
+              onChange({ pickup_date: tmrw.toISOString().split('T')[0] })
+            }}>Tomorrow</button>
+            <button type="button" className="rounded-full bg-brand-fill px-4 py-1.5 text-brand-dark shadow-sm">Custom Date</button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <div>
+            <label className="mb-1.5 flex justify-between text-xs font-bold uppercase tracking-wide text-text">
+              <span>Pickup Date <span className="text-danger">*</span></span>
+              <span className="text-muted">DD-MM-YYYY</span>
+            </label>
+            <Input
+              hideLabel label="Pickup Date"
+              type="date" min={todayIso()}
+              value={draft.pickup_date} onChange={e => onChange({ pickup_date: e.target.value })}
+              error={errors.pickup_date}
+              leading={<Calendar size={16} />}
+              inputClassName="pl-10"
+            />
+            {draft.pickup_date && isWeekend(draft.pickup_date) && (
+              <div className="mt-3 flex items-center gap-1.5 rounded bg-brand-fill/10 px-3 py-2 text-xs font-medium text-brand-dark">
+                <AlertCircle size={14} /> Weekends have limited availability.
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="mb-1.5 flex justify-between text-xs font-bold uppercase tracking-wide text-text">
+              <span>Pickup Time Slot <span className="text-danger">*</span></span>
+              <span className="text-success">Standard Window</span>
+            </label>
+            <Select
+              hideLabel label="Pickup Time Slot"
+              value={draft.pickup_slot} placeholder="Any time"
+              onChange={e => onChange({ pickup_slot: e.target.value as LoadDraft['pickup_slot'] })} options={SLOTS}
+            />
+            <p className="mt-2 text-xs text-muted">When the driver should arrive at loading dock</p>
+          </div>
         </div>
       </div>
 
-      {/* 3. Point of Contact Details */}
-      <div className="space-y-3">
-        <h3 className="text-xs font-semibold uppercase text-muted">Point of Contact Details</h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-          <Input
-            label="Sender Contact *"
-            value={draft.pickup_contact_name} onChange={e => set({ pickup_contact_name: e.target.value })}
-            error={errors.pickup_contact_name} autoComplete="off"
-          />
-          <Input
-            label="Sender Mobile *" type="tel" inputMode="tel"
-            value={draft.pickup_contact_phone} onChange={e => set({ pickup_contact_phone: e.target.value })}
-            error={errors.pickup_contact_phone} autoComplete="off"
-          />
-          <Input
-            label="Receiver Name *"
-            value={draft.delivery_contact_name} onChange={e => set({ delivery_contact_name: e.target.value })}
-            error={errors.delivery_contact_name} autoComplete="off"
-          />
-          <Input
-            label="Receiver Mobile *" type="tel" inputMode="tel"
-            value={draft.delivery_contact_phone} onChange={e => set({ delivery_contact_phone: e.target.value })}
-            error={errors.delivery_contact_phone} autoComplete="off"
-          />
+      {/* 2. Point of Contact Details */}
+      <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm space-y-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-fill/20 text-lg font-bold text-brand-dark">2</div>
+            <div>
+              <h3 className="text-lg font-bold text-text">Direct Contact Details</h3>
+              <p className="text-sm text-muted">Driver coordinates directly with both parties via phone and SMS updates</p>
+            </div>
+          </div>
+          <Checkbox label="Receiver is same as Sender" className="hidden md:flex rounded bg-surface-subtle px-3 py-1.5 font-medium" />
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {/* Origin Card */}
+          <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-text">
+                <span className="h-2 w-2 rounded-full bg-success"></span> Origin / Pickup Contact
+              </div>
+              <span className="rounded border border-border bg-surface-subtle px-2 py-0.5 text-xs font-medium text-muted">Sender</span>
+            </div>
+            <div className="space-y-4">
+              <Input
+                label="Pickup Contact Name" required
+                value={draft.pickup_contact_name} onChange={e => set({ pickup_contact_name: e.target.value })}
+                error={errors.pickup_contact_name} autoComplete="off"
+                leading={<User size={16} />}
+              />
+              <Input
+                label="Pickup Contact Mobile" required type="tel" inputMode="tel"
+                value={draft.pickup_contact_phone} onChange={e => set({ pickup_contact_phone: e.target.value })}
+                error={errors.pickup_contact_phone} autoComplete="off"
+                leading={<span className="-ml-3 flex h-full items-center rounded-l-control border-r border-border bg-surface-subtle px-3 text-sm font-semibold text-text">+91</span>}
+                inputClassName="pl-[60px]"
+              />
+            </div>
+          </div>
+
+          {/* Destination Card */}
+          <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-text">
+                <span className="h-2 w-2 rounded-full bg-brand-fill"></span> Delivery / Destination Contact
+              </div>
+              <span className="rounded border border-brand-fill/20 bg-brand-fill/5 px-2 py-0.5 text-xs font-medium text-brand-dark">Receiver</span>
+            </div>
+            <div className="space-y-4">
+              <Input
+                label="Receiver Name" required
+                value={draft.delivery_contact_name} onChange={e => set({ delivery_contact_name: e.target.value })}
+                error={errors.delivery_contact_name} autoComplete="off"
+                leading={<User size={16} />}
+              />
+              <Input
+                label={
+                  <div className="flex w-full items-center justify-between">
+                    <span>Receiver Mobile</span>
+                    <span className="text-[10px] font-semibold text-success">✓ SMS Track Enabled</span>
+                  </div>
+                }
+                required type="tel" inputMode="tel"
+                value={draft.delivery_contact_phone} onChange={e => set({ delivery_contact_phone: e.target.value })}
+                error={errors.delivery_contact_phone} autoComplete="off"
+                leading={<span className="-ml-3 flex h-full items-center rounded-l-control border-r border-border bg-surface-subtle px-3 text-sm font-semibold text-text">+91</span>}
+                inputClassName="pl-[60px]"
+              />
+            </div>
+          </div>
         </div>
         
         {/* Estimated Route Distance */}
-        <div className="flex items-center justify-between rounded-control bg-surface-raised px-4 py-3 text-sm">
+        <div className="flex items-center justify-between rounded-xl bg-surface-subtle px-4 py-3 text-sm border border-border">
           <div className="flex items-center gap-2 text-muted">
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-5 w-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
             </svg>
             <span>Estimated Route Distance: <span className="font-semibold text-text">Direct Interstate Corridor</span></span>
           </div>
-          <span className="rounded bg-success/10 px-2 py-1 text-xs font-medium text-success">Verified Route</span>
+          <span className="rounded-full bg-success/10 px-3 py-1 text-xs font-semibold text-success">Verified Route</span>
         </div>
       </div>
 
-      {/* 4. Dispatch Priority */}
-      <div className="space-y-3" role="radiogroup" aria-label="Priority">
-        <div>
-          <h3 className="text-base font-semibold text-text">Dispatch Priority</h3>
-          <p className="text-sm text-muted">Select how swiftly your shipment requires truck allotment from our network</p>
+      {/* 3. Dispatch Priority */}
+      <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm space-y-6" role="radiogroup" aria-label="Priority">
+        <div className="flex gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-fill/20 text-lg font-bold text-brand-dark">3</div>
+          <div>
+            <h3 className="text-lg font-bold text-text">Dispatch Priority Level</h3>
+            <p className="text-sm text-muted">Determine how quickly a truck is assigned and dispatched for this load</p>
+          </div>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
           <button 
             type="button" 
             role="radio"
