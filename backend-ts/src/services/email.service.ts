@@ -3,7 +3,10 @@
  * nothing is sent and false is returned, so callers treat email as a bonus on
  * top of the in-app notification. Failures are logged, never thrown.
  */
-const FROM = 'MargixIndia <onboarding@resend.dev>';
+// EMAIL_FROM must be an address on a domain verified in Resend (e.g. "MargixIndia <no-reply@mail.margixindia.com>").
+// Until one is set, Resend's shared test sender is used, which only delivers to the Resend account owner.
+const TEST_FROM = 'MargixIndia <onboarding@resend.dev>';
+export const fromAddress = (): string => process.env.EMAIL_FROM?.trim() || TEST_FROM;
 
 export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -19,7 +22,7 @@ export const emailService = {
     if (!apiKey || !to) return false;
     try {
       const { Resend } = await import('resend');
-      const { error } = await new Resend(apiKey).emails.send({ from: FROM, to, subject, html });
+      const { error } = await new Resend(apiKey).emails.send({ from: fromAddress(), to, subject, html });
       if (error) {
         console.error('[email] Send failed:', error.message);
         return false;

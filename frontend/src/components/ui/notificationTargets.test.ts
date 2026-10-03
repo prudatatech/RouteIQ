@@ -11,7 +11,7 @@ describe('vendor notifications', () => {
     expect(at(type, { request_id: 'r1' }, 'vendor')).toBe('/vendor/loads/r1')
   })
 
-  it.each(['kyc_approved', 'kyc_rejected'])('%s opens Company', type => {
+  it.each(['kyc_approved', 'kyc_rejected', 'kyc_info_requested'])('%s opens Company', type => {
     expect(at(type, { vendor_id: 'v1' }, 'vendor')).toBe('/vendor/company')
   })
 
@@ -101,7 +101,9 @@ describe('staff notifications', () => {
     ['capacity_window_closed', { window_id: 'w1' }, '/return-trips?tab=bids&open=w1'],
     ['stop_flagged', { bid_id: 'b1', window_id: 'w1' }, '/return-trips?tab=bids&open=b1'],
     ['stop_flagged', { window_id: 'w1' }, '/return-trips?tab=bids&open=w1'],
-    ['kyc_submitted', { profile_id: 'v1' }, '/admin/kyc?open=v1'],
+    ['kyc_submitted', { profile_id: 'v1' }, '/admin/kyc/v1'],
+    ['kyc_submitted', {}, '/admin/kyc'],
+    ['kyc_info_answered', { profile_id: 'v1' }, '/admin/kyc/v1'],
     ['tpl_application', { partner_id: 'p1' }, '/return-trips?tab=partners&open=p1'],
     ['tpl_application', {}, '/return-trips?tab=partners'],
     ['tpl_update', { partner_id: 'p1' }, '/return-trips?tab=partners&open=p1'],

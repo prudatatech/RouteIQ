@@ -1,7 +1,8 @@
 import axios from 'axios'
+import type { InfoAnswer, InfoRequestInput, RegistryList, VendorKycRequest, VendorReview } from '@/components/admin/vendor-review/types'
 import { supabase } from '@/services/supabase'
 import { orgHeaders } from '@/store/orgStore'
-import { loginPathFor } from '@/utils/accountKind'
+import { LOGIN_PATH } from '@/utils/accountKind'
 import type {
   PeopleAttention, PeopleSettings, DuplicateMatch, ImportReport, PersonDetail, PersonDocument, PersonRow, EmergencyContact, BankAccount, PersonNote,
 } from '@/components/people/types'
@@ -108,7 +109,7 @@ api.interceptors.response.use(
         // Session is dead — sign out and redirect
         await supabase.auth.signOut()
         if (!window.location.pathname.includes('/login')) {
-          window.location.href = loginPathFor(window.location.pathname)
+          window.location.href = LOGIN_PATH
         }
       }
     }
@@ -624,6 +625,30 @@ export const vendorAPI = {
   setLocation: (id: string, data: { lat: number; lng: number; city?: string }) =>
     api.put(`/vendor/${encodeURIComponent(id)}/location`, data).then(r => r.data),
   rejectKyc: (id: string, reason: string) => api.put(`/vendor/kyc/${id}/reject`, { reason }).then(r => r.data),
+  /** Every vendor with where they are in KYC, including those who never submitted. Platform only. */
+  registry: (params: { status?: string; q?: string; limit?: number; offset?: number } = {}): Promise<RegistryList> =>
+    api.get('/vendor/registry', { params }).then(r => r.data),
+  /** Every vendor, fetched in pages of 200 (the server's cap), for lists that filter and page on screen. */
+  registryAll: async (): Promise<RegistryList> => {
+    const items: RegistryList['items'] = []
+    for (let offset = 0; offset < 10_000; offset += 200) {
+      const page: RegistryList = await api.get('/vendor/registry', { params: { limit: 200, offset } }).then(r => r.data)
+      items.push(...page.items)
+      if (page.items.length < 200 || items.length >= page.total) break
+    }
+    return { items, total: items.length }
+  },
+  /** One vendor in full: account, business profile, KYC, requests for more details, history and activity. Platform only. */
+  review: (id: string): Promise<VendorReview> => api.get(`/vendor/registry/${encodeURIComponent(id)}`).then(r => r.data),
+  /** Ask the vendor for more details; the KYC moves to "More details asked". */
+  requestKycInfo: (id: string, data: { message?: string; items: InfoRequestInput[] }): Promise<{ success: boolean }> =>
+    api.post(`/vendor/kyc/${encodeURIComponent(id)}/request-info`, data).then(r => r.data),
+  /** The vendor's own open requests for more details. */
+  kycRequests: (): Promise<VendorKycRequest[]> =>
+    api.get('/vendor/kyc/requests').then(r => (Array.isArray(r.data) ? r.data : (ensureArray(r.data?.items) as VendorKycRequest[]))),
+  /** The vendor answers an open request; the KYC goes back to review. */
+  respondKyc: (data: { request_id: string; answers: InfoAnswer[] }): Promise<{ success: boolean }> =>
+    api.post('/vendor/kyc/respond', data).then(r => r.data),
   /** Signed upload URL for one KYC document; use uploadKycDocument() from services/kycDocuments. */
   kycUploadUrl: (data: { key: string; content_type: string; size: number }): Promise<{ path: string; token: string; signed_url: string }> =>
     api.post('/vendor/kyc/upload-url', data).then(r => r.data),

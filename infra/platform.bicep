@@ -60,6 +60,8 @@ param smtpSender string = ''
 var p = stage == 'live' ? prefix : '${prefix}-test'
 var gatewayHost = empty(dataDomain) ? '${p}-gateway.${env.properties.defaultDomain}' : dataDomain
 var minReplicas = stage == 'live' ? 1 : 0
+// Sign-in goes gateway > auth > rest (> api): keep those warm on test too, or the first sign-in after a quiet spell waits for four cold starts.
+var signInMinReplicas = 1
 // The test database (B1ms) accepts 50 connections, 10 reserved: PostgREST's 10 plus Realtime's ~14 left Realtime
 // "DatabaseLackOfConnections". Test traffic is light, so test keeps a small pool; live (B2s) keeps 10.
 var postgrestPool = stage == 'live' ? '10' : '4'
@@ -141,7 +143,7 @@ resource auth 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'GOTRUE_MAILER_URLPATHS_CONFIRMATION', value: '/auth/v1/verify' }
         ]
       }]
-      scale: { minReplicas: minReplicas, maxReplicas: 1 }
+      scale: { minReplicas: signInMinReplicas, maxReplicas: 1 }
     }
   }
 }
@@ -175,7 +177,7 @@ resource rest 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'PGRST_DB_POOL', value: postgrestPool }
         ]
       }]
-      scale: { minReplicas: minReplicas, maxReplicas: 1 }
+      scale: { minReplicas: signInMinReplicas, maxReplicas: 1 }
     }
   }
 }
@@ -356,7 +358,7 @@ resource gateway 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'KONG_NGINX_PROXY_PROXY_BUFFERS', value: '64 160k' }
         ]
       }]
-      scale: { minReplicas: minReplicas, maxReplicas: 1 }
+      scale: { minReplicas: signInMinReplicas, maxReplicas: 1 }
     }
   }
   dependsOn: [auth, rest, rt, storage]

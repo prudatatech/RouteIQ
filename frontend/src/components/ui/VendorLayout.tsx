@@ -14,7 +14,7 @@ import { StatusPill } from './StatusPill'
 import { LoadingState } from './Spinner'
 import { NotificationsBell } from './NotificationsBell'
 
-const KYC_STATUSES: KycStatus[] = ['pending', 'submitted', 'approved', 'rejected']
+const KYC_STATUSES: KycStatus[] = ['pending', 'submitted', 'info_requested', 'approved', 'rejected']
 
 /** Warms a route's JS chunk on hover/focus of its nav link (see `AppLayout` for the same pattern). */
 function prefetchRoute(to: string) {
@@ -116,7 +116,7 @@ export default function VendorLayout() {
       console.error('Sign-out failed', e)
     }
     clearAuth()
-    navigate('/vendor/login')
+    navigate('/login')
   }
 
   // A visitor sees only the public sections; the account pages appear once they sign in.
@@ -156,7 +156,7 @@ export default function VendorLayout() {
           <div className={clsx('min-w-0', !inMenu && 'text-right')}>
             <p className="truncate text-sm font-medium text-text">{vendorProfile.company_name || 'Your company'}</p>
             <StatusPill status={vendorProfile.kycStatus} className="mt-0.5">
-              {vendorProfile.kycStatus === 'approved' ? 'Verified' : vendorProfile.kycStatus === 'submitted' ? 'KYC in review' : vendorProfile.kycStatus === 'rejected' ? 'KYC rejected' : 'KYC needed'}
+              {vendorProfile.kycStatus === 'approved' ? 'Verified' : vendorProfile.kycStatus === 'submitted' ? 'KYC in review' : vendorProfile.kycStatus === 'info_requested' ? 'More details needed' : vendorProfile.kycStatus === 'rejected' ? 'KYC rejected' : 'KYC needed'}
             </StatusPill>
           </div>
         </div>
@@ -166,7 +166,7 @@ export default function VendorLayout() {
         : <IconButton label="Sign out" icon={<LogOut size={18} />} onClick={signOut} />}
     </div>
   ) : (
-    <NavLink to={`/vendor/login?next=${encodeURIComponent(location.pathname + location.search)}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+    <NavLink to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
       <LogIn size={16} aria-hidden="true" /> Sign in / Sign up
     </NavLink>
   )

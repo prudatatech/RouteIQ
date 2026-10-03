@@ -7,7 +7,8 @@ import { Button, Card, Skeleton } from '@/components/ui'
 import { saveGuestDraft } from '@/utils/guestDraft'
 import { errorMessage, formatDate, formatKg } from '@/utils/display'
 import type { LoadSummary } from '@/types/load'
-import { repostToDraft } from './logic'
+import { repostToDraft } from './draft'
+import { isPriority, priorityLabel, rangeText } from './logic'
 
 const statusText = (s: string) => s.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
 
@@ -25,8 +26,8 @@ export default function PostedLoads({ enabled = true }: { enabled?: boolean }) {
   const repost = useMutation({
     mutationFn: (id: string) => vendorAPI.repostLoad(id).then(payload => ({ id, payload })),
     onSuccess: ({ id, payload }) => {
-      // The form opens with everything filled in except the dates, on the step where the date is chosen.
-      saveGuestDraft('load', { ...repostToDraft(payload, id), step: 2 })
+      // The form opens with everything filled in except the dates, on the first step where the pickup date is chosen.
+      saveGuestDraft('load', { ...repostToDraft(payload, id), step: 0 })
       navigate('/vendor/request')
     },
     onError: err => toast.error(errorMessage(err, 'We could not copy this load. Try again.')),
@@ -53,7 +54,11 @@ export default function PostedLoads({ enabled = true }: { enabled?: boolean }) {
               <p className="text-sm text-muted">
                 {l.pickup_date ? `Pickup ${formatDate(l.pickup_date)}` : 'No pickup date'}
                 {l.total_weight_kg ? ` · ${formatKg(l.total_weight_kg)}` : ''}
+                {isPriority(l.priority) ? ` · ${priorityLabel(l.priority)} priority` : ''}
               </p>
+              {rangeText(l.price_min_inr, l.price_max_inr) && (
+                <p className="text-sm text-muted tabular" data-testid={`posted-range-${l.id}`}>Recommended freight {rangeText(l.price_min_inr, l.price_max_inr)}</p>
+              )}
             </div>
             <Button
               variant="secondary" size="sm" icon={<RotateCcw size={14} />}

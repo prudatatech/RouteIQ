@@ -61,6 +61,10 @@ export interface MarketLoad {
   quote_requested: boolean
   quote_deadline: string | null
   my_quote: MyQuote | null
+  priority?: 'high' | 'medium' | 'low' | null
+  /** The recommended freight range; a company can book at any price in it. Null when none could be worked out. */
+  price_min_inr?: number | null
+  price_max_inr?: number | null
 }
 
 export interface QuoteInput {

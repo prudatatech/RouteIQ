@@ -122,7 +122,7 @@ export default function VendorInvoicesPage() {
         <PageHeader title="Invoices and proofs" description="Your invoices, and the proof of delivery for each load." />
         <EmptyState
           title="Sign in to see your invoices"
-          action={<Link to={`/vendor/login?next=${encodeURIComponent('/vendor/invoices')}`} className={buttonClasses({ variant: 'primary' })}>Sign in</Link>}
+          action={<Link to={`/login?next=${encodeURIComponent('/vendor/invoices')}`} className={buttonClasses({ variant: 'primary' })}>Sign in</Link>}
         />
       </Page>
     )

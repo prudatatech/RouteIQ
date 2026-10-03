@@ -906,7 +906,10 @@
     "quote_deadline",
     "awarded_at",
     "awarded_quote_id",
-    "quote_escalated_at"
+    "quote_escalated_at",
+    "priority",
+    "price_min_inr",
+    "price_max_inr"
   ],
   "customer_bookings": [
     "id",
@@ -1509,5 +1512,16 @@
     "prefix",
     "period",
     "last_seq"
+  ],
+  "kyc_info_requests": [
+    "id",
+    "vendor_id",
+    "message",
+    "items",
+    "status",
+    "requested_by",
+    "requested_at",
+    "answered_at",
+    "answers"
   ]
 }

@@ -32,7 +32,7 @@ param placeholderPort int = 80
 @description('Minimum api replicas. Defaults: live 1 (see the hard requirement below), test 0 (scales to zero).')
 @minValue(0)
 @maxValue(1)
-param apiMinReplicas int = stage == 'live' ? 1 : 0
+param apiMinReplicas int = 1
 
 @description('Custom web domain of this stage (live: portal.margixindia.com, test: staging.margixindia.com): added to CORS and used as WEB_APP_URL.')
 param customDomain string = ''

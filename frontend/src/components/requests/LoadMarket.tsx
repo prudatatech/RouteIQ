@@ -5,6 +5,8 @@ import { DataTable, StatusPill, Tabs, useTabParam, type Column } from '@/compone
 import { useCountdown } from '@/components/vendor/quoteTime'
 import { formatDate, formatKg, formatRupees } from '@/utils/display'
 import type { MarketLoad, MarketTab } from '@/types/routing'
+import PriorityBadge from './PriorityBadge'
+import { freightRange } from './quoteRules'
 
 const MARKET_TABS: readonly MarketTab[] = ['new', 'quoted', 'won', 'lost']
 const MARKET_LABELS: Record<MarketTab, string> = { new: 'New', quoted: 'Quoted', won: 'Won', lost: 'Lost' }
@@ -18,7 +20,7 @@ const EMPTY_TITLES: Record<MarketTab, string> = {
 /** The badge: a quote is wanted, and how long is left. */
 function QuoteBadge({ load }: { load: MarketLoad }) {
   const left = useCountdown(load.quote_requested ? load.quote_deadline : null)
-  if (!load.quote_requested) return <span className="text-muted">Direct accept</span>
+  if (!load.quote_requested) return <span className="text-muted">{freightRange(load) ? 'Book in range' : 'Direct accept'}</span>
   return <StatusPill tone={left === 'Time is up' ? 'warning' : 'info'}>{left ? `Quote wanted, ${left}` : 'Quote wanted'}</StatusPill>
 }
 
@@ -40,7 +42,15 @@ const columns: Column<MarketLoad>[] = [
   },
   { key: 'weight', header: 'Weight', hideBelow: 'lg', align: 'right', sortValue: r => r.weight_kg, cell: r => <span className="tabular">{formatKg(r.weight_kg)}</span> },
   { key: 'value', header: 'Value', hideBelow: 'xl', align: 'right', sortValue: r => r.declared_value, cell: r => <span className="tabular">{r.declared_value ? formatRupees(r.declared_value) : '—'}</span> },
-  { key: 'budget', header: 'Budget', align: 'right', sortValue: r => r.budget_inr, cell: r => <span className="tabular">{r.budget_inr ? formatRupees(r.budget_inr) : <span className="text-muted">Not given</span>}</span> },
+  { key: 'priority', header: 'Priority', cell: r => <PriorityBadge priority={r.priority} /> },
+  {
+    key: 'range', header: 'Recommended freight', align: 'right', sortValue: r => r.price_min_inr ?? r.budget_inr,
+    cell: r => {
+      const range = freightRange(r)
+      if (range) return <span className="tabular" data-testid={`range-${r.id}`}>{formatRupees(range.min)} – {formatRupees(range.max)}</span>
+      return <span className="tabular">{r.budget_inr ? formatRupees(r.budget_inr) : <span className="text-muted">Not given</span>}</span>
+    },
+  },
   { key: 'quote', header: 'Quote', cell: r => <QuoteBadge load={r} /> },
   {
     key: 'mine', header: 'My quote', align: 'right', sortValue: r => r.my_quote?.amount_inr,

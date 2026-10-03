@@ -27,6 +27,15 @@ const get = (token, path, opts) => api(token, 'GET', path, undefined, opts)
 const msg = (r) => (r.body && (r.body.detail || r.body.error || r.body.message)) || JSON.stringify(r.body)?.slice(0, 120)
 const has = (r, text) => String(msg(r)).toLowerCase().includes(text.toLowerCase())
 async function post(vendor, over = {}) { return api(vendor.token, 'POST', '/vendor/loads', loadBody(over)) }
+// A load posted with a recommended range (price_min_inr..price_max_inr) is booked at an amount inside it; one without a range at its budget.
+// Returns the accept response, and `at` = the amount asked for (null: the budget).
+async function acceptLoad(token, id, amount) {
+  let at = amount ?? null
+  if (at === null) { const d = await get(token, `/company/loads/${id}`); if (d.body?.price_min_inr != null) at = Number(d.body.price_min_inr) }
+  const r = await api(token, 'POST', `/company/loads/${id}/accept`, at === null ? {} : { amount_inr: at })
+  r.at = at
+  return r
+}
 async function loadRow(id) { return (await db('GET', 'vendor_shipment_requests', { query: `id=eq.${id}&select=*` })).body?.[0] }
 async function notesFor(userId, type) { return (await db('GET', 'notifications', { query: `user_id=eq.${userId}${type ? `&type=eq.${type}` : ''}&select=title,body,type,data,is_read&order=created_at.desc` })).body || [] }
 async function waitNotes(userId, type, pred, secs = 60) {
@@ -439,17 +448,30 @@ async function s2() {
   const noBudget = await post(v, { quote_requested: false })
   const nb = await api(S.adminA.token, 'POST', `/company/loads/${noBudget.body.id}/accept`, {})
   check('2.76 direct accept with no budget and no amount is refused (400)', nb.status === 400, `${nb.status} ${msg(nb)}`)
-  const d1 = await api(S.adminA.token, 'POST', `/company/loads/${dir.body.id}/accept`, {})
-  check('2.77 direct accept at the vendor budget works (awarded at 88000)', d1.status === 200 && Number(d1.body.quote?.amount_inr) === 88000 && d1.body.load?.carrier_org_id === S.coA.id, `${d1.status} ${msg(d1)}`)
-  const d2 = await api(S.adminB.token, 'POST', `/company/loads/${dir.body.id}/accept`, {})
+  const d1 = await acceptLoad(S.adminA.token, dir.body.id)
+  const paid = d1.at ?? 88000
+  check('2.77 direct accept works (at the vendor budget, or inside the recommended range when the load has one)', d1.status === 200 && Number(d1.body.quote?.amount_inr) === paid && d1.body.load?.carrier_org_id === S.coA.id, `${d1.status} ${msg(d1)}`)
+  const d2 = await acceptLoad(S.adminB.token, dir.body.id)
   check('2.78 the second company\'s accept finds the load gone (404 or 409)', [404, 409].includes(d2.status), `${d2.status}`)
   const dvn = await notesFor(v.id, 'request_approved')
   check('2.79 the vendor is told "Load accepted"', dvn.some(n => n.data?.request_id === dir.body.id), '')
   const awardedRow = await loadRow(dir.body.id)
-  check('2.80 direct accept: status approved, cost 88000, quote row accepted', awardedRow.status === 'approved' && Number(awardedRow.cost) === 88000 && awardedRow.awarded_quote_id, JSON.stringify({ s: awardedRow.status, c: awardedRow.cost }))
+  check('2.80 direct accept: status approved, cost = the amount, quote row accepted', awardedRow.status === 'approved' && Number(awardedRow.cost) === paid && awardedRow.awarded_quote_id, JSON.stringify({ s: awardedRow.status, c: awardedRow.cost }))
+  // a load with a recommended range is booked inside it (only when the estimator produced one on this stack)
+  const ranged = await post(v, { quote_requested: false })
+  const rr = await loadRow(ranged.body.id)
+  if (rr?.price_min_inr != null && rr?.price_max_inr != null) {
+    check('2.80a a new load stores the server-computed range and the default priority', Number(rr.price_min_inr) <= Number(rr.price_max_inr) && rr.priority === 'medium', JSON.stringify({ lo: rr.price_min_inr, hi: rr.price_max_inr, p: rr.priority }))
+    const out = await api(S.adminA.token, 'POST', `/company/loads/${ranged.body.id}/accept`, { amount_inr: Number(rr.price_max_inr) + 1000 })
+    check('2.80b accepting above the recommended range is refused (400)', out.status === 400, `${out.status} ${msg(out)}`)
+    const none = await api(S.adminA.token, 'POST', `/company/loads/${ranged.body.id}/accept`, {})
+    check('2.80c accepting a ranged load without an amount is refused (400)', none.status === 400, `${none.status} ${msg(none)}`)
+    const inside = await api(S.adminA.token, 'POST', `/company/loads/${ranged.body.id}/accept`, { amount_inr: Number(rr.price_max_inr) })
+    check('2.80d accepting at the top of the range works', inside.status === 200 && Number(inside.body.quote?.amount_inr) === Number(rr.price_max_inr), `${inside.status} ${msg(inside)}`)
+  } else console.log('   (observation) no freight estimate on this stack: the range checks 2.80a-d were skipped')
   // two companies accept at the same time
   const dir2 = await post(v, { budget_inr: 70000 })
-  const [x, y] = await Promise.all([api(S.adminA.token, 'POST', `/company/loads/${dir2.body.id}/accept`, {}), api(S.adminB.token, 'POST', `/company/loads/${dir2.body.id}/accept`, {})])
+  const [x, y] = await Promise.all([acceptLoad(S.adminA.token, dir2.body.id), acceptLoad(S.adminB.token, dir2.body.id)])
   const wins = [x, y].filter(z => z.status === 200).length
   check('2.81 two companies accepting at once: exactly one wins, the other is 404/409, never a 500', wins === 1 && [x, y].every(z => z.status < 500), `${x.status},${y.status}`)
   // award a fresh row: cancel flow
@@ -621,7 +643,8 @@ async function s4() {
   const stranger = await makeVendor({ approved: false })
   const lp = await post(v, { budget_inr: 88000, quote_requested: false, items: items({ declared_value: 150000 }) })
   const id = lp.body.id
-  let r = await api(S.adminA.token, 'POST', `/company/loads/${id}/accept`, {})
+  let r = await acceptLoad(S.adminA.token, id)
+  const agreed4 = r.at ?? 88000
   check('4.01 setup: load awarded to company A', r.status === 200, `${r.status} ${msg(r)}`)
   const D = (path) => `/loads/${id}/documents${path || ''}`
 
@@ -712,7 +735,7 @@ async function s4() {
   r = await api(S.adminA.token, 'POST', D('/generate/invoice'), {})
   check('4.37 an unknown kind is a 404, not a 500', r.status === 404, `${r.status}`)
   r = await api(S.adminA.token, 'POST', `/loads/${id}/settlement`, {})
-  check('4.38 settlement opens at the agreed price of 88,000', r.status === 200 && r.body.agreed_freight === 88000, `${r.status} ${msg(r)}`)
+  check('4.38 settlement opens at the agreed price (the booked amount)', r.status === 200 && Number(r.body.agreed_freight) === agreed4, `${r.status} ${msg(r)}`)
   r = await api(S.adminA.token, 'POST', `/loads/${id}/settlement/close`, {})
   check('4.39 closing the trip without a final POD is refused (409)', r.status === 409, `${r.status} ${msg(r)}`)
   r = await api(S.adminA.token, 'POST', D(), { kind: 'pod', status: 'final', doc_date: dayKey(0), fields: { complete: true, delivered_at: new Date().toISOString(), receiver_name: 'R. Kumar', delivered_quantity: 400 } })
@@ -737,7 +760,7 @@ async function s4() {
 
   // dispatch block on a fresh load with vehicle and driver
   const lp2 = await post(v, { budget_inr: 90000, quote_requested: false })
-  await api(S.adminA.token, 'POST', `/company/loads/${lp2.body.id}/accept`, {})
+  await acceptLoad(S.adminA.token, lp2.body.id)
   const drv = await makeDriver(S.coA.id)
   const veh = await mkVehicle(S.coA, { driver_id: drv.id, driver_name: 'UAT Driver', available_capacity_kg: 25000, capacity_kg: 25000 })
   r = await api(S.adminA.token, 'PUT', `/vendor/shipment-request/${lp2.body.id}/assign-vehicle`, { vehicle_id: veh.id })
@@ -781,10 +804,10 @@ async function s5() {
   const mineRow = Array.isArray(r.body) ? r.body.find(x => x.id === id) : null
   check('5.01 the loads board lists the new load with a stage', r.status === 200 && mineRow && (mineRow.stage || mineRow.status), `${r.status} ${JSON.stringify(mineRow)?.slice(0, 200)}`)
   const stageOpen = mineRow?.stage
-  await api(S.adminA.token, 'POST', `/company/loads/${id}/accept`, {})
+  const acc5 = await acceptLoad(S.adminA.token, id)
   r = await get(v.token, '/vendor/loads')
   const after = r.body.find(x => x.id === id)
-  check('5.02 after a company accepts, the board stage changes and the price shows', after && after.stage !== stageOpen && Number(after.cost ?? after.price ?? 0) === 70000, JSON.stringify(after)?.slice(0, 250))
+  check('5.02 after a company accepts, the board stage changes and the price shows', after && after.stage !== stageOpen && Number(after.cost ?? after.price ?? 0) === (acc5.at ?? 70000), JSON.stringify(after)?.slice(0, 250))
   const names = JSON.stringify(after)
   check('5.03 the board shows the company by name but no GSTIN / phone', !/gstin|phone/i.test(names), names.slice(0, 200))
   const od = await get(other.token, '/vendor/loads')

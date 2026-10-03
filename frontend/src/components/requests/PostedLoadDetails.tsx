@@ -4,10 +4,10 @@ import GstSummary from '@/components/load-post/GstSummary'
 import { publicAPI, vendorAPI } from '@/services/api'
 import { formatDate, formatKg, formatRupees } from '@/utils/display'
 import type { LoadItem } from '@/types/load'
+import { priorityLabel } from '@/components/load-post/logic'
 import { specialHandlingLabels, taxFromItems, temperatureText, type PostedLoadFields } from './postedLoad'
 
 const SLOT: Record<string, string> = { morning: 'Morning (6am–12pm)', afternoon: 'Afternoon (12pm–6pm)', evening: 'Evening (6pm–10pm)' }
-const yesNo = (v: boolean | null | undefined) => (v ? 'Yes' : 'No')
 const place = (address: string | null, city: string | null, pin: string | null) => [address, city, pin].filter(Boolean).join(', ') || null
 const contact = (name: string | null, phone: string | null) => [name, phone].filter(Boolean).join(' · ') || null
 const tonnes = (t: number | string | null) => (t == null || t === '' ? null : `${Number(t).toLocaleString('en-IN', { maximumFractionDigits: 2 })} t`)
@@ -46,8 +46,9 @@ export default function PostedLoadDetails({ request }: { request: { id: string }
         <Heading>Load</Heading>
         <DetailList items={[
           { label: 'Load number', value: <span className="font-mono font-medium" data-testid="posted-load-number">{r.load_number}</span> },
-          { label: 'Quote requested', value: yesNo(r.quote_requested) },
-          { label: 'Budget', value: r.budget_inr != null && r.budget_inr !== '' ? <span className="tabular">{formatRupees(r.budget_inr)}</span> : 'Not given' },
+          { label: 'Priority', value: r.priority ? priorityLabel(r.priority) : 'Medium' },
+          { label: 'Recommended freight', value: r.price_min_inr != null && r.price_max_inr != null && r.price_min_inr !== '' ? <span className="tabular">{formatRupees(r.price_min_inr)} – {formatRupees(r.price_max_inr)}</span> : 'Not worked out' },
+          ...(r.budget_inr != null && r.budget_inr !== '' ? [{ label: 'Budget (older load)', value: <span className="tabular">{formatRupees(r.budget_inr)}</span> }] : []),
           { label: 'Total weight', value: <span className="tabular">{formatKg(r.total_weight_kg)}</span> },
           { label: 'Total declared value', value: <span className="tabular">{formatRupees(r.total_declared_value)}</span> },
           { label: 'e-Way Bill', value: r.eway_required ? 'Needed. The carrier or company adds it after assignment.' : 'Not needed' },
@@ -92,7 +93,7 @@ export default function PostedLoadDetails({ request }: { request: { id: string }
           { label: 'Address', value: place(r.pickup_address ?? null, r.pickup_city ?? null, r.pickup_pincode ?? null) },
           { label: 'Date and slot', value: [r.pickup_date ? formatDate(r.pickup_date) : null, r.pickup_slot ? SLOT[r.pickup_slot] : null].filter(Boolean).join(', ') || null },
           { label: 'Contact', value: contact(r.pickup_contact_name ?? null, r.pickup_contact_phone ?? null) },
-          { label: 'Loading dock', value: r.loading_dock == null ? 'Not said' : yesNo(r.loading_dock) },
+          ...(r.loading_dock ? [{ label: 'Loading dock', value: 'Available' }] : []),
           ...(r.access_restrictions ? [{ label: 'Access restrictions', value: r.access_restrictions }] : []),
         ]} />
       </div>
@@ -101,7 +102,7 @@ export default function PostedLoadDetails({ request }: { request: { id: string }
         <Heading>Delivery</Heading>
         <DetailList items={[
           { label: 'Address', value: place(r.delivery_address ?? null, r.delivery_city ?? null, r.delivery_pincode ?? null) },
-          { label: 'Preferred date', value: r.delivery_date ? formatDate(r.delivery_date) : 'Not given' },
+          ...(r.delivery_date ? [{ label: 'Preferred date', value: formatDate(r.delivery_date) }] : []),
           { label: 'Contact', value: contact(r.delivery_contact_name ?? null, r.delivery_contact_phone ?? null) },
         ]} />
       </div>
@@ -114,8 +115,8 @@ export default function PostedLoadDetails({ request }: { request: { id: string }
           { label: 'Capacity', value: tonnes(r.capacity_t ?? null) },
           ...(temperature ? [{ label: 'Temperature', value: temperature }] : []),
           ...(handling.length > 0 ? [{ label: 'Special handling', value: handling.join(', ') }] : []),
-          { label: 'Loading help', value: yesNo(r.loading_help) },
-          { label: 'Unloading help', value: yesNo(r.unloading_help) },
+          ...(r.loading_help ? [{ label: 'Loading help', value: 'Needed' }] : []),
+          ...(r.unloading_help ? [{ label: 'Unloading help', value: 'Needed' }] : []),
         ]} />
       </div>
     </section>

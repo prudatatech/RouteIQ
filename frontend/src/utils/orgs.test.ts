@@ -20,8 +20,12 @@ describe('pickActiveOrgId', () => {
     expect(pickActiveOrgId([m('a', 'vendor'), m('b', 'platform')], 'b')).toBe('b')
   })
   it('falls back to the first membership when the remembered org is gone or none is remembered', () => {
-    expect(pickActiveOrgId([m('a', 'vendor'), m('b', 'platform')], 'zzz')).toBe('a')
+    expect(pickActiveOrgId([m('a', 'vendor')], 'zzz')).toBe('a')
     expect(pickActiveOrgId([m('a', 'vendor')], null)).toBe('a')
+  })
+  it('prefers the platform the user runs over a company when nothing is remembered', () => {
+    expect(pickActiveOrgId([m('co', 'logistic_company'), m('pl', 'platform')], null)).toBe('pl')
+    expect(pickActiveOrgId([m('co', 'logistic_company'), m('pl', 'platform')], 'co')).toBe('co')
   })
   it('is null for no memberships', () => {
     expect(pickActiveOrgId([], 'a')).toBeNull()
@@ -31,12 +35,12 @@ describe('pickActiveOrgId', () => {
 describe('org store', () => {
   it('chooses and persists a default, then restores the remembered org', () => {
     useOrgStore.getState().setMemberships([m('a', 'vendor'), m('b', 'platform')])
-    expect(useOrgStore.getState().activeOrgId).toBe('a')
-    useOrgStore.getState().setActiveOrg('b')
-    expect(store.get(ORG_STORAGE_KEY)).toBe('b')
+    expect(useOrgStore.getState().activeOrgId).toBe('b')
+    useOrgStore.getState().setActiveOrg('a')
+    expect(store.get(ORG_STORAGE_KEY)).toBe('a')
     useOrgStore.setState({ memberships: [], activeOrgId: null })
     useOrgStore.getState().setMemberships([m('a', 'vendor'), m('b', 'platform')])
-    expect(selectActiveMembership(useOrgStore.getState())?.org.id).toBe('b')
+    expect(selectActiveMembership(useOrgStore.getState())?.org.id).toBe('a')
   })
   it('ignores a switch to an org the user is not in', () => {
     useOrgStore.getState().setMemberships([m('a', 'vendor')])

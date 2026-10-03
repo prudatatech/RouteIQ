@@ -111,6 +111,10 @@ export interface VendorLoad {
   pieces: number | null;
   price: number | null;
   price_source: 'agreed' | 'offered' | 'bid' | null;
+  /** The vendor's priority and the recommended freight range of a posted load (null for return-trip space). */
+  priority: 'high' | 'medium' | 'low' | null;
+  price_min_inr: number | null;
+  price_max_inr: number | null;
   truck: { plate_number: string | null; vehicle_type: string | null } | null;
   /** The code for /track/:code, once a truck carries the goods. */
   tracking_id: string | null;
@@ -225,6 +229,7 @@ async function assemble(requests: any[], shipments: any[], vendorId: string): Pr
       pickup: text(r.pickup_location), drop: text(r.drop_location),
       weight_kg: num(r.required_capacity_kg), pieces: (c?.pieces.total ?? null) ?? pieceCount(r.metadata),
       price: agreed && agreed > 0 ? agreed : offered, price_source: agreed && agreed > 0 ? 'agreed' : offered ? 'offered' : null,
+      priority: r.priority ?? 'medium', price_min_inr: num(r.price_min_inr), price_max_inr: num(r.price_max_inr),
       truck: vehicle ? { plate_number: vehicle.plate_number ?? null, vehicle_type: vehicle.vehicle_type ?? null } : null,
       tracking_id: c ? manifestParcelCode(c.id) : null,
       with_partner: r.status === 'assigned_to_partner' || r.status === 'escalated',
@@ -246,6 +251,7 @@ async function assemble(requests: any[], shipments: any[], vendorId: string): Pr
       pickup: text(s.origin_address) ?? text(s.origin_name), drop: s.__drop ?? null,
       weight_kg: num(s.total_weight_kg), pieces: c.pieces.total,
       price: num(s.__bid_amount), price_source: s.__bid_amount != null ? 'bid' : null,
+      priority: null, price_min_inr: null, price_max_inr: null,
       truck: vehicle ? { plate_number: vehicle.plate_number ?? null, vehicle_type: vehicle.vehicle_type ?? null } : null,
       tracking_id: c.code, with_partner: false, rejection_reason: null,
       created_at: s.created_at ?? null, delivered_at: at,
@@ -276,7 +282,7 @@ async function wonSpace(vendorId: string, only?: string): Promise<any[]> {
 export async function listVendorLoads(vendorId: string): Promise<VendorLoad[]> {
   const { data, error } = await supabase
     .from('vendor_shipment_requests')
-    .select('id, load_number, status, pickup_location, drop_location, required_capacity_kg, cost, rejection_reason, created_at, metadata')
+    .select('id, load_number, status, pickup_location, drop_location, required_capacity_kg, cost, rejection_reason, created_at, metadata, priority, price_min_inr, price_max_inr')
     .eq('vendor_id', vendorId)
     .order('created_at', { ascending: false });
   if (error) throw new Error(`Failed to read your loads: ${error.message}`);
@@ -304,7 +310,7 @@ export interface VendorLoadDetail extends VendorLoad {
 export async function vendorLoadDetail(vendorId: string, id: string): Promise<VendorLoadDetail> {
   const { data: request, error } = await supabase
     .from('vendor_shipment_requests')
-    .select('id, load_number, vendor_id, status, pickup_location, drop_location, required_capacity_kg, cost, rejection_reason, created_at, metadata')
+    .select('id, load_number, vendor_id, status, pickup_location, drop_location, required_capacity_kg, cost, rejection_reason, created_at, metadata, priority, price_min_inr, price_max_inr')
     .eq('id', id).maybeSingle();
   if (error) throw new Error(`Failed to read the load: ${error.message}`);
 

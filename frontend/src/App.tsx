@@ -16,7 +16,7 @@ import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
-  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminAudit, money, invoicePage, adminSettings, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, vendorInvoices,
+  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminAudit, money, invoicePage, adminSettings, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, vendorInvoices,
   ship, vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -37,6 +37,7 @@ const RoutePlannerPage = routePlanner.Component
 const UsersPage = adminUsers.Component
 const PersonPage = adminPerson.Component
 const KycReviewPage = adminKyc.Component
+const VendorReviewPage = adminVendorReview.Component
 const AuditLogPage = adminAudit.Component
 const MoneyPage = money.Component
 const InvoicePage = invoicePage.Component
@@ -192,9 +193,10 @@ export default function App() {
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <ChunkErrorBoundary>
         <Routes>
-          <Route path="/login" element={<LoginPage audience="staff" />} />
-          <Route path="/vendor/login" element={<LoginPage audience="vendor" />} />
-          <Route path="/3pl/login" element={<LoginPage audience="tpl" />} />
+          <Route path="/login" element={<LoginPage />} />
+          {/* one sign-in for everyone; the old per-audience addresses still open it */}
+          <Route path="/vendor/login" element={<MovedTo to="/login" />} />
+          <Route path="/3pl/login" element={<MovedTo to="/login" />} />
           {/* A logistics company registers (after signing up or in) and waits for the platform to approve it */}
           <Route path="/register-company" element={<LazyRoute><PrivateRoute><RegisterCompanyPage /></PrivateRoute></LazyRoute>} />
           <Route path="/waiting-for-approval" element={<LazyRoute><PrivateRoute><WaitingForApprovalPage /></PrivateRoute></LazyRoute>} />
@@ -423,6 +425,11 @@ export default function App() {
             <Route path="admin/kyc" element={
               <PrivateRoute allowedRoles={ADMINS}>
                 <KycReviewPage />
+              </PrivateRoute>
+            } />
+            <Route path="admin/kyc/:vendorId" element={
+              <PrivateRoute allowedRoles={ADMINS}>
+                <VendorReviewPage />
               </PrivateRoute>
             } />
             <Route path="admin/audit" element={

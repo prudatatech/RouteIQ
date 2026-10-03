@@ -211,7 +211,7 @@ export default function VendorCorridorPage() {
     if (!guestBidding) return
     const draft: BidDraft = { windowId: guestBidding.id, window: toBidWindow(guestBidding), fields }
     if (!saveGuestDraft('bid', draft)) toast('We could not save your bid on this device, so you may need to fill it in again after signing in.')
-    navigate(`/vendor/login?next=${encodeURIComponent(`/vendor/return-trips?bid=${guestBidding.id}&resume=1`)}`)
+    navigate(`/login?next=${encodeURIComponent(`/vendor/return-trips?bid=${guestBidding.id}&resume=1`)}`)
   }
 
   // Back from sign-in: reopen the bid form with what was typed. The vendor confirms; nothing is placed automatically.

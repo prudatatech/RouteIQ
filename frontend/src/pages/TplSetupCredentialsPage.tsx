@@ -53,7 +53,7 @@ export default function TplSetupCredentialsPage() {
     try {
       await tplAPI.setupPassword(email.trim(), otp, password)
       toast.success('Password set. You can now sign in.')
-      navigate(`/3pl/login?email=${encodeURIComponent(email)}`)
+      navigate(`/login?email=${encodeURIComponent(email)}`)
     } catch (err) {
       console.error(err)
       setFormError(errorMessage(err, 'That code did not work. Check it, or ask for a new one.'))
@@ -109,7 +109,7 @@ export default function TplSetupCredentialsPage() {
         </Card>
 
         <p className="text-center text-sm text-muted">
-          Already set it up? <Link to="/3pl/login" className="font-medium text-brand hover:underline">Sign in</Link>
+          Already set it up? <Link to="/login" className="font-medium text-brand hover:underline">Sign in</Link>
         </p>
       </div>
     </div>

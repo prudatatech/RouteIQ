@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
-import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { Eye, EyeOff } from 'lucide-react'
@@ -7,21 +7,17 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/services/supabase'
 import { destinationFor, loadAccount } from '@/services/account'
 import OtpModal from '@/components/load-post/OtpModal'
-import {
-  accountKindOf, homeForKind, legacyAudiencePath, LOGIN_PATH, nextForKind, wrongPageMessage, KIND_LABEL, type AccountKind,
-} from '@/utils/accountKind'
+import { accountKindOf, homeForKind, LOGIN_PATH, nextForKind } from '@/utils/accountKind'
 import { orgAPI } from '@/services/api'
 import { useOrgStore } from '@/store/orgStore'
 import { destinationForOrgs } from '@/utils/orgAccess'
 import { useAuthStore } from '@/store/authStore'
 import { safeNextPath } from '@/utils/safeNext'
-import type { Membership } from '@/utils/orgs'
+import { platformMembership, type Membership } from '@/utils/orgs'
 import {
   Alert, Button, Card, Field, IconButton, Input, LoadingState, controlClasses,
 } from '@/components/ui'
 
-type Audience = AccountKind
-interface WrongPage { text: string; to: string; linkLabel: string }
 type Mode = 'sign-in' | 'sign-up' | 'forgot' | 'reset'
 type FieldErrors = { email?: string; password?: string; confirm?: string }
 
@@ -36,35 +32,9 @@ const linkClass =
   'rounded-control font-medium text-brand underline-offset-2 hover:underline focus-visible:outline ' +
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand'
 
-/** Each sign-in page has its own title and copy. */
-const COPY: Record<Audience, { title: string; subtitle: string }> = {
-  staff: {
-    title: 'Sign in to MargixIndia',
-    subtitle: 'For logistic company staff, platform admins and drivers. Customers use the MargixIndia app, or can track a shipment from the tracking page.',
-  },
-  vendor: {
-    title: 'Vendor sign in',
-    subtitle: 'Post loads, find truck space and track your shipments.',
-  },
-  tpl: {
-    title: '3PL partner sign in',
-    subtitle: 'For approved 3PL partners: orders, earnings, lanes and documents.',
-  },
-}
-
-const OTHER_PAGES: Record<Audience, { question: string; label: string; to: string }[]> = {
-  staff: [
-    { question: 'Are you a vendor?', label: 'Vendor sign in', to: LOGIN_PATH.vendor },
-    { question: 'Are you a 3PL partner?', label: '3PL partner sign in', to: LOGIN_PATH.tpl },
-  ],
-  vendor: [
-    { question: 'Are you company staff or a driver?', label: 'Staff sign in', to: LOGIN_PATH.staff },
-    { question: 'Are you a 3PL partner?', label: '3PL partner sign in', to: LOGIN_PATH.tpl },
-  ],
-  tpl: [
-    { question: 'Are you company staff or a driver?', label: 'Staff sign in', to: LOGIN_PATH.staff },
-    { question: 'Are you a vendor?', label: 'Vendor sign in', to: LOGIN_PATH.vendor },
-  ],
+const COPY = {
+  title: 'Sign in to MargixIndia',
+  subtitle: 'One sign-in for logistic companies, vendors, 3PL partners and drivers. We take you to your own area.',
 }
 
 const modeTitles: Record<Exclude<Mode, 'sign-in'>, string> = {
@@ -144,28 +114,19 @@ function PasswordField({ label, value, onChange, autoComplete, error, hint, inpu
 }
 
 /**
- * The sign-in pages: /login (staff), /vendor/login and /3pl/login. Each accepts only its own kind of account
- * (utils/accountKind.ts); anyone else is signed out again and told which page to use. The old
- * /login?as=vendor and ?as=3pl links open the page of that audience, keeping next and the other parameters.
+ * The one sign-in page, for every kind of account (utils/accountKind.ts). After signing in, each account is sent to
+ * its own area: the platform console, a company's console, the vendor area, the 3PL portal or the driver app.
  */
-export default function LoginPage({ audience = 'staff' }: { audience?: Audience }) {
-  const { search, hash } = useLocation()
-  const legacy = audience === 'staff' ? legacyAudiencePath(new URLSearchParams(search).get('as')) : null
-  if (legacy) {
-    const rest = new URLSearchParams(search)
-    rest.delete('as')
-    const query = rest.toString()
-    return <Navigate to={{ pathname: legacy, search: query ? `?${query}` : '', hash }} replace />
-  }
-  return <SignInPage audience={audience} />
+export default function LoginPage() {
+  return <SignInPage />
 }
 
-function SignInPage({ audience }: { audience: Audience }) {
+function SignInPage() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const next = safeNextPath(params.get('next'))
   // "Register your logistic company": sign up or in, then the registration form
-  const registering = audience === 'staff' && params.get('register') === 'company'
+  const registering = params.get('register') === 'company'
 
   const authInitialized = useAuthStore(s => s.authInitialized)
   const token = useAuthStore(s => s.token)
@@ -176,9 +137,6 @@ function SignInPage({ audience }: { audience: Audience }) {
   const [confirm, setConfirm] = useState('')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState<string | null>(null)
-  const [wrongPage, setWrongPage] = useState<WrongPage | null>(null)
-  /** Someone already signed in with another kind of account opened this page: they keep their session. */
-  const [signedInAs, setSignedInAs] = useState<{ kind: AccountKind; home: string | null } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
@@ -189,8 +147,7 @@ function SignInPage({ audience }: { audience: Audience }) {
   const passwordRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLInputElement>(null)
 
-  const copy = COPY[audience]
-  const title = mode === 'sign-in' ? copy.title : registering && mode === 'sign-up' ? 'Register your logistic company' : modeTitles[mode]
+  const title = mode === 'sign-in' ? COPY.title : registering && mode === 'sign-up' ? 'Register your logistic company' : modeTitles[mode]
 
   useEffect(() => {
     const previous = document.title
@@ -203,7 +160,7 @@ function SignInPage({ audience }: { audience: Audience }) {
    * kind never keeps a session here: it is signed out and told which sign-in to use (unless it was already
    * signed in before this page opened, which only gets a notice).
    */
-  const finishSignIn = async (session: Session, alreadySignedIn = false) => {
+  const finishSignIn = async (session: Session) => {
     const signOut = async () => {
       await supabase.auth.signOut().catch(() => undefined)
       useAuthStore.getState().clearAuth()
@@ -224,19 +181,14 @@ function SignInPage({ audience }: { audience: Audience }) {
         await signOut()
         setFormError(NO_ACCESS)
         return
-      } else if (kind !== audience) {
-        if (alreadySignedIn) {
-          setSignedInAs({ kind, home: homeForKind(kind, account) })
-        } else {
-          await signOut()
-          setWrongPage(wrongPageMessage(audience, kind))
-        }
-        return
       } else if (kind === 'staff') {
         // A company waiting for approval has only the waiting screen
         useOrgStore.getState().setMemberships(memberships)
+        // The platform owner signs in to the platform console, even when they also sit in a company
+        const platform = platformMembership(memberships)
+        if (platform) useOrgStore.getState().setActiveOrg(platform.org.id)
         destination = destinationForOrgs(memberships, useOrgStore.getState().activeOrgId)
-          ?? nextForKind('staff', next) ?? homeForKind('staff', account)
+          ?? nextForKind('staff', next) ?? (platform ? '/platform/organisations' : homeForKind('staff', account))
       } else if (kind === 'vendor') {
         destination = destinationFor(account, next)
       } else {
@@ -265,7 +217,7 @@ function SignInPage({ audience }: { audience: Audience }) {
       setCheckingSession(false)
       return
     }
-    finishSignIn(session, true).finally(() => setCheckingSession(false))
+    finishSignIn(session).finally(() => setCheckingSession(false))
     // Runs once, when the stored session has been restored.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authInitialized])
@@ -279,7 +231,6 @@ function SignInPage({ audience }: { audience: Audience }) {
   const clearMessages = () => {
     setErrors({})
     setFormError(null)
-    setWrongPage(null)
     setNotice(null)
   }
 
@@ -313,7 +264,6 @@ function SignInPage({ audience }: { audience: Audience }) {
 
   const run = async (action: () => Promise<void>) => {
     setFormError(null)
-    setWrongPage(null)
     setNotice(null)
     setSubmitting(true)
     try {
@@ -345,8 +295,8 @@ function SignInPage({ audience }: { audience: Audience }) {
 
   const signUp = () => run(async () => {
     const back = registering
-      ? `${LOGIN_PATH.staff}?register=company`
-      : `${LOGIN_PATH[audience]}${next ? `?next=${encodeURIComponent(next)}` : ''}`
+      ? `${LOGIN_PATH}?register=company`
+      : `${LOGIN_PATH}${next ? `?next=${encodeURIComponent(next)}` : ''}`
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
@@ -368,7 +318,7 @@ function SignInPage({ audience }: { audience: Audience }) {
   })
 
   const sendResetLink = () => run(async () => {
-    const redirect = new URL(LOGIN_PATH[audience], window.location.origin)
+    const redirect = new URL(LOGIN_PATH, window.location.origin)
     redirect.searchParams.set('reset', '1')
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: redirect.toString() })
     if (error) {
@@ -395,12 +345,6 @@ function SignInPage({ audience }: { audience: Audience }) {
     await finishSignIn(session)
   })
 
-  const signOutHere = async () => {
-    await supabase.auth.signOut().catch(() => undefined)
-    useAuthStore.getState().clearAuth()
-    setSignedInAs(null)
-  }
-
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()
     if (submitting) return
@@ -423,7 +367,7 @@ function SignInPage({ audience }: { audience: Audience }) {
     reset: 'Save new password',
   }
   const subtitle = {
-    'sign-in': copy.subtitle,
+    'sign-in': COPY.subtitle,
     'sign-up': registering ? 'Create your account first. Next you add your company details.' : 'Find truck capacity, post loads and track your shipments.',
     forgot: 'Enter the email you sign in with. We will send you a link to set a new password.',
     reset: 'Choose a new password for your account.',
@@ -436,11 +380,6 @@ function SignInPage({ audience }: { audience: Audience }) {
     <form noValidate onSubmit={onSubmit} aria-labelledby="sign-in-title" className="space-y-4">
       {notice && <Alert tone="success">{notice}</Alert>}
       {formError && <Alert tone="danger">{formError}</Alert>}
-      {wrongPage && (
-        <Alert tone="danger">
-          {wrongPage.text} <Link className={linkClass} to={wrongPage.to}>{wrongPage.linkLabel}</Link>.
-        </Alert>
-      )}
 
       {mode !== 'reset' && (
         <Input
@@ -496,25 +435,19 @@ function SignInPage({ audience }: { audience: Audience }) {
 
   const otherOptions: ReactNode[] = []
   if (mode === 'sign-in') {
-    if (audience === 'staff') {
-      if (!registering) {
-        otherOptions.push(
-          <>Run a transport company? <Link className={linkClass} to="/login?register=company">Register your logistic company</Link></>,
-        )
-      }
+    if (!registering) {
       otherOptions.push(
-        <>Staff and driver accounts are created by your administrator.</>,
-        <>Have a tracking ID? <Link className={linkClass} to="/track">Track a shipment</Link></>,
-      )
-    } else if (audience === 'vendor') {
-      otherOptions.push(<>Just looking? <Link className={linkClass} to="/ship">Find a truck without signing in</Link></>)
-    } else {
-      otherOptions.push(
-        <>Approved partner without a password? <Link className={linkClass} to="/3pl/onboard/setup">Set up your partner login</Link></>,
-        <>Want to work with us as a 3PL partner? <Link className={linkClass} to="/3pl/onboard">Apply to join</Link></>,
-        <>Already applied? <Link className={linkClass} to="/3pl/onboard/track">Track your application</Link></>,
+        <>Run a transport company? <Link className={linkClass} to="/login?register=company">Register your logistic company</Link></>,
       )
     }
+    otherOptions.push(
+      <>Just looking? <Link className={linkClass} to="/ship">Find a truck without signing in</Link></>,
+      <>Have a tracking ID? <Link className={linkClass} to="/track">Track a shipment</Link></>,
+      <>Want to work with us as a 3PL partner? <Link className={linkClass} to="/3pl/onboard">Apply to join</Link></>,
+      <>Approved partner without a password? <Link className={linkClass} to="/3pl/onboard/setup">Set up your partner login</Link></>,
+      <>Already applied? <Link className={linkClass} to="/3pl/onboard/track">Track your application</Link></>,
+      <>Staff and driver accounts are created by your administrator.</>,
+    )
   } else if (mode === 'sign-up') {
     otherOptions.push(
       <>Already have an account? <button type="button" className={linkClass} onClick={() => switchMode('sign-in')}>Sign in</button></>,
@@ -545,17 +478,7 @@ function SignInPage({ audience }: { audience: Audience }) {
               <p className="mt-1 text-sm text-muted sm:text-base">{subtitle}</p>
 
               <Card padded className="mt-6">
-                {signedInAs ? (
-                  <div className="space-y-4">
-                    <Alert tone="info" title={`You are signed in with a ${KIND_LABEL[signedInAs.kind]}`}>
-                      This is the {copy.title.toLowerCase()} page. Open your own area, or sign out to use a different account here.
-                    </Alert>
-                    {signedInAs.home && (
-                      <Button size="lg" fullWidth onClick={() => navigate(signedInAs.home as string)}>Open my area</Button>
-                    )}
-                    <Button variant="secondary" size="lg" fullWidth onClick={signOutHere}>Sign out</Button>
-                  </div>
-                ) : resetLinkMissing ? (
+                {resetLinkMissing ? (
                   <div className="space-y-4">
                     <Alert tone="warning" title="This link has expired or was already used">
                       Reset links work once and for a limited time.
@@ -565,7 +488,7 @@ function SignInPage({ audience }: { audience: Audience }) {
                 ) : (
                   <>
                     {form}
-                    {audience === 'vendor' && mode === 'sign-in' && (
+                    {mode === 'sign-in' && (
                       <div className="mt-5 border-t border-border pt-4">
                         <p className="mb-2 text-sm text-muted">Prefer your mobile number? We text you a 6-digit code.</p>
                         <Button variant="secondary" size="lg" fullWidth onClick={() => setOtpOpen(true)}>Sign in with a mobile code</Button>
@@ -575,7 +498,7 @@ function SignInPage({ audience }: { audience: Audience }) {
                 )}
               </Card>
 
-              {audience === 'vendor' && mode === 'sign-in' && !signedInAs && !resetLinkMissing && (
+              {mode === 'sign-in' && !resetLinkMissing && (
                 <div className="mt-4 rounded-card border border-brand/40 bg-brand-soft p-4">
                   <p className="text-sm font-medium text-text">New here?</p>
                   <p className="mt-0.5 text-sm text-muted">Create a free vendor account. Anything you filled in is kept{next ? ' and you come straight back to it' : ''}.</p>
@@ -588,26 +511,17 @@ function SignInPage({ audience }: { audience: Audience }) {
               <ul className="mt-6 space-y-2 text-sm text-muted">
                 {otherOptions.map((option, i) => <li key={i}>{option}</li>)}
               </ul>
-              {mode === 'sign-in' && (
-                <ul className="mt-4 space-y-2 border-t border-border pt-4 text-sm text-muted" aria-label="Other sign-in pages">
-                  {OTHER_PAGES[audience].map(o => (
-                    <li key={o.to}>{o.question} <Link className={linkClass} to={o.to}>{o.label}</Link></li>
-                  ))}
-                </ul>
-              )}
             </>
           )}
         </div>
       </main>
 
-      {audience === 'vendor' && (
-        <OtpModal
-          open={otpOpen}
-          onClose={() => setOtpOpen(false)}
-          onUseEmail={() => setOtpOpen(false)}
-          onVerified={onOtpVerified}
-        />
-      )}
+      <OtpModal
+        open={otpOpen}
+        onClose={() => setOtpOpen(false)}
+        onUseEmail={() => setOtpOpen(false)}
+        onVerified={onOtpVerified}
+      />
     </div>
   )
 }

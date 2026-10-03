@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { vendorService } from '../services/vendor.service';
+import { vendorReviewService } from '../services/vendor-review.service';
 import { listVendorLoads, vendorLoadDetail } from '../services/vendor-loads.service';
 import { getCachedPaymentTermsDays } from '../services/company.service';
 import { effectiveDueDate, overdueDays } from '../services/invoice-detail.service';
@@ -18,7 +19,7 @@ import {
 import { getBusinessProfile, saveBusinessProfile } from '../services/loads/business-profile.service';
 import { acceptQuote, listVendorQuotes } from '../services/loads/order-routing';
 import {
-  KycDocumentsSchema, KycSubmitSchema, ShipmentRequestSchema, VendorLocationSchema, VendorProfileSchema,
+  KycDocumentsSchema, KycRespondSchema, KycSubmitSchema, RegistryQuerySchema, RequestInfoSchema, ShipmentRequestSchema, VendorLocationSchema, VendorProfileSchema,
   assertKycContent, parseBody,
 } from '../schemas/vendor';
 
@@ -160,6 +161,9 @@ router.post('/loads', requireAuth, requireRole('vendor'), rateLimitByUser('vendo
       load_number: out.load.load_number,
       status: out.load.status,
       duplicate: out.duplicate,
+      priority: out.load.priority ?? 'medium',
+      price_min_inr: out.load.price_min_inr ?? null,
+      price_max_inr: out.load.price_max_inr ?? null,
       status_note: out.status_note,
       load: out.load,
       items: out.items,
@@ -315,6 +319,54 @@ router.put('/shipment-request/:id/reject', requireAuth, requireRole(...STAFF_ROL
     const reason = parseRejectionReason(req.body?.reason);
     const request = await vendorService.rejectRequest(uuidParam(req.params.id, 'Request not found'), reason);
     res.json(request);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// ── The platform's review of a vendor (platform only) ──
+// Every vendor, with or without a KYC profile
+router.get('/registry', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
+  try {
+    res.json(await vendorReviewService.registry(parseBody(RegistryQuerySchema, req.query)));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// One vendor in full: account, business, KYC form and documents, information requests, history, activity
+router.get('/registry/:id', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
+  try {
+    res.json(await vendorReviewService.detail(uuidParam(req.params.id, 'Vendor not found')));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Ask a vendor whose KYC is waiting for more information (the KYC moves to info_requested)
+router.post('/kyc/:id/request-info', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
+  try {
+    const input = parseBody(RequestInfoSchema, req.body);
+    res.status(201).json(await vendorReviewService.requestInfo(uuidParam(req.params.id, 'Vendor not found'), input, req.user));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// The vendor's own open information requests
+router.get('/kyc/requests', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    res.json(await vendorReviewService.openRequests(req.user.user_id));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// The vendor answers a request; the KYC goes back to the platform for review
+router.post('/kyc/respond', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
+  try {
+    const input = parseBody(KycRespondSchema, req.body);
+    res.json(await vendorReviewService.respond(req.user.user_id, input.request_id, input.answers));
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }

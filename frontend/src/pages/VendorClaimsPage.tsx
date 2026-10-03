@@ -105,7 +105,7 @@ export default function VendorClaimsPage() {
         <PageHeader title="Claims" description="Money you ask for when goods are damaged, short or lost." />
         <EmptyState
           title="Sign in to see your claims"
-          action={<Link to={`/vendor/login?next=${encodeURIComponent('/vendor/claims')}`} className={buttonClasses({ variant: 'primary' })}>Sign in</Link>}
+          action={<Link to={`/login?next=${encodeURIComponent('/vendor/claims')}`} className={buttonClasses({ variant: 'primary' })}>Sign in</Link>}
         />
       </Page>
     )

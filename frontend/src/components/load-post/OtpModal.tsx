@@ -100,7 +100,7 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
         <p className="text-sm text-muted">
           {onUseEmail
             ? <>Prefer email? <button type="button" onClick={onUseEmail} className="font-medium text-brand hover:underline">Sign in with email and password</button>.</>
-            : <>Prefer email? <Link to={emailSignInHref ?? '/vendor/login'} className="font-medium text-brand hover:underline">Sign in with email and password</Link>. Your load is kept.</>}
+            : <>Prefer email? <Link to={emailSignInHref ?? '/login'} className="font-medium text-brand hover:underline">Sign in with email and password</Link>. Your load is kept.</>}
         </p>
       </div>
     </Modal>

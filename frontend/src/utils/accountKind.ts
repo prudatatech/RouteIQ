@@ -2,10 +2,10 @@ import type { Membership } from './orgs'
 import { safeNextPath } from './safeNext'
 
 /**
- * The three kinds of account, one per sign-in page:
- *  - staff   logistic company staff, platform admins and drivers (/login)
- *  - vendor  a vendor, who is not a 3PL partner (/vendor/login)
- *  - tpl     a 3PL partner (/3pl/login)
+ * The three kinds of account. They all sign in at /login, which then sends each to its own area (homeForKind):
+ *  - staff   logistic company staff, platform admins and drivers
+ *  - vendor  a vendor, who is not a 3PL partner
+ *  - tpl     a 3PL partner
  */
 export type AccountKind = 'staff' | 'vendor' | 'tpl'
 
@@ -17,22 +17,8 @@ export interface KindInput {
 
 const STAFF_ROLES = ['superadmin', 'admin', 'manager', 'driver']
 
-/** The sign-in page of each kind. */
-export const LOGIN_PATH: Record<AccountKind, string> = { staff: '/login', vendor: '/vendor/login', tpl: '/3pl/login' }
-
-/** Names used in messages. */
-export const KIND_LABEL: Record<AccountKind, string> = {
-  staff: 'company staff account',
-  vendor: 'vendor account',
-  tpl: '3PL partner account',
-}
-
-/** The name of each sign-in page, for "use the ... sign-in". */
-export const LOGIN_LABEL: Record<AccountKind, string> = {
-  staff: 'staff sign-in',
-  vendor: 'vendor sign-in',
-  tpl: '3PL partner sign-in',
-}
+/** The one sign-in page. */
+export const LOGIN_PATH = '/login'
 
 /**
  * What an account is. Staff roles win, as in services/account.ts; then a 3PL partner record or an active
@@ -75,35 +61,9 @@ export function nextForKind(kind: AccountKind | null, next: string | null | unde
   return tplArea ? safe : null
 }
 
-/** The sign-in page for the area a path belongs to. */
-export function loginPathFor(pathname: string): string {
-  if (isUnder(pathname, '/vendor') || pathname === '/ship') return LOGIN_PATH.vendor
-  if (isUnder(pathname, '/3pl-portal')) return LOGIN_PATH.tpl
-  return LOGIN_PATH.staff
-}
-
 /** The home page of a kind (null when a 3PL account has no partner id to open). */
 export function homeForKind(kind: AccountKind, input: KindInput): string | null {
   if (kind === 'vendor') return '/vendor/loads'
   if (kind === 'tpl') return input.tplPartnerId ? `/3pl-portal/${input.tplPartnerId}` : null
   return input.role === 'driver' ? '/driver' : '/today'
-}
-
-/** The old `?as=` values of /login, and the page each now lives at. */
-export function legacyAudiencePath(as: string | null): string | null {
-  if (as === 'vendor' || as === 'partner') return LOGIN_PATH.vendor
-  if (as === '3pl') return LOGIN_PATH.tpl
-  return null
-}
-
-/**
- * The message shown when someone signs in on the wrong page: "This is the vendor sign-in. Your account is a
- * company staff account, so use the" followed by a link to the right page.
- */
-export function wrongPageMessage(page: AccountKind, actual: AccountKind): { text: string; to: string; linkLabel: string } {
-  return {
-    text: `This is the ${LOGIN_LABEL[page]}. Your account is a ${KIND_LABEL[actual]}, so use the`,
-    to: LOGIN_PATH[actual],
-    linkLabel: LOGIN_LABEL[actual],
-  }
 }

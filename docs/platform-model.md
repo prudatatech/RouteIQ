@@ -39,6 +39,30 @@ those companies. We (the platform owner) run the platform, not the logistics. De
 - A 3PL partner sees each company's work separately.
 - Platform admins see everything, read-mostly, for support and oversight.
 
+## Reviewing a vendor (platform only)
+
+The platform reviews every vendor in one place: `GET /vendor/registry` lists every vendor account (also those that
+registered but never filed KYC, shown as `pending`) and `GET /vendor/registry/:id` merges the sign-in account, the
+business organisation (name, GSTIN, address, account and business type) and the KYC profile (form, documents,
+decision) with the information requests, the decision history and the vendor's activity. 3PL partners are not vendors
+here and are never listed.
+
+KYC status (`vendor_profiles.kyc_status`):
+
+| Status | Meaning | Moves on |
+|---|---|---|
+| `pending` | no KYC filed yet (also: no profile row at all) | vendor submits: `submitted` |
+| `submitted` | waiting for the platform | approve: `approved`; reject: `rejected`; request info: `info_requested` |
+| `info_requested` | the platform asked the vendor for more; not approved, cannot be approved | vendor answers (`POST /vendor/kyc/respond`) or resubmits: `submitted` |
+| `approved` | verified; the organisation is active | a change to identity or documents sends it back to `submitted` |
+| `rejected` | refused, with a reason | vendor resubmits: `submitted` |
+
+Asking for information (`POST /vendor/kyc/:id/request-info`, only from `submitted`) stores a `kyc_info_requests` row
+(items of kind text or document), tells the vendor and audits it. The vendor reads `GET /vendor/kyc/requests` and
+answers every item in one `POST /vendor/kyc/respond`; text answers are kept in `kyc_data.extra[label]`, documents in
+`kyc_data.otherDocs`, and the platform is told the KYC is back for review. Resubmitting through `/kyc/submit`
+alone leaves a request open.
+
 ## Later
 
 - **Inventory app integration.** Vendors create shipping orders from the Inventory Management app through

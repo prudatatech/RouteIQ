@@ -101,6 +101,33 @@ export function assertOwnDocumentPaths(vendorId: string, docUrls: unknown, other
   }
 }
 
+// ── Reviewing a vendor (platform) ──────────────────────────
+
+export const RequestInfoSchema = z.object({
+  message: z.string().trim().max(1000, 'The message is too long (at most 1000 characters)').optional(),
+  items: z.array(z.object({
+    label: z.string().trim().min(1, 'Name each item you ask for').max(120, 'An item name is too long (at most 120 characters)'),
+    kind: z.enum(['text', 'document'], { errorMap: () => ({ message: 'Each item is either text or a document' }) }),
+    hint: z.string().trim().max(300, 'A hint is too long (at most 300 characters)').optional(),
+  })).min(1, 'Ask for at least one item').max(10, 'Ask for at most 10 items'),
+});
+
+export const KycRespondSchema = z.object({
+  request_id: z.string().uuid('Request not found'),
+  answers: z.array(z.object({
+    key: z.string().min(1).max(60),
+    text: z.string().max(2000, 'An answer is too long (at most 2000 characters)').optional(),
+    document_path: z.string().max(300).optional(),
+  })).max(10, 'Too many answers'),
+});
+
+export const RegistryQuerySchema = z.object({
+  status: z.string().max(30).optional(),
+  q: z.string().max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).max(1_000_000).optional(),
+});
+
 // ── Shipment requests ──────────────────────────────────────
 
 const Place = z.object({
