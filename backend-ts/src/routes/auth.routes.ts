@@ -122,10 +122,14 @@ async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void
     if (useEmail) {
       const { emailService } = await import('../services/email.service');
       const html = `
-        <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto;">
-          <h2>Your MargixIndia verification code</h2>
-          <p style="font-size: 24px; font-weight: bold; letter-spacing: 2px;">${otp}</p>
-          <p style="color: #666;">Valid for ${Math.round(settings.OTP_EXPIRY_SECONDS / 60)} minutes. Please do not share this code with anyone.</p>
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; background-color: #ffffff; padding: 32px; border: 1px solid #f0f0f0; border-top: 4px solid #facc15; border-radius: 8px; text-align: center;">
+          <img src="https://staging.margixindia.com/margix-logo.png" alt="MargixIndia Logo" style="height: 48px; margin-bottom: 24px;" />
+          <h1 style="font-size: 20px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">Welcome Partner!</h1>
+          <p style="font-size: 15px; color: #4b5563; margin: 0 0 24px 0; line-height: 1.5;">Let's post your loads and manage them with premium logistics market</p>
+          <div style="background-color: #fefce8; border: 1px dashed #facc15; border-radius: 6px; padding: 16px; margin-bottom: 24px;">
+            <p style="font-size: 32px; font-weight: bold; letter-spacing: 4px; color: #854d0e; margin: 0;">${otp}</p>
+          </div>
+          <p style="font-size: 13px; color: #6b7280; margin: 0;">Valid for ${Math.round(settings.OTP_EXPIRY_SECONDS / 60)} minutes. Please do not share this code.</p>
         </div>
       `;
       if (!(await emailService.send(email, 'Your MargixIndia OTP', html))) {

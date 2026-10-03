@@ -86,7 +86,7 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
             <Input
               label="6-digit code" required inputMode="numeric" autoComplete="one-time-code" maxLength={6}
               value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoFocus
-              inputClassName="text-center text-2xl tracking-widest font-mono h-14"
+              inputClassName="text-center text-2xl font-mono h-14"
             />
             <div className="flex flex-wrap gap-x-4 text-sm">
               <button type="button" className="text-brand hover:underline" onClick={() => { setSent(false); setCode(''); setError(null) }}>Change details</button>
