@@ -138,6 +138,14 @@ export const sameCity: Rule = ctx => {
   };
 };
 
+/** Pickup today. */
+export const sameDayPickup: Rule = ctx => {
+  if (!ctx.pickup_date || ctx.pickup_date !== ctx.today) return null;
+  return {
+    code: 'same_day_pickup', severity: 'info',
+    message: 'Same-day pickup has limited availability. We recommend booking 24 hours in advance.',
+  };
+};
 
 /** Products listed but no goods value entered. */
 export const noValue: Rule = ctx => {
@@ -191,6 +199,7 @@ export const RECOMMENDATION_RULES: Record<string, Rule> = {
   perishable_reefer: perishableReefer,
   hazmat_permit: hazmatPermit,
   same_city: sameCity,
+  same_day_pickup: sameDayPickup,
   no_value: noValue,
   bulk_template: bulkTemplate,
   budget_below_estimate: budgetBelowEstimate,

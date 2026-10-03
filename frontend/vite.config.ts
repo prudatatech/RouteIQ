@@ -45,30 +45,12 @@ function publicSupabaseKey(env: Record<string, string>): string | undefined {
   return publishable
 }
 
-const serviceWorkerRecoveryPlugin = () => ({
-  name: 'sw-recovery',
-  configureServer(server) {
-    server.middlewares.use((req, res, next) => {
-      if (req.url?.includes('main.jsx') || req.url?.includes('main.tsx') || req.url?.includes('workbox-')) {
-        res.setHeader('Content-Type', 'application/javascript');
-        res.end(`
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(r => Promise.all(r.map(reg => reg.unregister()))).then(() => window.location.reload(true));
-          }
-        `);
-        return;
-      }
-      next();
-    });
-  }
-});
-
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const supabaseKey = publicSupabaseKey(env)
 
   return {
-    plugins: [react(), serviceWorkerRecoveryPlugin()],
+    plugins: [react()],
     define: {
       // Replaces the configured value everywhere, so a privileged key can never reach the bundle.
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(supabaseKey ?? ''),

@@ -182,7 +182,7 @@ describe('recommendation codes (PRD 5.2, 5.3)', () => {
   it('has a rule for every code in the spec', () => {
     expect(Object.keys(RECOMMENDATION_RULES).sort()).toEqual([
       'budget_below_estimate', 'bulk_template', 'eway_required', 'hazmat_permit', 'hsn_ambiguous', 'interstate_igst', 'mini_truck_interstate', 'multi_rate',
-      'no_value', 'perishable_reefer', 'ptl_heavy', 'same_city', 'weight_over_18t',
+      'no_value', 'perishable_reefer', 'ptl_heavy', 'same_city', 'same_day_pickup', 'weight_over_18t',
     ]);
   });
 
@@ -264,7 +264,11 @@ describe('recommendation codes (PRD 5.2, 5.3)', () => {
     expect(await only('same_city', { items: [] })).toBeUndefined();
   });
 
-
+  it('same_day_pickup: only when the pickup is today', async () => {
+    const draft = (date: string) => ({ items: [line('Rice', '1006', 1, 1)], pickup: { date } });
+    expect((await only('same_day_pickup', draft('2026-10-05')))?.message).toMatch(/24 hours/);
+    expect(await only('same_day_pickup', draft('2026-10-06'))).toBeUndefined();
+  });
 
   it('no_value: products without any declared value', async () => {
     expect(await only('no_value', { items: [{ product_name: 'Rice', hsn_code: '1006', weight_kg: 10 }] })).toBeDefined();
