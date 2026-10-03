@@ -155,7 +155,7 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
       </div>
 
       {/* 4. Dispatch Priority */}
-      <div className="space-y-3">
+      <div className="space-y-3" role="radiogroup" aria-label="Priority">
         <div>
           <h3 className="text-base font-semibold text-text">Dispatch Priority</h3>
           <p className="text-sm text-muted">Select how swiftly your shipment requires truck allotment from our network</p>
@@ -163,6 +163,8 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <button 
             type="button" 
+            role="radio"
+            aria-checked={draft.priority === 'high'}
             onClick={() => set({ priority: 'high' })}
             className={`relative rounded-lg border-2 p-4 text-left transition-colors ${draft.priority === 'high' ? 'border-danger bg-danger/5' : 'border-border hover:border-danger/30'}`}
           >
@@ -178,6 +180,8 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
 
           <button 
             type="button" 
+            role="radio"
+            aria-checked={draft.priority === 'medium'}
             onClick={() => set({ priority: 'medium' })}
             className={`relative rounded-lg border-2 p-4 text-left transition-colors ${draft.priority === 'medium' ? 'border-brand-fill bg-brand-fill/5' : 'border-border hover:border-brand-fill/30'}`}
           >
@@ -193,6 +197,8 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
 
           <button 
             type="button" 
+            role="radio"
+            aria-checked={draft.priority === 'low'}
             onClick={() => set({ priority: 'low' })}
             className={`relative rounded-lg border-2 p-4 text-left transition-colors ${draft.priority === 'low' ? 'border-success bg-success/5' : 'border-border hover:border-success/30'}`}
           >
