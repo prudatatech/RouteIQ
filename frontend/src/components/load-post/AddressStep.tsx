@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { Alert, Card, Input, Select, Button, Checkbox } from '@/components/ui'
+import { Alert, Input, Select, Button, Checkbox } from '@/components/ui'
 import type { LoadDraft } from '@/types/load'
 import { isWeekend, taxBasisLocal, todayIso } from './logic'
 import type { StepErrors } from './validate'
@@ -36,10 +36,10 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
           <div className="mb-3 inline-flex items-center rounded-full bg-brand-fill/20 px-3 py-1 text-xs font-semibold text-brand-dark">
             <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-brand-dark"></span> Step 1 of 4: Booking Details
           </div>
-          <h1 className="text-2xl font-bold text-text">Logistics Dispatch Setup</h1>
+          <h1 className="text-2xl font-semibold text-text">Logistics Dispatch Setup</h1>
           <p className="text-sm text-muted">Specify pickup scheduling, verified contact parties, and fleet priority routing.</p>
         </div>
-        <div className="hidden items-center gap-2 rounded-full border border-border bg-surface px-4 py-1.5 text-sm font-medium shadow-sm md:flex">
+        <div className="hidden items-center gap-2 rounded-full border border-border bg-surface px-4 py-1.5 text-sm font-medium md:flex">
           <span className="flex h-4 w-4 items-center justify-center rounded-full bg-success text-white">
             <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
           </span>
@@ -48,7 +48,7 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
       </div>
 
       {/* Addresses */}
-      <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+      <div className="rounded-card border border-border bg-surface p-6">
         <div className="relative space-y-6">
           {/* Vertical dashed line */}
           <div className="absolute bottom-10 left-4 top-10 w-px border-l-2 border-dashed border-border" />
@@ -116,12 +116,12 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
       </div>
 
       {/* 1. Schedule & Timing */}
-      <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm space-y-6">
+      <div className="rounded-card border border-border bg-surface p-6 space-y-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="flex gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-fill/20 text-lg font-bold text-brand-dark">1</div>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-fill/20 text-lg font-semibold text-brand-dark">1</div>
             <div>
-              <h3 className="text-lg font-bold text-text">Pickup Date & Time Window</h3>
+              <h3 className="text-lg font-semibold text-text">Pickup Date & Time Window</h3>
               <p className="text-sm text-muted">Choose when the carrier should pick up the freight</p>
             </div>
           </div>
@@ -131,13 +131,13 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
               const tmrw = new Date(); tmrw.setDate(tmrw.getDate() + 1);
               onChange({ pickup_date: tmrw.toISOString().split('T')[0] })
             }}>Tomorrow</button>
-            <button type="button" className="rounded-full bg-brand-fill px-4 py-1.5 text-brand-dark shadow-sm">Custom Date</button>
+            <button type="button" className="rounded-full bg-brand-fill px-4 py-1.5 text-brand-dark">Custom Date</button>
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <div>
-            <label className="mb-1.5 flex justify-between text-xs font-bold uppercase tracking-wide text-text">
+            <label className="mb-1.5 flex justify-between text-xs font-semibold uppercase tracking-wide text-text">
               <span>Pickup Date <span className="text-danger">*</span></span>
               <span className="text-muted">DD-MM-YYYY</span>
             </label>
@@ -156,7 +156,7 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
             )}
           </div>
           <div>
-            <label className="mb-1.5 flex justify-between text-xs font-bold uppercase tracking-wide text-text">
+            <label className="mb-1.5 flex justify-between text-xs font-semibold uppercase tracking-wide text-text">
               <span>Pickup Time Slot <span className="text-danger">*</span></span>
               <span className="text-success">Standard Window</span>
             </label>
@@ -171,12 +171,12 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
       </div>
 
       {/* 2. Point of Contact Details */}
-      <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm space-y-6">
+      <div className="rounded-card border border-border bg-surface p-6 space-y-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-fill/20 text-lg font-bold text-brand-dark">2</div>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-fill/20 text-lg font-semibold text-brand-dark">2</div>
             <div>
-              <h3 className="text-lg font-bold text-text">Direct Contact Details</h3>
+              <h3 className="text-lg font-semibold text-text">Direct Contact Details</h3>
               <p className="text-sm text-muted">Driver coordinates directly with both parties via phone and SMS updates</p>
             </div>
           </div>
@@ -184,9 +184,9 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {/* Origin Card */}
-          <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+          <div className="rounded-card border border-border bg-surface p-4">
             <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-text">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-text">
                 <span className="h-2 w-2 rounded-full bg-success"></span> Origin / Pickup Contact
               </div>
               <span className="rounded border border-border bg-surface-subtle px-2 py-0.5 text-xs font-medium text-muted">Sender</span>
@@ -209,9 +209,9 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
           </div>
 
           {/* Destination Card */}
-          <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+          <div className="rounded-card border border-border bg-surface p-4">
             <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-text">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-text">
                 <span className="h-2 w-2 rounded-full bg-brand-fill"></span> Delivery / Destination Contact
               </div>
               <span className="rounded border border-brand-fill/20 bg-brand-fill/5 px-2 py-0.5 text-xs font-medium text-brand-dark">Receiver</span>
@@ -227,7 +227,7 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
                 label={
                   <div className="flex w-full items-center justify-between">
                     <span>Receiver Mobile</span>
-                    <span className="text-[10px] font-semibold text-success">✓ SMS Track Enabled</span>
+                    <span className="text-xs font-semibold text-success">✓ SMS Track Enabled</span>
                   </div>
                 }
                 required type="tel" inputMode="tel"
@@ -241,7 +241,7 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
         </div>
         
         {/* Estimated Route Distance */}
-        <div className="flex items-center justify-between rounded-xl bg-surface-subtle px-4 py-3 text-sm border border-border">
+        <div className="flex items-center justify-between rounded-card bg-surface-subtle px-4 py-3 text-sm border border-border">
           <div className="flex items-center gap-2 text-muted">
             <svg className="h-5 w-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
@@ -253,11 +253,11 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
       </div>
 
       {/* 3. Dispatch Priority */}
-      <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm space-y-6" role="radiogroup" aria-label="Priority">
+      <div className="rounded-card border border-border bg-surface p-6 space-y-6" role="radiogroup" aria-label="Priority">
         <div className="flex gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-fill/20 text-lg font-bold text-brand-dark">3</div>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-fill/20 text-lg font-semibold text-brand-dark">3</div>
           <div>
-            <h3 className="text-lg font-bold text-text">Dispatch Priority Level</h3>
+            <h3 className="text-lg font-semibold text-text">Dispatch Priority Level</h3>
             <p className="text-sm text-muted">Determine how quickly a truck is assigned and dispatched for this load</p>
           </div>
         </div>
