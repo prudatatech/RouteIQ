@@ -41,7 +41,7 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
             <div className="z-10 mt-1 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-success text-white ring-4 ring-surface">
               <ArrowUp className="h-4 w-4" strokeWidth={3} />
             </div>
-            <div className="flex-1">
+            <div className="flex-1" role="group" aria-label="Pickup">
               <div className="mb-1 flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase text-muted">Pickup</span>
                 {!editingPickup && <Button variant="secondary" size="sm" onClick={() => setEditingPickup(true)}>Edit address</Button>}
@@ -49,7 +49,7 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
               {editingPickup ? (
                  <AddressBlock side="pickup" draft={draft} set={set} errors={errors} />
               ) : (
-                <div>
+                <div data-testid="pickup-address-summary">
                   <div className="text-lg font-semibold text-text">{draft.pickup_address || draft.pickup_city}</div>
                   <div className="text-sm text-muted">{draft.pickup_city} • PIN {draft.pickup_pincode} • {draft.pickup_state_name}</div>
                 </div>
@@ -63,7 +63,7 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
             <div className="z-10 mt-1 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-danger text-white ring-4 ring-surface">
               <ArrowDown className="h-4 w-4" strokeWidth={3} />
             </div>
-            <div className="flex-1">
+            <div className="flex-1" role="group" aria-label="Delivery">
               <div className="mb-1 flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase text-muted">Drop</span>
                 {!editingDelivery && <Button variant="secondary" size="sm" onClick={() => setEditingDelivery(true)}>Edit address</Button>}
@@ -71,7 +71,7 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
               {editingDelivery ? (
                  <AddressBlock side="delivery" draft={draft} set={set} errors={errors} />
               ) : (
-                <div>
+                <div data-testid="delivery-address-summary">
                   <div className="text-lg font-semibold text-text">{draft.delivery_address || draft.delivery_city}</div>
                   <div className="text-sm text-muted">{draft.delivery_city} • PIN {draft.delivery_pincode} • {draft.delivery_state_name}</div>
                 </div>

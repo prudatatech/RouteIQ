@@ -435,7 +435,7 @@ describe('the form draft', () => {
     expect(screen.queryByLabelText(/address line/i)).toBeNull()
     expect(screen.queryByText(/site details|loading dock|access restrictions|need loading help|need unloading help/i)).toBeNull()
     expect(screen.queryByLabelText(/delivery date/i)).toBeNull()
-    expect((screen.getByRole('radio', { name: /^medium/i }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByRole('radio', { name: /^medium/i }).getAttribute('aria-checked')).toBe('true')
     expect(screen.getByText('Urgent: sent first to the largest logistic networks')).toBeTruthy()
     expect(screen.getByText('Normal booking')).toBeTruthy()
     expect(screen.getByText('Flexible: no rush')).toBeTruthy()
