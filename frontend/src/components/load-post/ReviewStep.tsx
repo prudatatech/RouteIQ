@@ -55,8 +55,9 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
   return (
     <div className="space-y-4">
       <Card padded className="!p-4" aria-label="Load summary">
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <div><dt className="text-xs text-muted">Total weight</dt><dd className="font-semibold tabular text-text">{kgText(totals.weight_kg)}</dd></div>
+          <div><dt className="text-xs text-muted">Total distance</dt><dd className="font-semibold tabular text-text">{assist?.estimate?.distance_km ? `${Math.round(assist.estimate.distance_km).toLocaleString('en-IN')} km` : '—'}</dd></div>
           <div><dt className="text-xs text-muted">Total declared value</dt><dd className="font-semibold tabular text-text">{totals.declared_value > 0 ? inr(totals.declared_value) : 'Not declared'}</dd></div>
           <div><dt className="text-xs text-muted">From and to</dt><dd className="font-semibold text-text">{draft.pickup_city} → {draft.delivery_city}</dd></div>
           <div><dt className="text-xs text-muted">Pickup date</dt><dd className="font-semibold text-text">{draft.pickup_date ? formatDate(draft.pickup_date) : '—'}</dd></div>
