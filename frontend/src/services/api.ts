@@ -772,10 +772,10 @@ export const loadDocumentsAPI = {
 
 export const authAPI = {
   /** Texts a 6-digit code to a vendor's phone. No sign-in needed. */
-  vendorSendOtp: (phone: string) => publicClient.post('/auth/vendor/send-otp', { phone }).then(r => r.data),
+  vendorSendOtp: (phone: string, email?: string) => publicClient.post('/auth/vendor/send-otp', { phone, email }).then(r => r.data),
   /** Checks the code; the answer carries a session to hand to supabase.auth.setSession. */
-  vendorVerifyOtp: (phone: string, otp: string) =>
-    publicClient.post('/auth/vendor/verify-otp', { phone, otp }).then(r => r.data as VendorSession),
+  vendorVerifyOtp: (phone: string, otp: string, email?: string) =>
+    publicClient.post('/auth/vendor/verify-otp', { phone, otp, email }).then(r => r.data as VendorSession),
   inviteVendor: (email: string, password: string) =>
     api.post('/auth/invite-vendor', { email, password }).then(r => r.data),
 }

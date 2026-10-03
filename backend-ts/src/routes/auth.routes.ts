@@ -94,7 +94,10 @@ async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void
       res.status(400).json({ detail: 'Invalid phone number' });
       return;
     }
-    if (!smsConfigured() && settings.isProduction) {
+    const useEmail = kind === 'vendor' && !!req.body.email;
+    const email = req.body.email;
+
+    if (!useEmail && !smsConfigured() && settings.isProduction) {
       console.error('[OTP] Twilio is not configured; refusing to issue OTPs in production');
       res.status(503).json({ detail: 'SMS delivery is temporarily unavailable. Please try again later.' });
       return;
@@ -116,10 +119,26 @@ async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void
     let message = `Your margixindia ${kind} login OTP is: ${otp}. Valid for ${Math.round(settings.OTP_EXPIRY_SECONDS / 60)} minutes. Do not share this code.`;
     if (!existing) message = `Welcome ${OTP_KIND_LABEL[kind]}! ${message}`;
 
-    if (!(await sendSms(phone, message))) {
-      await cacheDelete(`otp:${kind}:${phone}`);
-      res.status(502).json({ detail: 'Failed to send OTP. Please try again.' });
-      return;
+    if (useEmail) {
+      const { emailService } = await import('../services/email.service');
+      const html = `
+        <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto;">
+          <h2>Your MargixIndia verification code</h2>
+          <p style="font-size: 24px; font-weight: bold; letter-spacing: 2px;">${otp}</p>
+          <p style="color: #666;">Valid for ${Math.round(settings.OTP_EXPIRY_SECONDS / 60)} minutes. Please do not share this code with anyone.</p>
+        </div>
+      `;
+      if (!(await emailService.send(email, 'Your MargixIndia OTP', html))) {
+        await cacheDelete(`otp:${kind}:${phone}`);
+        res.status(502).json({ detail: 'Failed to send OTP email. Please try again.' });
+        return;
+      }
+    } else {
+      if (!(await sendSms(phone, message))) {
+        await cacheDelete(`otp:${kind}:${phone}`);
+        res.status(502).json({ detail: 'Failed to send OTP. Please try again.' });
+        return;
+      }
     }
 
     res.json({
@@ -205,8 +224,8 @@ async function phoneBelongsToOtherKind(role: 'driver' | 'vendor', phone: string)
  * in app_metadata, recovers one that exists already, and guarantees the public.users row (the vendor organisation is
  * made by the users trigger). Throws an HttpError 500 when the account cannot be made.
  */
-async function provisionPhoneUser(role: 'driver' | 'vendor', phone: string): Promise<{ id: string; email: string }> {
-  const email = `${role}_${phone.replace(/\+/g, '')}@${role}.margixindia.local`;
+async function provisionPhoneUser(role: 'driver' | 'vendor', phone: string, emailStr?: string): Promise<{ id: string; email: string }> {
+  const email = emailStr || `${role}_${phone.replace(/\+/g, '')}@${role}.margixindia.local`;
   const fullName = `${OTP_KIND_LABEL[role]} ${phone.slice(-4)}`;
   const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
     email,
@@ -465,6 +484,7 @@ router.post('/vendor/send-otp', rateLimitByIp('otp-send', 10, 3600), (req: Reque
 router.post('/vendor/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (req: Request, res: Response) => {
   try {
     const phone = normalizeIndianMobile(req.body.phone);
+    const email = req.body.email;
     if (!phone) {
       res.status(400).json({ detail: 'phone and otp are required' });
       return;
@@ -486,7 +506,7 @@ router.post('/vendor/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (
     if (!vendor) {
       let id: string;
       try {
-        id = (await provisionPhoneUser('vendor', phone)).id;
+        id = (await provisionPhoneUser('vendor', phone, email)).id;
       } catch (e) {
         if (e instanceof HttpError) { res.status(e.status).json({ detail: e.message }); return; }
         throw e;

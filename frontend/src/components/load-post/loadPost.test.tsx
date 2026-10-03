@@ -238,14 +238,15 @@ describe('OTP modal', () => {
     render(wrap(<OtpModal open onClose={() => {}} onVerified={onVerified} emailSignInHref="/login" />))
 
     fireEvent.change(screen.getByRole('textbox', { name: /^mobile number/i }), { target: { value: '98200 12345' } })
+    fireEvent.change(screen.getByRole('textbox', { name: /email address/i }), { target: { value: 'vendor@example.com' } })
     fireEvent.click(screen.getByRole('button', { name: /send code/i }))
     await screen.findByLabelText(/6-digit code/i)
-    expect(api.vendorSendOtp).toHaveBeenCalledWith('+919820012345')
+    expect(api.vendorSendOtp).toHaveBeenCalledWith('+919820012345', 'vendor@example.com')
 
     fireEvent.change(screen.getByLabelText(/6-digit code/i), { target: { value: '123456' } })
     fireEvent.click(screen.getByRole('button', { name: /verify and continue/i }))
     await waitFor(() => expect(onVerified).toHaveBeenCalledTimes(1))
-    expect(api.vendorVerifyOtp).toHaveBeenCalledWith('+919820012345', '123456')
+    expect(api.vendorVerifyOtp).toHaveBeenCalledWith('+919820012345', '123456', 'vendor@example.com')
     expect(api.setSession).toHaveBeenCalledWith({ access_token: 'AT', refresh_token: 'RT' })
   })
 
@@ -255,6 +256,7 @@ describe('OTP modal', () => {
     const onVerified = vi.fn()
     render(wrap(<OtpModal open onClose={() => {}} onVerified={onVerified} emailSignInHref="/login" />))
     fireEvent.change(screen.getByRole('textbox', { name: /^mobile number/i }), { target: { value: '9820012345' } })
+    fireEvent.change(screen.getByRole('textbox', { name: /email address/i }), { target: { value: 'vendor@example.com' } })
     fireEvent.click(screen.getByRole('button', { name: /send code/i }))
     fireEvent.change(await screen.findByLabelText(/6-digit code/i), { target: { value: '000000' } })
     fireEvent.click(screen.getByRole('button', { name: /verify and continue/i }))

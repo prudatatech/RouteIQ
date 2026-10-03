@@ -179,6 +179,7 @@ describe('after signing in, each account goes to its own area', () => {
     at('/login')
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in with a mobile code' }))
     fireEvent.change(await screen.findByLabelText(/Mobile number/), { target: { value: '9820012345' } })
+    fireEvent.change(await screen.findByLabelText(/Email address/), { target: { value: 'vendor@example.com' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send code' }))
     fireEvent.change(await screen.findByLabelText(/6-digit code/), { target: { value: '123456' } })
     fireEvent.click(screen.getByRole('button', { name: 'Verify and continue' }))

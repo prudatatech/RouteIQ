@@ -21,6 +21,7 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
   onUseEmail?: () => void
 }) {
   const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -34,9 +35,10 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
 
   const send = async () => {
     if (!digits) { setError('Enter a 10-digit mobile number.'); return }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('Enter a valid email address.'); return }
     setBusy(true); setError(null)
     try {
-      await authAPI.vendorSendOtp(`+91${digits}`)
+      await authAPI.vendorSendOtp(`+91${digits}`, email)
       setSent(true)
     } catch (err) {
       setError(errorMessage(err, 'We could not send the code. Try again in a moment.'))
@@ -49,7 +51,7 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
     if (!/^\d{6}$/.test(code)) { setError('Enter the 6-digit code.'); return }
     setBusy(true); setError(null)
     try {
-      const res = await authAPI.vendorVerifyOtp(`+91${digits}`, code)
+      const res = await authAPI.vendorVerifyOtp(`+91${digits}`, code, email)
       const { error: sessionError } = await supabase.auth.setSession({
         access_token: res.session.access_token,
         refresh_token: res.session.refresh_token,
@@ -68,8 +70,8 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
       open={open}
       onClose={onClose}
       size="sm"
-      title={sent ? 'Enter the code' : 'Verify your mobile number'}
-      description={sent ? `We sent a 6-digit code to +91 ${digits}.` : 'We use it to sign you in and send updates on your load.'}
+      title={sent ? 'Enter the code' : 'Verify your email address'}
+      description={sent ? `We sent a 6-digit code to ${email}.` : 'We use it to sign you in and send updates on your load.'}
       onSubmit={sent ? verify : send}
       footer={(
         <>
@@ -84,17 +86,24 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
             <Input
               label="6-digit code" required inputMode="numeric" autoComplete="one-time-code" maxLength={6}
               value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoFocus
+              inputClassName="text-center text-2xl tracking-[1em] font-mono h-14"
             />
             <div className="flex flex-wrap gap-x-4 text-sm">
-              <button type="button" className="text-brand hover:underline" onClick={() => { setSent(false); setCode(''); setError(null) }}>Change number</button>
+              <button type="button" className="text-brand hover:underline" onClick={() => { setSent(false); setCode(''); setError(null) }}>Change details</button>
               <button type="button" className="text-brand hover:underline" onClick={send}>Send the code again</button>
             </div>
           </>
         ) : (
-          <Input
-            label="Mobile number" required type="tel" inputMode="tel" autoComplete="tel-national" leading="+91"
-            value={phone} onChange={e => setPhone(e.target.value)} autoFocus inputClassName="pl-12"
-          />
+          <div className="space-y-4">
+            <Input
+              label="Mobile number" required type="tel" inputMode="tel" autoComplete="tel-national" leading="+91"
+              value={phone} onChange={e => setPhone(e.target.value)} autoFocus inputClassName="pl-12"
+            />
+            <Input
+              label="Email address" required type="email" autoComplete="email"
+              value={email} onChange={e => setEmail(e.target.value)}
+            />
+          </div>
         )}
         {error && <p className="text-sm text-danger" role="alert">{error}</p>}
         <p className="text-sm text-muted">
