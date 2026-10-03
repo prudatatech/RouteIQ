@@ -24,12 +24,20 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [sent, setSent] = useState(false)
+  const [resendTimer, setResendTimer] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!open) { setCode(''); setSent(false); setError(null); setBusy(false) }
+    if (!open) { setCode(''); setSent(false); setError(null); setBusy(false); setResendTimer(0) }
   }, [open])
+
+  useEffect(() => {
+    if (resendTimer > 0) {
+      const timer = setTimeout(() => setResendTimer(resendTimer - 1), 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [resendTimer])
 
   const digits = phoneDigits(phone)
 
@@ -40,6 +48,7 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
     try {
       await authAPI.vendorSendOtp(`+91${digits}`, email)
       setSent(true)
+      setResendTimer(30)
     } catch (err) {
       setError(errorMessage(err, 'We could not send the code. Try again in a moment.'))
     } finally {
@@ -89,8 +98,10 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
               inputClassName="text-center text-2xl font-mono h-14"
             />
             <div className="flex flex-wrap gap-x-4 text-sm">
-              <button type="button" className="text-brand hover:underline" onClick={() => { setSent(false); setCode(''); setError(null) }}>Change details</button>
-              <button type="button" className="text-brand hover:underline" onClick={send}>Send the code again</button>
+              <button type="button" className="text-brand hover:underline" onClick={() => { setSent(false); setCode(''); setError(null); setResendTimer(0) }}>Change details</button>
+              <button type="button" className={`text-brand ${resendTimer > 0 ? 'opacity-50 cursor-not-allowed' : 'hover:underline'}`} disabled={resendTimer > 0} onClick={send}>
+                {resendTimer > 0 ? `Send the code again (${resendTimer}s)` : 'Send the code again'}
+              </button>
             </div>
           </>
         ) : (
