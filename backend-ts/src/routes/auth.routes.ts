@@ -71,7 +71,7 @@ async function createSupabaseSession(email: string | undefined | null) {
   const client = createClient(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY || settings.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data, error } = await client.auth.verifyOtp({ token_hash: tokenHash, type: 'email' });
+  const { data, error } = await client.auth.verifyOtp({ token_hash: tokenHash, type: 'magiclink' });
   if (error || !data.session) {
     console.error(`[auth] Could not create Supabase session: ${error?.message ?? 'no session'}`);
     return null;
