@@ -1,0 +1,69 @@
+diff --git a/node_modules/expo-notifications/build/DevicePushTokenAutoRegistration.fx.js b/node_modules/expo-notifications/build/DevicePushTokenAutoRegistration.fx.js
+index 85cd97c..e52b880 100644
+--- a/node_modules/expo-notifications/build/DevicePushTokenAutoRegistration.fx.js
++++ b/node_modules/expo-notifications/build/DevicePushTokenAutoRegistration.fx.js
+@@ -1,4 +1,5 @@
+ import 'abort-controller/polyfill';
++import { isRunningInExpoGo } from 'expo';
+ import { UnavailabilityError } from 'expo-modules-core';
+ import ServerRegistrationModule from './ServerRegistrationModule';
+ import { addPushTokenListener } from './TokenEmitter';
+@@ -72,7 +73,7 @@ export async function __handlePersistedRegistrationInfoAsync(registrationInfo) {
+         console.warn('[expo-notifications] Error encountered while updating server registration with latest device push token.', e);
+     }
+ }
+-if (ServerRegistrationModule.getRegistrationInfoAsync) {
++if (!isRunningInExpoGo() && ServerRegistrationModule.getRegistrationInfoAsync) {
+     // A global scope (to get all the updates) device push token
+     // subscription, never cleared.
+     addPushTokenListener(async (token) => {
+diff --git a/node_modules/expo-notifications/build/warnOfExpoGoPushUsage.js b/node_modules/expo-notifications/build/warnOfExpoGoPushUsage.js
+index 8260405..61c4cfe 100644
+--- a/node_modules/expo-notifications/build/warnOfExpoGoPushUsage.js
++++ b/node_modules/expo-notifications/build/warnOfExpoGoPushUsage.js
+@@ -4,10 +4,7 @@ let didWarn = false;
+ export const warnOfExpoGoPushUsage = () => {
+     if (isRunningInExpoGo() && !didWarn) {
+         const message = `expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.`;
+-        if (Platform.OS === 'android') {
+-            throw new Error(message);
+-        }
+-        else if (__DEV__) {
++        if (__DEV__) {
+             didWarn = true;
+             console.warn(message);
+         }
+diff --git a/node_modules/expo-notifications/src/DevicePushTokenAutoRegistration.fx.ts b/node_modules/expo-notifications/src/DevicePushTokenAutoRegistration.fx.ts
+index 4150532..509c8bd 100644
+--- a/node_modules/expo-notifications/src/DevicePushTokenAutoRegistration.fx.ts
++++ b/node_modules/expo-notifications/src/DevicePushTokenAutoRegistration.fx.ts
+@@ -1,4 +1,5 @@
+ import 'abort-controller/polyfill';
++import { isRunningInExpoGo } from 'expo';
+ import { UnavailabilityError } from 'expo-modules-core';
+ 
+ import ServerRegistrationModule from './ServerRegistrationModule';
+@@ -98,7 +99,7 @@ export async function __handlePersistedRegistrationInfoAsync(
+   }
+ }
+ 
+-if (ServerRegistrationModule.getRegistrationInfoAsync) {
++if (!isRunningInExpoGo() && ServerRegistrationModule.getRegistrationInfoAsync) {
+   // A global scope (to get all the updates) device push token
+   // subscription, never cleared.
+   addPushTokenListener(async (token) => {
+diff --git a/node_modules/expo-notifications/src/warnOfExpoGoPushUsage.ts b/node_modules/expo-notifications/src/warnOfExpoGoPushUsage.ts
+index c6883b3..039d60d 100644
+--- a/node_modules/expo-notifications/src/warnOfExpoGoPushUsage.ts
++++ b/node_modules/expo-notifications/src/warnOfExpoGoPushUsage.ts
+@@ -7,9 +7,7 @@ export const warnOfExpoGoPushUsage = () => {
+   if (isRunningInExpoGo() && !didWarn) {
+     const message = `expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.`;
+ 
+-    if (Platform.OS === 'android') {
+-      throw new Error(message);
+-    } else if (__DEV__) {
++    if (__DEV__) {
+       didWarn = true;
+       console.warn(message);
+     }

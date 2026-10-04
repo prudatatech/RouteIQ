@@ -135,6 +135,13 @@ async function registerForPushNotificationsAsync() {
     });
   }
 
+  // Remote push notification tokens are not supported in Expo Go on Android since SDK 53
+  const isExpoGo = (Constants as any).appOwnership === 'expo' || (Constants as any).executionEnvironment === 'storeClient';
+  if (isExpoGo && Platform.OS === 'android') {
+    console.log('[NotificationListener] Skipping remote push token in Expo Go (dev/standalone build required for FCM)');
+    return;
+  }
+
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
   if (existingStatus !== 'granted') {
