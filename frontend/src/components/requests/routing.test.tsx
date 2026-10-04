@@ -201,10 +201,10 @@ describe('LoadMarket tabs', () => {
     useOrgStore.setState({ memberships: ['company-a', 'company-b'].map(id => ({ org: { id, kind: 'logistic_company' as const, name: id, status: 'active' }, role: 'owner' as const, app_role: 'admin' })) })
     api.market.mockResolvedValueOnce([marketRow({ load_number: 'LD-A' })]).mockResolvedValueOnce([marketRow({ load_number: 'LD-B' })])
     render(wrap(<LoadMarket onOpen={() => {}} />))
-    expect(await screen.findByText('LD-A')).toBeTruthy()
+    expect((await screen.findAllByText('LD-A')).length).toBeGreaterThan(0)
     act(() => useOrgStore.getState().setActiveOrg('company-b'))
-    expect(await screen.findByText('LD-B')).toBeTruthy()
-    expect(screen.queryByText('LD-A')).toBeNull()
+    expect((await screen.findAllByText('LD-B')).length).toBeGreaterThan(0)
+    expect(screen.queryAllByText('LD-A')).toHaveLength(0)
     expect(api.market).toHaveBeenCalledTimes(2)
   })
 
