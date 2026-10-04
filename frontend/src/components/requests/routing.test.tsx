@@ -150,7 +150,7 @@ describe('QuotePanel direct accept', () => {
     const input = await openPanel()
     expect(screen.getByText('Urgent')).toBeTruthy()
     expect(screen.getByTestId('range-line').textContent).toMatch(/₹32,000 – ₹38,000/)
-    expect(input.value).toBe('32000')
+    await waitFor(() => expect(input.value).toBe('32000'))
     expect(screen.queryByRole('button', { name: 'Submit quote' })).toBeNull()
     fireEvent.change(input, { target: { value: '35000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Book this load' }))
