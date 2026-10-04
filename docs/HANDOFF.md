@@ -46,6 +46,8 @@ registry `margixacr7m52h4t5it6og`.
   Key set on TEST only.
 
 ## 3. Decisions already taken (do not reopen without the owner)
+- Requests opens on New loads and keeps pending vendor rows visible there when the company board is unavailable
+  in the active organisation context. Active company staff use the company board; All remains aggregate history.
 - The company load board and quote drawer wait for organisation context and request `/company/loads/market`
   only for active logistic company staff. Platform/vendor/3PL contexts show a company-selection message instead
   of making forbidden requests. Market caches include the acting organisation; switching companies reloads rows.

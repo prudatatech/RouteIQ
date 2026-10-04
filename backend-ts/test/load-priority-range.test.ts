@@ -63,6 +63,15 @@ describe('posting a load', () => {
     expect(res.body.price_min_inr).toBeNull();
   });
 
+  it('puts a newly posted vendor load into the logistic company New loads board immediately', async () => {
+    vi.spyOn(marketFreightService, 'estimate').mockResolvedValue(okQuote(1000, 2000));
+    const made = await post(draft());
+    expect(made.status).toBe(201);
+    const board = await request(app).get(api('/company/loads/market?tab=new')).set(adminA());
+    expect(board.status).toBe(200);
+    expect(board.body.items.find((load: any) => load.id === made.body.id)).toMatchObject({ status: 'pending', price_min_inr: 1000, price_max_inr: 2000 });
+  });
+
   it('defaults the priority to medium, stores the one given, and refuses an unknown one', async () => {
     vi.spyOn(marketFreightService, 'estimate').mockResolvedValue(okQuote(1000, 2000));
     expect((await post(draft())).status).toBe(201);

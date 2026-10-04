@@ -237,6 +237,12 @@ export function stageCounts(rows: RequestRow[]): Record<StageId, number> {
   return counts
 }
 
+/** Pending vendor loads are New loads. Only delegate them when the company board can actually render them. */
+export function rowsForStage(rows: RequestRow[], stage: StageId, companyMarket: boolean): RequestRow[] {
+  return rows.filter(r => (stage === 'all' || r.stage === stage)
+    && !(stage === 'accept' && companyMarket && r.source === 'vendor'))
+}
+
 /** Old links carry the old tab names; map them to the inbox's tabs. */
 const OLD_TABS: Record<RequestSource, Record<string, StageId>> = {
   customer: { new: 'accept', active: 'progress', done: 'done', cancelled: 'closed', all: 'all' },
