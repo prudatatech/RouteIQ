@@ -288,7 +288,7 @@ export default function VendorShipmentRequestPage() {
         )}
       </section>
 
-      <StepActions step={step} last={LAST_STEP} onBack={() => goTo(step - 1)} onNext={next} />
+      <StepActions step={step} last={LAST_STEP} onNext={next} />
 
       <OtpModal
         open={otpOpen}
