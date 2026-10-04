@@ -52,6 +52,9 @@ export interface VendorRequest {
   created_at: string
   updated_at: string | null
   assigned_vehicle_id: string | null
+  vehicle_class?: string | null
+  load_type?: string | null
+  capacity_t?: number | null
   /** The agreed price for the load, set when staff accept it. */
   cost: number | null
   cost_per_km: number | null

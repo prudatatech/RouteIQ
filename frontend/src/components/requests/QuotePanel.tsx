@@ -9,6 +9,9 @@ import { errorMessage, formatRupees } from '@/utils/display'
 import { amountInRange, canAcceptDirect, freightRange } from './quoteRules'
 import PriorityBadge from './PriorityBadge'
 import type { MarketLoad, MarketTab } from '@/types/routing'
+import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
+import { usePriceQuote } from '@/components/pricing/usePriceQuote'
+import type { VendorRequest } from './model'
 import { useCompanyLoads } from './useCompanyLoads'
 
 const TABS: MarketTab[] = ['new', 'quoted', 'won']
@@ -18,7 +21,7 @@ const endOfDay = (date: string) => new Date(`${date}T23:59:59+05:30`).toISOStrin
 const dateOf = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : '')
 
 /** The quote form and the direct accept for a load a company can see. Mounted in the load drawer. */
-export default function QuotePanel({ loadId, status }: { loadId: string; status: string }) {
+export default function QuotePanel({ loadId, status, load }: { loadId: string; status: string; load?: VendorRequest }) {
   const queryClient = useQueryClient()
   const { confirm } = useConfirm()
   const company = useCompanyLoads()
@@ -35,6 +38,10 @@ export default function QuotePanel({ loadId, status }: { loadId: string; status:
   const classes = useQuery({ queryKey: ['public', 'vehicle-classes'], queryFn: () => publicAPI.vehicleClasses(), staleTime: 300_000 })
   const left = useCountdown(row?.quote_requested ? row.quote_deadline : null)
 
+  const recommendation = usePriceQuote(company.allowed && status === 'pending' && load && load.required_capacity_kg > 0 && load.pickup_lat != null && load.pickup_lng != null && load.drop_lat != null && load.drop_lng != null ? {
+    pickup: { lat: load.pickup_lat, lng: load.pickup_lng }, drop: { lat: load.drop_lat, lng: load.drop_lng },
+    weight_kg: load.required_capacity_kg, vehicle_type: load.vehicle_class ?? null, load_type: load.load_type ?? null, source: 'assign',
+  } : null)
   const range = row ? freightRange(row) : null
   const [bookAmount, setBookAmount] = useState('')
   const [bookError, setBookError] = useState<string | null>(null)
@@ -136,9 +143,10 @@ export default function QuotePanel({ loadId, status }: { loadId: string; status:
           {quoting && <StatusPill tone={left === 'Time is up' ? 'warning' : 'info'}>{left ? `Quote wanted, ${left}` : 'Quote wanted'}</StatusPill>}
         </div>
       </div>
+      {load && <PriceSuggestion query={recommendation} />}
       {range && (
         <p className="text-sm text-muted" data-testid="range-line">
-          Recommended freight: <span className="font-medium text-text tabular">{formatRupees(range.min)} – {formatRupees(range.max)}</span>. You can book at any price in this range.
+          Posted freight range: <span className="font-medium text-text tabular">{formatRupees(range.min)} – {formatRupees(range.max)}</span>. You can book at any price in this range.
         </p>
       )}
       {!range && budget ? <p className="text-sm text-muted">Vendor’s budget: <span className="font-medium text-text tabular">{formatRupees(budget)}</span></p> : null}

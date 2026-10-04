@@ -51,9 +51,9 @@ registry `margixacr7m52h4t5it6og`.
 - The company load board and quote drawer wait for organisation context and request `/company/loads/market`
   only for active logistic company staff. Platform/vendor/3PL contexts show a company-selection message instead
   of making forbidden requests. Market caches include the acting organisation; switching companies reloads rows.
-- Vendor price recommendations now use the owner's five provisional per-km bands (LCV 15–25, 6-wheeler 20–30,
+- All instant price recommendations (vendor, company, shipment/return-trip and customer/mobile quotes) now use the owner's five provisional per-km bands (LCV 15–25, 6-wheeler 20–30,
   10-wheeler 25–40, multi-axle 35–55, container 50–80 rupees). The price modal explains distance × rate and the
-  midpoint; posted ranges use the same server calculation. See `docs/vendor-price-recommendation.md` for capacity,
+  midpoint; posted ranges and signed-in quotes use one server calculation. Company acceptance passes the load's selected truck class, and company price screens show the shared explanation modal. See `docs/vendor-price-recommendation.md` for capacity,
   part-load and specialised-truck limits. This is separate from negotiated company pricing configuration.
 - Vendor entry is **Post a load**. The owner requested removal of the duplicate Find a truck flow: its page,
   navigation, query seeding and standalone `/public/quote` endpoint are removed. Old `/ship` bookmarks redirect

@@ -80,7 +80,8 @@ export function AcceptLoadModal({ load, loading, onClose, onAccept }: {
         pickup: { lat: load.pickup_lat, lng: load.pickup_lng, label: load.pickup_location },
         drop: { lat: load.drop_lat, lng: load.drop_lng, label: load.drop_location },
         weight_kg: load.required_capacity_kg,
-        vehicle_type: null,
+        vehicle_type: load.vehicle_class ?? null,
+        load_type: load.load_type ?? null,
         source: 'assign',
       }
     : null

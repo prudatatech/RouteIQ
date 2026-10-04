@@ -279,6 +279,7 @@ export interface FreightEstimate {
     max_per_km: number
     midpoint_per_km: number
     distance_is_estimate: boolean
+    distance_source?: 'mappls' | 'google' | 'estimate'
     load_type: LoadType | null
     rates: Array<{ key: string; name: string; payload: string; min_per_km: number; max_per_km: number }>
   }

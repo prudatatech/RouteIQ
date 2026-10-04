@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
 import PriceRecommendationModal from './PriceRecommendationModal'
 import type { FreightEstimate } from '@/types/load'
 
@@ -26,6 +27,14 @@ describe('price recommendation modal', () => {
     expect(within(dialog).getByRole('table', { name: 'Reference truck rates' })).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }))
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('uses the same explanation modal on company price suggestion screens', () => {
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo
+    const query = { data: { status: 'ok', quote_id: null, low: estimate.low, high: estimate.high, suggested: estimate.suggested, distance_km: estimate.distance_km, distance_source: 'estimate', distance_is_estimate: true, per_km_suggested: 32.5, basis: estimate.basis, factors: [], notes: [] }, isLoading: false, isFetching: false, error: null, fetchStatus: 'idle' } as unknown as Parameters<typeof PriceSuggestion>[0]['query']
+    render(<PriceSuggestion query={query} />)
+    fireEvent.click(screen.getByRole('button', { name: 'View price recommendation' }))
+    expect(within(screen.getByRole('dialog', { name: 'Price recommendation' })).getByText('Midpoint: 100.4 km × ₹32.5 = ₹3,263')).toBeTruthy()
   })
 
   it('offers no invented breakdown when a recommendation is unavailable', () => {

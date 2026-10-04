@@ -32,7 +32,7 @@ export interface CapacityWindow {
   id: string
   floor_price: number | null
   closes_at: string
-  vehicles?: { vehicle_type?: string | null; available_capacity_kg?: number | null } | null
+  vehicles?: { vehicle_type?: string | null; capacity_kg?: number | null; body_type?: 'open' | 'closed' | 'container' | 'reefer' | 'tanker' | 'trailer' | null; available_capacity_kg?: number | null } | null
 }
 
 function useCountdown(until: string) {
@@ -84,6 +84,9 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced, guest = fa
         drop: { lat: dropoff.lat, lng: dropoff.lng, label: dropoff.address },
         weight_kg: Number(weightKg),
         vehicle_type: w.vehicles?.vehicle_type ?? null,
+        vehicle_capacity_t: w.vehicles?.capacity_kg != null ? w.vehicles.capacity_kg / 1000 : null,
+        body_type: w.vehicles?.body_type ?? null,
+        load_type: 'ptl',
         source: 'bid',
       }
     : null
