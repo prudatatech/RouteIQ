@@ -216,7 +216,7 @@ export function vendorRow(r: VendorRequest): RequestRow {
     action: r.status === 'pending' ? 'accept' : loadNeedsVehicle(r) ? 'assign' : r.assigned_vehicle_id ? 'open' : null,
     // A vendor's load has no shipment row of its own; the shipment page reads it by the request id
     shipmentId: r.assigned_vehicle_id || ['completed', 'fulfilled'].includes(r.status) ? r.id : null,
-    trackingId: `VR-${r.id.slice(0, 8).toUpperCase()}`,
+    trackingId: r.load_number || `VR-${r.id.slice(0, 8).toUpperCase()}`,
     vendor: r,
   }
 }
