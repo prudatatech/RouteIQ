@@ -73,7 +73,7 @@ try {
     assert.equal(await modal.getByRole('table', { name: 'Reference truck rates' }).locator('tbody tr').count(), 5);
     assert.match(await modal.innerText(), /Light Commercial \(LCV\).*used/s);
     assert.match(await modal.innerText(), /Midpoint:.*km × ₹20/s);
-    await page.screenshot({ path: `e2e/shots/vendor-price-modal-${width}.png`, fullPage: true });
+    await page.screenshot({ path: `e2e/shots/vendor-price-modal-${width}.png`, fullPage: true, animations: 'disabled' });
     await modal.getByRole('button', { name: 'Done', exact: true }).click();
     assert.equal(await page.getByRole('dialog').count(), 0);
 
