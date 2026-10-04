@@ -19,7 +19,7 @@ Appendix A. Every numbered PRD section maps to a part below. It sits inside the 
   Twilio (`sms.service.ts`), and `createSupabaseSession`.
 - **HSN tables:** `hsn_codes` and `search_hsn()` in the database are unused. `shipment_hsn` is never written.
   The web has `utils/hsnDatabase.ts`, about 150 entries with a fuzzy search.
-- **Pricing:** `pricing.service.quote` (rate per km by vehicle type, with factors), plus `/public/quote`.
+- **Pricing:** `pricing.service.quote` (rate per km by vehicle type, with factors), exposed to guests through `/public/loads/assist`.
 - **Distance:** `distance.service.getDrivingDistance` (Mappls, then Google, then haversine).
 - **Proof of delivery:** `pod.service`.
 - **Custody:** `cargo_custody_events` (pickup, delivery, inspection, with pieces, condition and photos).

@@ -368,7 +368,7 @@ function SignInPage() {
   }
   const subtitle = {
     'sign-in': COPY.subtitle,
-    'sign-up': registering ? 'Create your account first. Next you add your company details.' : 'Find truck capacity, post loads and track your shipments.',
+    'sign-up': registering ? 'Create your account first. Next you add your company details.' : 'Post loads, book return-trip space and track your shipments.',
     forgot: 'Enter the email you sign in with. We will send you a link to set a new password.',
     reset: 'Choose a new password for your account.',
   }[mode]
@@ -441,7 +441,7 @@ function SignInPage() {
       )
     }
     otherOptions.push(
-      <>Just looking? <Link className={linkClass} to="/ship">Find a truck without signing in</Link></>,
+      <>Ready to ship? <Link className={linkClass} to="/vendor/request">Start your load without signing in</Link></>,
       <>Have a tracking ID? <Link className={linkClass} to="/track">Track a shipment</Link></>,
       <>Want to work with us as a 3PL partner? <Link className={linkClass} to="/3pl/onboard">Apply to join</Link></>,
       <>Approved partner without a password? <Link className={linkClass} to="/3pl/onboard/setup">Set up your partner login</Link></>,

@@ -32,17 +32,11 @@ import { firstInvalidStep, stepForRecommendation, validateStep } from '@/compone
 const RESUME_PATH = '/vendor/request?resume=1'
 const EMAIL_SIGN_IN = `/login?next=${encodeURIComponent(RESUME_PATH)}`
 
-/** The draft from this browser, or an empty one seeded from the lane the Find a truck page passed in the link. */
-function initialDraft(params: URLSearchParams): LoadDraft {
+/** Restore the saved load, including reposts and drafts resumed after sign-in. */
+function initialDraft(): LoadDraft {
   const saved = loadGuestDraft<Partial<LoadDraft>>('load')
   if (saved) return mergeDraft(saved)
-  const d = emptyDraft()
-  const city = (v: string | null) => (v ? v.split(',')[0].trim() : '')
-  d.delivery_city = city(params.get('query'))
-  d.pickup_city = city(params.get('from'))
-  const weight = parseFloat(params.get('weight') ?? '')
-  if (Number.isFinite(weight) && weight > 0) { d.items[0].weight_kg = String(weight) }
-  return d
+  return emptyDraft()
 }
 
 export default function VendorShipmentRequestPage() {
@@ -52,7 +46,7 @@ export default function VendorShipmentRequestPage() {
   const blockedKind = useBlockedFromVendorActions()
 
   const [draft, setDraft] = useState<LoadDraft>(() => {
-    const d = initialDraft(params)
+    const d = initialDraft()
     // Back from the email sign-in: show the review again. Nothing is posted until Submit Load is pressed.
     return params.get('resume') === '1' ? { ...d, step: LAST_STEP } : d
   })

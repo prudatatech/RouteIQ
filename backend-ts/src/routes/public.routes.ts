@@ -15,7 +15,6 @@ import { cityFromAddress } from '../services/demand.service';
 import { selectIn } from '../services/finance.service';
 import { getPublicShare } from '../services/vehicle-location.service';
 import { freeCapacityKg } from '../services/capacity.service';
-import { pricingService } from '../services/pricing.service';
 import { normalizePlace } from '../utils/corridor-match';
 import { assessLoad, isPincode, loadGoodsCategories, loadHsnIndex, loadVehicleClasses, LoadDraft, LoadDraftSchema, lookupPincode, resolveHsn, searchHsn, toHit, toNestedDraft } from '../services/goods';
 
@@ -231,43 +230,6 @@ router.get('/companies', rateLimitByIp('public-companies', 60, 60), async (req: 
       .slice(0, PUBLIC_LIMIT);
     res.set('Cache-Control', PUBLIC_CACHE);
     res.json({ items });
-  } catch (e: any) {
-    sendError(req, res, e);
-  }
-});
-
-const point = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), label: z.string().max(255).optional().nullable() });
-const PublicQuoteSchema = z.object({
-  pickup: point,
-  drop: point,
-  weight_kg: z.number().positive().max(1_000_000),
-  vehicle_type: z.string().max(60).optional().nullable(),
-  load_type: z.string().max(60).optional().nullable(),
-  date: z.string().max(40).optional().nullable(),
-});
-
-// POST /public/quote — the indicative price range only. Nothing is stored, and the rate card, the
-// factors behind the price and the demand figures stay private.
-router.post('/quote', rateLimitByIp('public-quote', 20, 60), async (req: Request, res: Response) => {
-  try {
-    const parsed = PublicQuoteSchema.safeParse(req.body);
-    if (!parsed.success) return badRequest(res, parsed.error);
-    const out = await pricingService.quote(parsed.data, { role: 'guest', source: 'api', persist: false });
-    res.set('Cache-Control', 'no-store');
-    if (out.status !== 'ok') {
-      res.json({ status: 'unavailable', reason: 'We cannot give an indicative price for this lane yet. Post the load and companies will quote.' });
-      return;
-    }
-    res.json({
-      status: 'ok',
-      distance_km: out.distance_km,
-      distance_is_estimate: out.distance_is_estimate,
-      low: out.low,
-      suggested: out.suggested,
-      high: out.high,
-      per_km_suggested: out.per_km_suggested,
-      generated_at: out.generated_at,
-    });
   } catch (e: any) {
     sendError(req, res, e);
   }

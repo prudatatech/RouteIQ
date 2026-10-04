@@ -46,6 +46,10 @@ registry `margixacr7m52h4t5it6og`.
   Key set on TEST only.
 
 ## 3. Decisions already taken (do not reopen without the owner)
+- Vendor entry is **Post a load**. The owner requested removal of the duplicate Find a truck flow: its page,
+  navigation, query seeding and standalone `/public/quote` endpoint are removed. Old `/ship` bookmarks redirect
+  to `/vendor/request`. Return trips retain spare-space browsing and bidding; load estimates use `/public/loads/assist`.
+  The mobile booking button says Cargo and weight (with existing translations); its booking flow is separate.
 - Freight GST is the company's GTA option (`rcm_5` default, `fcm_5`, `fcm_18`), never the goods' HSN rate.
   Same-day pickup allowed with a warning. (`docs/gst-rates.md`)
 - Vendor KYC review and 3PL approval are platform-only. A company sees its own partners without bank/PAN/documents.

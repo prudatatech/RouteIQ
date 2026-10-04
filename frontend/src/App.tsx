@@ -17,7 +17,7 @@ import VendorLayout from '@/components/ui/VendorLayout'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
   returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminAudit, money, invoicePage, adminSettings, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, vendorInvoices,
-  ship, vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
+  vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
 import { OrgSync } from '@/components/OrgSync'
@@ -66,7 +66,6 @@ const TplDashboardPage = tplDashboard.Component
 const LiveMapPage = liveMap.Component
 const MobileTrackPage = mobileTrack.Component
 const VehicleSharePage = vehicleShare.Component
-const ShipPage = ship.Component
 const VendorLoadsPage = vendorLoads.Component
 const VendorLoadPage = vendorLoad.Component
 const VendorClaimsPage = vendorClaims.Component
@@ -260,10 +259,8 @@ export default function App() {
             <Route path="tracking" element={<KeepQuery to="/vendor/loads" />} />
           </Route>
 
-          {/* Find a truck: public, so a visitor can search a lane before any account */}
-          <Route path="/ship" element={<VendorLayout />}>
-            <Route index element={<ShipPage />} />
-          </Route>
+          {/* Retired lane search: existing bookmarks open the full load form. */}
+          <Route path="/ship" element={<MovedTo to="/vendor/request" />} />
 
           {/* 3PL Public/Partner Routes */}
           <Route path="/3pl/onboard" element={<LazyRoute><TplOnboardingPage /></LazyRoute>} />

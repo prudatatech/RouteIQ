@@ -55,7 +55,6 @@ const bn: Record<keyof typeof en, string> = {
   home_choose_drop: 'ড্রপের জায়গা বেছে নিন',
   home_choose_pickup: 'পিকআপের জায়গা বেছে নিন',
   home_close_map: 'ম্যাপ বন্ধ করুন',
-  home_find_truck: 'ট্রাক খুঁজুন',
   home_need_both: 'আগে পিকআপ ও ড্রপ বেছে নিন',
   home_opens_search: 'জায়গা খোঁজার পাতা খুলবে',
   home_search_pickup: 'পিকআপের জায়গা খুঁজুন',

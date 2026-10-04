@@ -28,7 +28,7 @@ const audiences: Audience[] = [
     icon: Package,
     title: 'Vendors',
     description: 'Post a load or bid on spare truck space on return trips, then follow your loads until they are delivered.',
-    action: { to: '/ship', label: 'Find a truck' },
+    action: { to: '/vendor/request', label: 'Post a load' },
     secondary: { to: '/login', label: 'Sign in or create an account' },
   },
   {
@@ -115,10 +115,9 @@ export default function LandingPage() {
               trucks through bidding and partners, and let everyone see where a load is.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link to="/ship" className={buttonClasses({ variant: 'primary', size: 'lg' })}>Find a truck</Link>
               <Link to="/vendor/request" className={buttonClasses({ variant: 'primary', size: 'lg' })}>Post a load</Link>
             </div>
-            <p className="mt-3 text-sm text-muted">No account needed to look. You sign in only when you post.</p>
+            <p className="mt-3 text-sm text-muted">Fill in your load first. You sign in only when you submit.</p>
           </div>
         </section>
 
