@@ -621,6 +621,43 @@ router.post('/logout', async (req: Request, res: Response) => {
   }
 });
 
+// ── POST /reset-password ───────────────────────────────────
+// Manually sends the password reset link using our reliable Resend email service,
+// bypassing the default Supabase SMTP limits on staging/production.
+router.post('/reset-password', rateLimitByIp('reset-password', 5, 3600), async (req: Request, res: Response) => {
+  try {
+    const { email, redirect_to } = req.body;
+    if (typeof email !== 'string' || !email) {
+      res.status(400).json({ detail: 'email is required' });
+      return;
+    }
+
+    const { data: link, error } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email: email.trim(),
+      options: { redirectTo: redirect_to }
+    });
+
+    if (link?.properties?.action_link && !error) {
+      const { emailService } = await import('../services/email.service');
+      const html = `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; background-color: #ffffff; padding: 32px; border: 1px solid #f0f0f0; border-top: 4px solid #facc15; border-radius: 8px; text-align: center;">
+          <img src="https://staging.margixindia.com/margix-logo.png" alt="MargixIndia Logo" style="height: 48px; margin-bottom: 24px;" />
+          <h1 style="font-size: 20px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">Reset your password</h1>
+          <p style="font-size: 15px; color: #4b5563; margin: 0 0 24px 0; line-height: 1.5;">Click the button below to set a new password for your account.</p>
+          <a href="${link.properties.action_link}" style="display: inline-block; background-color: #facc15; color: #854d0e; font-weight: bold; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin-bottom: 24px;">Set new password</a>
+          <p style="font-size: 13px; color: #6b7280; margin: 0;">If you did not request this, please ignore this email.</p>
+        </div>
+      `;
+      await emailService.send(email.trim(), 'Reset your password - MargixIndia', html);
+    }
+    
+    res.json({ message: 'If an account exists, a reset link was sent.' });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
 // ── PUT /driver/profile ────────────────────────────────────
 // vehicles.vehicle_type is a Postgres enum (scripts/supabase_init.sql: CREATE TYPE
 // vehicle_type AS ENUM ('truck', 'van', 'bike', 'car')). users.vehicle_type is a

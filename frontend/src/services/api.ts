@@ -776,6 +776,8 @@ export const authAPI = {
   /** Checks the code; the answer carries a session to hand to supabase.auth.setSession. */
   vendorVerifyOtp: (phone: string, otp: string, email?: string) =>
     publicClient.post('/auth/vendor/verify-otp', { phone, otp, email }).then(r => r.data as VendorSession),
+  vendorSendResetLink: (email: string, redirect_to: string) =>
+    publicClient.post('/auth/reset-password', { email, redirect_to }).then(r => r.data),
   inviteVendor: (email: string, password: string) =>
     api.post('/auth/invite-vendor', { email, password }).then(r => r.data),
 }
