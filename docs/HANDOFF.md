@@ -76,6 +76,12 @@ registry `margixacr7m52h4t5it6og`.
 - Realtime change feeds cannot run on Azure Postgres (needs a superuser-only setting); the web polls instead.
 
 ## 4. Azure pitfalls (each broke something once)
+- Staging was reset on 4 Oct at the owner's request: operational test records cleared; six existing demo accounts
+  retained (platform owner, company admin, manager, driver, vendor, 3PL). All six password logins were verified.
+  Organisations/configuration and reference catalogues remain; credentials were delivered separately, never committed.
+- Performance investigation and measurements: `docs/performance-2026-10-04.md`. Shipment counts now use one
+  backend-only grouped SQL call; notification bodies load on opening the bell; account restores share in-flight
+  requests; map polls cannot overlap and pause in hidden tabs. SQL profiling is enabled on test without a restart.
 - Staging notification history reached ~2.8 million rows; type-filtered queries scanned tens of thousands of
   unrelated rows per recipient and exhausted the REST pool (`PGRST003`, API 503). Migration
   `20261011120000_notification_query_indexes.sql` adds recipient/type/date and covering unread indexes.

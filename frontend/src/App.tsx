@@ -1,10 +1,9 @@
-import { Suspense, useEffect, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
-import AppLayout from '@/components/ui/AppLayout'
 import { ConfirmProvider, LoadingState } from '@/components/ui'
 import { loadAccount } from '@/services/account'
 import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
@@ -13,7 +12,6 @@ import { returnTripsLink, type OldReturnTripsPage } from '@/config/returnTripsRe
 import LoginPage from '@/pages/LoginPage'
 import LandingPage from '@/pages/LandingPage'
 import NotFoundPage from '@/pages/NotFoundPage'
-import VendorLayout from '@/components/ui/VendorLayout'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
   returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminAudit, money, invoicePage, adminSettings, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, vendorInvoices,
@@ -23,6 +21,10 @@ import {
 import { OrgSync } from '@/components/OrgSync'
 import { OrgGuard } from '@/components/OrgGuard'
 import PrivateRoute from '@/components/PrivateRoute'
+
+// Login and the public landing page do not need either signed-in workspace shell.
+const AppLayout = lazy(() => import('@/components/ui/AppLayout'))
+const VendorLayout = lazy(() => import('@/components/ui/VendorLayout'))
 
 const TodayPage = today.Component
 const FleetPage = fleet.Component
@@ -216,7 +218,7 @@ export default function App() {
           } />
           {/* Vendor Portal. Return trips is public (browsable before login; bidding itself redirects to
               sign-in when there's no session). Everything that needs a vendor account is gated below. */}
-          <Route path="/vendor" element={<VendorLayout />}>
+          <Route path="/vendor" element={<LazyRoute><VendorLayout /></LazyRoute>}>
             <Route index element={<Navigate to="/vendor/loads" replace />} />
             <Route path="loads" element={
               <PrivateRoute allowedRoles={['vendor']} kinds={['vendor']}>
@@ -280,7 +282,7 @@ export default function App() {
           <Route element={
             <PrivateRoute>
               <OrgGuard>
-                <AppLayout />
+                <LazyRoute><AppLayout /></LazyRoute>
               </OrgGuard>
             </PrivateRoute>
           }>

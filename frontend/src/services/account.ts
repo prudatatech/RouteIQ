@@ -14,7 +14,19 @@ export interface Account {
  * vendor profile or a 3PL partner record is a vendor, otherwise the public.users role.
  * Never reads user_metadata, which the user can set themselves.
  */
-export async function loadAccount(userId: string): Promise<Account> {
+const pendingAccounts = new Map<string, Promise<Account>>()
+
+/** Session restoration and auth events can arrive together. Share only the in-flight
+ * lookup; later requests still read fresh roles and profile state from the database. */
+export function loadAccount(userId: string): Promise<Account> {
+  const pending = pendingAccounts.get(userId)
+  if (pending) return pending
+  const request = readAccount(userId).finally(() => pendingAccounts.delete(userId))
+  pendingAccounts.set(userId, request)
+  return request
+}
+
+async function readAccount(userId: string): Promise<Account> {
   const [user, vendor, partner] = await Promise.all([
     supabase.from('users').select('role').eq('id', userId).maybeSingle(),
     supabase.from('vendor_profiles').select('id').eq('id', userId).maybeSingle(),
