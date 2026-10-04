@@ -71,6 +71,10 @@ registry `margixacr7m52h4t5it6og`.
 - Realtime change feeds cannot run on Azure Postgres (needs a superuser-only setting); the web polls instead.
 
 ## 4. Azure pitfalls (each broke something once)
+- Staging notification history reached ~2.8 million rows; type-filtered queries scanned tens of thousands of
+  unrelated rows per recipient and exhausted the REST pool (`PGRST003`, API 503). Migration
+  `20261011120000_notification_query_indexes.sql` adds recipient/type/date and covering unread indexes.
+  Duplicate-notification checks now stop on database errors instead of inserting after a failed check.
 - Uploads go to Azure Blob through s3proxy (`JCLOUDS_AZUREBLOB_AUTH=azureKey`); signed links last 900 s.
 - `platform.sh` re-binds the data domain's TLS every run (a redeploy once dropped it and broke sign-in).
 - Tables created by the admin login lack grants: `db-migrate.sh` hands stray tables to app_owner.
