@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   mine: vi.fn(),
   vendorSendOtp: vi.fn(),
   vendorVerifyOtp: vi.fn(),
+  vendorSendResetLink: vi.fn(),
 }))
 
 vi.mock('@/services/supabase', () => ({
@@ -36,7 +37,7 @@ vi.mock('@/services/account', async importOriginal => ({
 }))
 vi.mock('@/services/api', () => ({
   orgAPI: { mine: mocks.mine },
-  authAPI: { vendorSendOtp: mocks.vendorSendOtp, vendorVerifyOtp: mocks.vendorVerifyOtp },
+  authAPI: { vendorSendOtp: mocks.vendorSendOtp, vendorVerifyOtp: mocks.vendorVerifyOtp, vendorSendResetLink: mocks.vendorSendResetLink },
 }))
 
 import LoginPage from './LoginPage'
@@ -205,8 +206,8 @@ describe('sign-up and password reset', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Forgot password?' }))
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'a@b.co' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send reset link' }))
-    await waitFor(() => expect(mocks.resetPasswordForEmail).toHaveBeenCalled())
-    expect(mocks.resetPasswordForEmail.mock.calls[0][1].redirectTo).toContain('/login?reset=1')
+    await waitFor(() => expect(mocks.vendorSendResetLink).toHaveBeenCalled())
+    expect(mocks.vendorSendResetLink.mock.calls[0][1]).toContain('/login?reset=1')
   })
 })
 
