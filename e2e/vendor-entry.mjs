@@ -51,6 +51,7 @@ try {
     await page.screenshot({ path: `e2e/shots/vendor-entry-${width}.png`, fullPage: true });
     // Unmount the form before seeding a resumed draft so its autosave cannot overwrite this fixture.
     await page.goto(`${web}/login`);
+    await page.getByRole('link', { name: 'Start your load without signing in' }).waitFor();
 
     await page.evaluate(() => localStorage.setItem('margix:guest-draft:load', JSON.stringify({
       savedAt: Date.now(), data: { v: 2, step: 2, pickup_city: 'Pune', delivery_city: 'Mumbai', pickup_lat: 18.52, pickup_lng: 73.85,
@@ -59,7 +60,14 @@ try {
           quantity: '20', unit: 'bags', handling: [], rate_options: [0] }] },
     })));
     await page.goto(`${web}/vendor/request`);
-    await page.getByRole('button', { name: 'View price recommendation' }).click({ timeout: 30000 });
+    try {
+      await page.getByRole('button', { name: 'View price recommendation' }).click({ timeout: 30000 });
+    } catch (error) {
+      console.log('Price scenario visible state:', await page.locator('body').innerText());
+      console.log('Price scenario draft:', await page.evaluate(() => localStorage.getItem('margix:guest-draft:load')));
+      await page.screenshot({ path: `e2e/shots/vendor-price-error-${width}.png`, fullPage: true });
+      throw error;
+    }
     const modal = page.getByRole('dialog', { name: 'Price recommendation' });
     await modal.waitFor();
     assert.equal(await modal.getByRole('table', { name: 'Reference truck rates' }).locator('tbody tr').count(), 5);
