@@ -12,7 +12,7 @@ import { ORG, as, orgWorld, uid } from './support/org-world';
 import { L, loadRow, notesFor, routingWorld } from './support/routing-world';
 import { draft } from './support/load-draft';
 import { goodsTables } from './support/goods-world';
-import { pricingService } from '../src/services/pricing.service';
+import { marketFreightService } from '../src/services/goods/freight';
 import { networkSizeScorer, notifyCompanies, rankCompanies } from '../src/services/loads/order-routing';
 
 const app = testApp();
@@ -43,7 +43,7 @@ describe('posting a load', () => {
   beforeEach(world);
 
   it('works the recommended range out on the server (whole rupees) and ignores a range the client sends', async () => {
-    const quote = vi.spyOn(pricingService, 'quote').mockResolvedValue(okQuote(41234.4, 52999.6));
+    const quote = vi.spyOn(marketFreightService, 'estimate').mockResolvedValue(okQuote(41234.4, 52999.6));
     const res = await post(draft({ price_min_inr: 1, price_max_inr: 2 }));
     expect(res.status).toBe(201);
     expect(quote).toHaveBeenCalledTimes(1);
@@ -54,7 +54,7 @@ describe('posting a load', () => {
   });
 
   it('leaves the range empty (and still posts) when no estimate can be made', async () => {
-    vi.spyOn(pricingService, 'quote').mockRejectedValue(new Error('routing down'));
+    vi.spyOn(marketFreightService, 'estimate').mockRejectedValue(new Error('routing down'));
     const res = await post(draft());
     expect(res.status).toBe(201);
     const { load } = supabaseMock.rpcCalls[0].args.p;
@@ -64,7 +64,7 @@ describe('posting a load', () => {
   });
 
   it('defaults the priority to medium, stores the one given, and refuses an unknown one', async () => {
-    vi.spyOn(pricingService, 'quote').mockResolvedValue(okQuote(1000, 2000));
+    vi.spyOn(marketFreightService, 'estimate').mockResolvedValue(okQuote(1000, 2000));
     expect((await post(draft())).status).toBe(201);
     expect(supabaseMock.rpcCalls[0].args.p.load.priority).toBe('medium');
     const high = await post(draft({ priority: 'high' }));
@@ -74,7 +74,7 @@ describe('posting a load', () => {
   });
 
   it('is a direct-book load when the form sends no quote request and no budget', async () => {
-    vi.spyOn(pricingService, 'quote').mockResolvedValue(okQuote(1000, 2000));
+    vi.spyOn(marketFreightService, 'estimate').mockResolvedValue(okQuote(1000, 2000));
     await post(draft());
     const { load } = supabaseMock.rpcCalls[0].args.p;
     expect(load.quote_requested).toBe(false);
@@ -82,7 +82,7 @@ describe('posting a load', () => {
   });
 
   it('repost keeps the priority, and the vendor views show it with the range', async () => {
-    vi.spyOn(pricingService, 'quote').mockResolvedValue(okQuote(1000, 2000));
+    vi.spyOn(marketFreightService, 'estimate').mockResolvedValue(okQuote(1000, 2000));
     const made = await post(draft({ priority: 'low' }));
     const again = await request(app).post(api(`/vendor/loads/${made.body.id}/repost`)).set(as('vendor-1'));
     expect(again.status).toBe(200);

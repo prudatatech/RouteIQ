@@ -46,6 +46,10 @@ registry `margixacr7m52h4t5it6og`.
   Key set on TEST only.
 
 ## 3. Decisions already taken (do not reopen without the owner)
+- Vendor price recommendations now use the owner's five provisional per-km bands (LCV 15–25, 6-wheeler 20–30,
+  10-wheeler 25–40, multi-axle 35–55, container 50–80 rupees). The price modal explains distance × rate and the
+  midpoint; posted ranges use the same server calculation. See `docs/vendor-price-recommendation.md` for capacity,
+  part-load and specialised-truck limits. This is separate from negotiated company pricing configuration.
 - Vendor entry is **Post a load**. The owner requested removal of the duplicate Find a truck flow: its page,
   navigation, query seeding and standalone `/public/quote` endpoint are removed. Old `/ship` bookmarks redirect
   to `/vendor/request`. Return trips retain spare-space browsing and bidding; load estimates use `/public/loads/assist`.
@@ -79,7 +83,7 @@ registry `margixacr7m52h4t5it6og`.
 - Owner choices pending: put the Resend key on live; restore "Need unloading help" on delivery?; company board
   order within the same priority and date (newest first now, or longest-waiting first).
 - Owner configuration still missing: Twilio + Redis (SMS OTP), WhatsApp, TomTom key (route optimisation returns
-  502; traffic calls get 401), telematics webhook secret, per-km rate card, CA review of GST 2.0 rates (507 rows
+  502; traffic calls get 401), telematics webhook secret, negotiated company per-km rate card, CA review of GST 2.0 rates (507 rows
   flagged needs_review).
 - Product gaps: a real finance role (finance/dispatcher/ops map to one role); `/capacity/nearby-vendors` lists all
   vendors to any company; `/public/companies` caps at 200; finance lists unpaginated; vendor company details are

@@ -7,10 +7,10 @@ export const ASSIST_DEBOUNCE_MS = 400
 
 /**
  * The server's totals, tax, suggestions and estimate for the form as it is now. Asked 400 ms after
- * the last change. A form that is still half empty may be refused; the last good answer stays.
+ * the last change. Hide an old price as soon as its inputs change, including during debounce or failure.
  */
 export function useLoadAssist(draft: LoadDraft, enabled = true): { assist: AssistResult | null; loading: boolean } {
-  const [assist, setAssist] = useState<AssistResult | null>(null)
+  const [answer, setAnswer] = useState<{ key: string; assist: AssistResult | null } | null>(null)
   const [loading, setLoading] = useState(false)
   const latest = useRef(draft)
   latest.current = draft
@@ -25,12 +25,13 @@ export function useLoadAssist(draft: LoadDraft, enabled = true): { assist: Assis
     const timer = setTimeout(() => {
       setLoading(true)
       publicAPI.loadAssist(toPayload(latest.current), ctrl.signal)
-        .then(result => { if (!ctrl.signal.aborted) setAssist(result) })
-        .catch(err => { if (!ctrl.signal.aborted) console.warn('Load assist unavailable', err) })
+        .then(result => { if (!ctrl.signal.aborted) setAnswer({ key, assist: result }) })
+        .catch(err => { if (!ctrl.signal.aborted) { setAnswer({ key, assist: null }); console.warn('Load assist unavailable', err) } })
         .finally(() => { if (!ctrl.signal.aborted) setLoading(false) })
     }, ASSIST_DEBOUNCE_MS)
     return () => { clearTimeout(timer); ctrl.abort() }
   }, [key, enabled, worthAsking])
 
-  return { assist, loading }
+  const current = enabled && worthAsking && answer?.key === key
+  return { assist: current ? answer.assist : null, loading: enabled && worthAsking && (loading || !current) }
 }

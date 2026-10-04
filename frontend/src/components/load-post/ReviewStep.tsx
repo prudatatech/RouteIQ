@@ -4,6 +4,7 @@ import { Alert, Button, Card } from '@/components/ui'
 import type { AssistResult, LoadDraft, VehicleClass } from '@/types/load'
 import { formatDate } from '@/utils/display'
 import GstSummary from './GstSummary'
+import PriceRecommendationModal from './PriceRecommendationModal'
 import { addressOf, allSpecialHandling, EWAY_THRESHOLD_INR, ewayLocal, inr, itemTotals, kgText, priorityLabel, rangeText, rateText, TEMP_RANGES } from './logic'
 
 function Section({ title, onEdit, children }: { title: string; onEdit: () => void; children: ReactNode }) {
@@ -48,7 +49,7 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
   const vehicle = vehicleName
     ? `${draft.vehicle_mode === 'manual' ? 'Chosen' : 'Recommended'}: ${vehicleName}`
     : 'The logistic company decides'
-  const range = assist?.estimate ? rangeText(assist.estimate.low, assist.estimate.high) : null
+  const range = !assistLoading && assist?.estimate ? rangeText(assist.estimate.low, assist.estimate.high) : null
   const temp = draft.temp_choice ? TEMP_RANGES[draft.temp_choice].label : null
   const handling = allSpecialHandling(draft)
 
@@ -129,6 +130,7 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
         ) : (
           <p className="text-sm text-muted" data-testid="review-pricing">We will share the range once a logistic company reviews the trip.</p>
         )}
+        <PriceRecommendationModal estimate={assistLoading ? null : assist?.estimate ?? null} />
       </Section>
 
       {error && <Alert tone="danger">{error}</Alert>}

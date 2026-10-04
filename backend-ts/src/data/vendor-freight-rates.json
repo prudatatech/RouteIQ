@@ -1,0 +1,10 @@
+{
+  "source": "Owner-provided reference rates",
+  "rates": [
+    { "key": "lcv", "name": "Light Commercial (LCV)", "payload": "1–5 tonnes", "max_payload_t": 5, "min_per_km": 15, "max_per_km": 25 },
+    { "key": "six_wheeler", "name": "6-Wheeler Truck", "payload": "9–11 tonnes", "max_payload_t": 11, "min_per_km": 20, "max_per_km": 30 },
+    { "key": "ten_wheeler", "name": "10-Wheeler Truck", "payload": "16–20 tonnes", "max_payload_t": 20, "min_per_km": 25, "max_per_km": 40 },
+    { "key": "multi_axle", "name": "Multi-Axle Truck", "payload": "25–40 tonnes", "max_payload_t": 40, "min_per_km": 35, "max_per_km": 55 },
+    { "key": "container", "name": "Container Truck", "payload": "20–40 ft container size", "max_payload_t": null, "min_per_km": 50, "max_per_km": 80 }
+  ]
+}

@@ -50,6 +50,23 @@ try {
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('margix:guest-draft:load')).data.pickup_city), 'Pune');
     await page.screenshot({ path: `e2e/shots/vendor-entry-${width}.png`, fullPage: true });
 
+    await page.evaluate(() => localStorage.setItem('margix:guest-draft:load', JSON.stringify({
+      savedAt: Date.now(), data: { v: 2, step: 2, pickup_city: 'Pune', delivery_city: 'Mumbai', pickup_lat: 18.52, pickup_lng: 73.85,
+        delivery_lat: 19.07, delivery_lng: 72.87, vehicle_class: 'truck_14ft', vehicle_mode: 'manual', load_type: 'ftl', capacity_t: '4',
+        items: [{ key: 'price-test', product_name: 'Rice', hsn_code: '1006', gst_rate: 0, weight_kg: '1000', declared_value: '40000',
+          quantity: '20', unit: 'bags', handling: [], rate_options: [0] }] },
+    })));
+    await page.goto(`${web}/vendor/request`);
+    await page.getByRole('button', { name: 'View price recommendation' }).click({ timeout: 30000 });
+    const modal = page.getByRole('dialog', { name: 'Price recommendation' });
+    await modal.waitFor();
+    assert.equal(await modal.getByRole('table', { name: 'Reference truck rates' }).locator('tbody tr').count(), 5);
+    assert.match(await modal.innerText(), /Light Commercial \(LCV\).*used/s);
+    assert.match(await modal.innerText(), /Midpoint:.*km × ₹20/s);
+    await page.screenshot({ path: `e2e/shots/vendor-price-modal-${width}.png`, fullPage: true });
+    await modal.getByRole('button', { name: 'Done', exact: true }).click();
+    assert.equal(await page.getByRole('dialog').count(), 0);
+
     await page.goto(`${web}/login`);
     const start = page.getByRole('link', { name: 'Start your load without signing in' });
     await start.waitFor();
