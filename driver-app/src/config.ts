@@ -44,14 +44,19 @@ function assertPublicSupabaseKey(key: string): string {
   return key;
 }
 
-export const API_BASE_URL = required('EXPO_PUBLIC_API_URL', process.env.EXPO_PUBLIC_API_URL).replace(/\/+$/, '');
+const DEFAULT_API_URL = 'https://api.margixindia.com';
+const DEFAULT_SUPABASE_URL = 'https://data.margixindia.com';
+const DEFAULT_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJtYXJnaXgiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc5MDAwMDAwMCwiZXhwIjoyMTA1MDAwMDAwfQ.gp2nTeMR_7CGthbOYowaL-8xqNpw0kmdlxxwj0hzCCU';
+
+export const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL?.trim() || DEFAULT_API_URL).replace(/\/+$/, '');
 
 export const API_V1 = `${API_BASE_URL}/api/v1`;
 
-export const SUPABASE_URL = required('EXPO_PUBLIC_SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL);
+export const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() || DEFAULT_SUPABASE_URL).replace(/\/+$/, '');
 
 export const SUPABASE_ANON_KEY = assertPublicSupabaseKey(
-  required('EXPO_PUBLIC_SUPABASE_ANON_KEY', process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY)
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim() || DEFAULT_ANON_KEY
 );
 
 // The Google Maps key is consumed natively (see app.config.ts), not at runtime.
