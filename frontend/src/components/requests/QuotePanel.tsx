@@ -9,6 +9,7 @@ import { errorMessage, formatRupees } from '@/utils/display'
 import { amountInRange, canAcceptDirect, freightRange } from './quoteRules'
 import PriorityBadge from './PriorityBadge'
 import type { MarketLoad, MarketTab } from '@/types/routing'
+import { useCompanyLoads } from './useCompanyLoads'
 
 const TABS: MarketTab[] = ['new', 'quoted', 'won']
 
@@ -20,9 +21,10 @@ const dateOf = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : '')
 export default function QuotePanel({ loadId, status }: { loadId: string; status: string }) {
   const queryClient = useQueryClient()
   const { confirm } = useConfirm()
+  const company = useCompanyLoads()
   // The market lists hold this company's own quote and the vendor's budget; they share the cache with the New loads table
   const lists = useQueries({
-    queries: TABS.map(tab => ({ queryKey: ['company', 'market', tab], queryFn: () => companyLoadsAPI.market(tab), staleTime: 30_000 })),
+    queries: TABS.map(tab => ({ queryKey: ['company', 'market', tab, company.orgId], queryFn: () => companyLoadsAPI.market(tab), staleTime: 30_000, enabled: company.allowed, retry: false })),
   })
   const found = lists.map((q, i) => ({ tab: TABS[i], row: q.data?.find(r => r.id === loadId) })).find(x => x.row)
   const row: MarketLoad | undefined = found?.row
@@ -80,6 +82,7 @@ export default function QuotePanel({ loadId, status }: { loadId: string; status:
     onError: err => toast.error(errorMessage(err, 'We could not accept this load. Try again.')),
   })
 
+  if (!company.allowed) return null
   if (won) {
     return (
       <Alert tone="success" title="Won">

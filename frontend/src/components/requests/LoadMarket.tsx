@@ -7,6 +7,9 @@ import { formatDate, formatKg, formatRupees } from '@/utils/display'
 import type { MarketLoad, MarketTab } from '@/types/routing'
 import PriorityBadge from './PriorityBadge'
 import { freightRange } from './quoteRules'
+import { useCompanyLoads } from './useCompanyLoads'
+import { errorMessage } from '@/utils/display'
+import axios from 'axios'
 
 const MARKET_TABS: readonly MarketTab[] = ['new', 'quoted', 'won', 'lost']
 const MARKET_LABELS: Record<MarketTab, string> = { new: 'New', quoted: 'Quoted', won: 'Won', lost: 'Lost' }
@@ -61,11 +64,16 @@ const columns: Column<MarketLoad>[] = [
 /** The loads this company can quote on: New, Quoted, Won and Lost. A row opens the load drawer. */
 export default function LoadMarket({ onOpen, selectedId }: { onOpen: (id: string) => void; selectedId?: string | null }) {
   const [tab, setTab] = useTabParam<MarketTab>(MARKET_TABS, 'new', 'market')
+  const company = useCompanyLoads()
   const market = useQuery({
-    queryKey: ['company', 'market', tab],
+    queryKey: ['company', 'market', tab, company.orgId],
     queryFn: () => companyLoadsAPI.market(tab),
-    refetchInterval: 30_000,
+    enabled: company.allowed,
+    retry: (count, error) => !(axios.isAxiosError(error) && error.response?.status === 403) && count < 2,
+    refetchInterval: query => axios.isAxiosError(query.state.error) && query.state.error.response?.status === 403 ? false : 30_000,
   })
+
+  if (!company.allowed) return <p className="text-sm text-muted" role="status">{company.message}</p>
 
   return (
     <div className="space-y-3">
@@ -76,7 +84,7 @@ export default function LoadMarket({ onOpen, selectedId }: { onOpen: (id: string
         rows={market.data ?? []}
         rowKey={r => r.id}
         loading={market.isLoading}
-        error={market.isError ? 'We could not load the loads. Check your connection and try again.' : undefined}
+        error={market.isError ? errorMessage(market.error, 'We could not load the loads. Try again.') : undefined}
         onRetry={() => market.refetch()}
         onRowClick={r => onOpen(r.id)}
         selectedKey={selectedId ?? null}

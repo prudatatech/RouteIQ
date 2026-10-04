@@ -46,6 +46,9 @@ registry `margixacr7m52h4t5it6og`.
   Key set on TEST only.
 
 ## 3. Decisions already taken (do not reopen without the owner)
+- The company load board and quote drawer wait for organisation context and request `/company/loads/market`
+  only for active logistic company staff. Platform/vendor/3PL contexts show a company-selection message instead
+  of making forbidden requests. Market caches include the acting organisation; switching companies reloads rows.
 - Vendor price recommendations now use the owner's five provisional per-km bands (LCV 15–25, 6-wheeler 20–30,
   10-wheeler 25–40, multi-axle 35–55, container 50–80 rupees). The price modal explains distance × rate and the
   midpoint; posted ranges use the same server calculation. See `docs/vendor-price-recommendation.md` for capacity,
