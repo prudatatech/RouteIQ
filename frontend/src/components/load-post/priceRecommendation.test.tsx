@@ -4,6 +4,8 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import PriceRecommendationModal from './PriceRecommendationModal'
 import type { FreightEstimate } from '@/types/load'
 
+vi.mock('@/services/supabase', () => ({ supabase: { auth: { getSession: vi.fn() } } }))
+
 afterEach(cleanup)
 const estimate: FreightEstimate = {
   low: 2510, high: 4016, suggested: 3263, distance_km: 100.4, label: 'Actual rate confirmed after carrier assignment',
