@@ -157,14 +157,16 @@ async function main() {
 
   await step('Reset the local database and cache', async () => {
     if (!flag('--reset')) return 'skipped (no --reset)';
-    psql(`SET client_min_messages = warning; DO $$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP EXECUTE format('TRUNCATE TABLE public.%I RESTART IDENTITY CASCADE', r.tablename); END LOOP; END $$; DELETE FROM auth.users;`);
+    // These migration-seeded reference tables are application configuration, not story records.
+    // Keeping them mirrors a deployed stage and lets load posting recommend real vehicle classes.
+    psql(`SET client_min_messages = warning; DO $$ DECLARE r record; BEGIN FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('vehicle_classes', 'goods_categories', 'hsn_codes', 'pincode_prefixes', 'pincodes') LOOP EXECUTE format('TRUNCATE TABLE public.%I RESTART IDENTITY CASCADE', r.tablename); END LOOP; END $$; DELETE FROM auth.users;`);
     execFileSync('docker', ['exec', REDIS_CONTAINER, 'redis-cli', 'FLUSHALL']);
     eq(Number(psql('SELECT count(*) FROM public.users;').trim()), 0, 'users left after reset');
     // The truncate took the organisations with it: make the platform and the default company again, so the
     // accounts created next join them through the sign-up triggers
     psql('SELECT app.backfill_organizations();');
     eq(Number(psql("SELECT count(*) FROM public.organizations WHERE kind IN ('platform', 'logistic_company');").trim()), 2, 'organisations after the reset');
-    return 'public tables truncated, platform and company organisations recreated, auth.users and Redis emptied';
+    return 'story records truncated, goods reference data preserved, platform and company organisations recreated, auth.users and Redis emptied';
   });
 
   const accounts = {};

@@ -55,7 +55,6 @@ const mr: Record<keyof typeof en, string> = {
   home_choose_drop: 'ड्रॉपचे ठिकाण निवडा',
   home_choose_pickup: 'पिकअपचे ठिकाण निवडा',
   home_close_map: 'नकाशा बंद करा',
-  home_find_truck: 'ट्रक शोधा',
   home_need_both: 'आधी पिकअप आणि ड्रॉप निवडा',
   home_opens_search: 'ठिकाणाचा शोध उघडेल',
   home_search_pickup: 'पिकअपचे ठिकाण शोधा',

@@ -4,6 +4,7 @@ import { Alert, Button, Card } from '@/components/ui'
 import type { AssistResult, LoadDraft, VehicleClass } from '@/types/load'
 import { formatDate } from '@/utils/display'
 import GstSummary from './GstSummary'
+import PriceRecommendationModal from './PriceRecommendationModal'
 import { addressOf, allSpecialHandling, EWAY_THRESHOLD_INR, ewayLocal, inr, itemTotals, kgText, priorityLabel, rangeText, rateText, TEMP_RANGES } from './logic'
 
 function Section({ title, onEdit, children }: { title: string; onEdit: () => void; children: ReactNode }) {
@@ -48,15 +49,16 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
   const vehicle = vehicleName
     ? `${draft.vehicle_mode === 'manual' ? 'Chosen' : 'Recommended'}: ${vehicleName}`
     : 'The logistic company decides'
-  const range = assist?.estimate ? rangeText(assist.estimate.low, assist.estimate.high) : null
+  const range = !assistLoading && assist?.estimate ? rangeText(assist.estimate.low, assist.estimate.high) : null
   const temp = draft.temp_choice ? TEMP_RANGES[draft.temp_choice].label : null
   const handling = allSpecialHandling(draft)
 
   return (
     <div className="space-y-4">
       <Card padded className="!p-4" aria-label="Load summary">
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <div><dt className="text-xs text-muted">Total weight</dt><dd className="font-semibold tabular text-text">{kgText(totals.weight_kg)}</dd></div>
+          <div><dt className="text-xs text-muted">Total distance</dt><dd className="font-semibold tabular text-text">{assist?.estimate?.distance_km ? `${Math.round(assist.estimate.distance_km).toLocaleString('en-IN')} km` : '—'}</dd></div>
           <div><dt className="text-xs text-muted">Total declared value</dt><dd className="font-semibold tabular text-text">{totals.declared_value > 0 ? inr(totals.declared_value) : 'Not declared'}</dd></div>
           <div><dt className="text-xs text-muted">From and to</dt><dd className="font-semibold text-text">{draft.pickup_city} → {draft.delivery_city}</dd></div>
           <div><dt className="text-xs text-muted">Pickup date</dt><dd className="font-semibold text-text">{draft.pickup_date ? formatDate(draft.pickup_date) : '—'}</dd></div>
@@ -128,6 +130,7 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
         ) : (
           <p className="text-sm text-muted" data-testid="review-pricing">We will share the range once a logistic company reviews the trip.</p>
         )}
+        <PriceRecommendationModal estimate={assistLoading ? null : assist?.estimate ?? null} />
       </Section>
 
       {error && <Alert tone="danger">{error}</Alert>}

@@ -102,6 +102,22 @@ export interface Estimate {
   high: number;
   distance_km: number;
   label: string;
+  suggested?: number;
+  basis?: {
+    source: string;
+    rate_key: string;
+    truck_type: string;
+    vehicle_name: string;
+    vehicle_capacity_t: number;
+    weight_kg: number;
+    min_per_km: number;
+    max_per_km: number;
+    midpoint_per_km: number;
+    distance_is_estimate: boolean;
+    distance_source?: 'mappls' | 'google' | 'estimate';
+    load_type: LoadType | null;
+    rates: Array<{ key: string; name: string; payload: string; min_per_km: number; max_per_km: number }>;
+  };
 }
 
 export interface LoadAssessment {

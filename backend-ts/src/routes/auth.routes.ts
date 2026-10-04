@@ -94,7 +94,10 @@ async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void
       res.status(400).json({ detail: 'Invalid phone number' });
       return;
     }
-    if (!smsConfigured() && settings.isProduction) {
+    const useEmail = kind === 'vendor' && !!req.body.email;
+    const email = req.body.email;
+
+    if (!useEmail && !smsConfigured() && settings.isProduction) {
       console.error('[OTP] Twilio is not configured; refusing to issue OTPs in production');
       res.status(503).json({ detail: 'SMS delivery is temporarily unavailable. Please try again later.' });
       return;
@@ -116,10 +119,30 @@ async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void
     let message = `Your margixindia ${kind} login OTP is: ${otp}. Valid for ${Math.round(settings.OTP_EXPIRY_SECONDS / 60)} minutes. Do not share this code.`;
     if (!existing) message = `Welcome ${OTP_KIND_LABEL[kind]}! ${message}`;
 
-    if (!(await sendSms(phone, message))) {
-      await cacheDelete(`otp:${kind}:${phone}`);
-      res.status(502).json({ detail: 'Failed to send OTP. Please try again.' });
-      return;
+    if (useEmail) {
+      const { emailService } = await import('../services/email.service');
+      const html = `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; background-color: #ffffff; padding: 32px; border: 1px solid #f0f0f0; border-top: 4px solid #facc15; border-radius: 8px; text-align: center;">
+          <img src="https://staging.margixindia.com/margix-logo.png" alt="MargixIndia Logo" style="height: 48px; margin-bottom: 24px;" />
+          <h1 style="font-size: 20px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">Welcome Partner!</h1>
+          <p style="font-size: 15px; color: #4b5563; margin: 0 0 24px 0; line-height: 1.5;">Let's post your loads and manage them with premium logistics market</p>
+          <div style="background-color: #fefce8; border: 1px dashed #facc15; border-radius: 6px; padding: 16px; margin-bottom: 24px;">
+            <p style="font-size: 32px; font-weight: bold; letter-spacing: 4px; color: #854d0e; margin: 0;">${otp}</p>
+          </div>
+          <p style="font-size: 13px; color: #6b7280; margin: 0;">Valid for ${Math.round(settings.OTP_EXPIRY_SECONDS / 60)} minutes. Please do not share this code.</p>
+        </div>
+      `;
+      if (!(await emailService.send(email, 'Your MargixIndia OTP', html))) {
+        await cacheDelete(`otp:${kind}:${phone}`);
+        res.status(502).json({ detail: 'Failed to send OTP email. Please try again.' });
+        return;
+      }
+    } else {
+      if (!(await sendSms(phone, message))) {
+        await cacheDelete(`otp:${kind}:${phone}`);
+        res.status(502).json({ detail: 'Failed to send OTP. Please try again.' });
+        return;
+      }
     }
 
     res.json({
@@ -205,8 +228,8 @@ async function phoneBelongsToOtherKind(role: 'driver' | 'vendor', phone: string)
  * in app_metadata, recovers one that exists already, and guarantees the public.users row (the vendor organisation is
  * made by the users trigger). Throws an HttpError 500 when the account cannot be made.
  */
-async function provisionPhoneUser(role: 'driver' | 'vendor', phone: string): Promise<{ id: string; email: string }> {
-  const email = `${role}_${phone.replace(/\+/g, '')}@${role}.margixindia.local`;
+async function provisionPhoneUser(role: 'driver' | 'vendor', phone: string, emailStr?: string): Promise<{ id: string; email: string }> {
+  const email = emailStr || `${role}_${phone.replace(/\+/g, '')}@${role}.margixindia.local`;
   const fullName = `${OTP_KIND_LABEL[role]} ${phone.slice(-4)}`;
   const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
     email,
@@ -465,6 +488,7 @@ router.post('/vendor/send-otp', rateLimitByIp('otp-send', 10, 3600), (req: Reque
 router.post('/vendor/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (req: Request, res: Response) => {
   try {
     const phone = normalizeIndianMobile(req.body.phone);
+    const email = req.body.email;
     if (!phone) {
       res.status(400).json({ detail: 'phone and otp are required' });
       return;
@@ -486,7 +510,7 @@ router.post('/vendor/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (
     if (!vendor) {
       let id: string;
       try {
-        id = (await provisionPhoneUser('vendor', phone)).id;
+        id = (await provisionPhoneUser('vendor', phone, email)).id;
       } catch (e) {
         if (e instanceof HttpError) { res.status(e.status).json({ detail: e.message }); return; }
         throw e;
@@ -592,6 +616,43 @@ router.post('/logout', async (req: Request, res: Response) => {
         .catch(() => undefined);
     }
     res.json({ message: 'Logged out successfully' });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── POST /reset-password ───────────────────────────────────
+// Manually sends the password reset link using our reliable Resend email service,
+// bypassing the default Supabase SMTP limits on staging/production.
+router.post('/reset-password', rateLimitByIp('reset-password', 5, 3600), async (req: Request, res: Response) => {
+  try {
+    const { email, redirect_to } = req.body;
+    if (typeof email !== 'string' || !email) {
+      res.status(400).json({ detail: 'email is required' });
+      return;
+    }
+
+    const { data: link, error } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email: email.trim(),
+      options: { redirectTo: redirect_to }
+    });
+
+    if (link?.properties?.action_link && !error) {
+      const { emailService } = await import('../services/email.service');
+      const html = `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; background-color: #ffffff; padding: 32px; border: 1px solid #f0f0f0; border-top: 4px solid #facc15; border-radius: 8px; text-align: center;">
+          <img src="https://staging.margixindia.com/margix-logo.png" alt="MargixIndia Logo" style="height: 48px; margin-bottom: 24px;" />
+          <h1 style="font-size: 20px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">Reset your password</h1>
+          <p style="font-size: 15px; color: #4b5563; margin: 0 0 24px 0; line-height: 1.5;">Click the button below to set a new password for your account.</p>
+          <a href="${link.properties.action_link}" style="display: inline-block; background-color: #facc15; color: #854d0e; font-weight: bold; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin-bottom: 24px;">Set new password</a>
+          <p style="font-size: 13px; color: #6b7280; margin: 0;">If you did not request this, please ignore this email.</p>
+        </div>
+      `;
+      await emailService.send(email.trim(), 'Reset your password - MargixIndia', html);
+    }
+    
+    res.json({ message: 'If an account exists, a reset link was sent.' });
   } catch (e: any) {
     sendError(req, res, e);
   }

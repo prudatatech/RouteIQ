@@ -52,6 +52,9 @@ export interface VendorRequest {
   created_at: string
   updated_at: string | null
   assigned_vehicle_id: string | null
+  vehicle_class?: string | null
+  load_type?: string | null
+  capacity_t?: number | null
   /** The agreed price for the load, set when staff accept it. */
   cost: number | null
   cost_per_km: number | null
@@ -235,6 +238,12 @@ export function stageCounts(rows: RequestRow[]): Record<StageId, number> {
   const counts: Record<StageId, number> = { accept: 0, accepted: 0, progress: 0, done: 0, closed: 0, all: rows.length }
   for (const r of rows) counts[r.stage]++
   return counts
+}
+
+/** Pending vendor loads are New loads. Only delegate them when the company board can actually render them. */
+export function rowsForStage(rows: RequestRow[], stage: StageId, companyMarket: boolean): RequestRow[] {
+  return rows.filter(r => (stage === 'all' || r.stage === stage)
+    && !(stage === 'accept' && companyMarket && r.source === 'vendor'))
 }
 
 /** Old links carry the old tab names; map them to the inbox's tabs. */

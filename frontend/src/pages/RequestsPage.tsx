@@ -7,15 +7,16 @@ import { supabase } from '@/services/supabase'
 import { bookingsAPI, vendorAPI, type CustomerBooking } from '@/services/api'
 import {
   Alert, BulkActionBar, Button, DataTable, Page, PageHeader, SearchInput, Select, StatusPill, Tabs, TabPanel,
-  useConfirm, useOpenOnWork, useRowSelection, useTabParam, useUrlState, type Column,
+  useConfirm, useRowSelection, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { buttonClasses } from '@/components/ui/buttonStyles'
 import AssignVehicleModal, { type AssignResult } from '@/components/shipments/AssignVehicleModal'
 import { AcceptBookingModal, AcceptLoadModal } from '@/components/requests/AcceptModals'
 import { BookingDrawer, LoadDrawer } from '@/components/requests/RequestDrawers'
 import LoadMarket from '@/components/requests/LoadMarket'
+import { useCompanyLoads } from '@/components/requests/useCompanyLoads'
 import {
-  SOURCES, STAGE_IDS, STAGE_LABELS, customerRow, priceText, primaryLabel, shipmentHref, shortPlace, stageCounts, vendorName, vendorRow, customerName,
+  SOURCES, STAGE_IDS, STAGE_LABELS, customerRow, priceText, primaryLabel, shipmentHref, shortPlace, stageCounts, vendorName, vendorRow, customerName, rowsForStage,
   type RequestRow, type RequestSource, type StageId, type VendorRequest,
 } from '@/components/requests/model'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
@@ -66,6 +67,7 @@ const EMPTY_TITLES: Record<StageId, string> = {
 
 export default function RequestsPage() {
   const queryClient = useQueryClient()
+  const company = useCompanyLoads()
   const { confirm, prompt } = useConfirm()
   const [tab, setTab] = useTabParam<StageId>(STAGE_IDS, 'accept')
   const [source, setSource] = useTabParam<SourceFilter>(SOURCE_FILTERS, 'all', 'source')
@@ -97,23 +99,19 @@ export default function RequestsPage() {
   const every = useMemo(() => [...allBookings.map(customerRow), ...allLoads.map(vendorRow)], [allBookings, allLoads])
   const inSource = useMemo(() => every.filter(r => source === 'all' || r.source === source), [every, source])
   const counts = useMemo(() => stageCounts(inSource), [inSource])
-  // Open on the first stage that has requests, not on an empty "New loads"
-  useOpenOnWork(['accept', 'accepted', 'progress', 'done'] as const, bookings.isLoading || loads.isLoading ? {} : counts, tab, setTab)
+  // New loads is the default inbox. A later response must not move the person to an older-work tab.
   const sourceCounts = useMemo(() => ({ all: every.length, customer: allBookings.length, vendor: allLoads.length }), [every.length, allBookings.length, allLoads.length])
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
-    const list = inSource.filter(r => {
-      if (tab !== 'all' && r.stage !== tab) return false
-      // Vendor loads waiting for a company are the market (New loads), not rows of this table
-      if (tab === 'accept' && r.source === 'vendor') return false
+    const list = rowsForStage(inSource, tab, company.allowed).filter(r => {
       if (!q) return true
       return [r.requester, r.pickup, r.drop, r.trackingId ?? ''].some(v => v.toLowerCase().includes(q))
     })
     // What has waited longest comes first where someone has to act; elsewhere the newest
     const dir = tab === 'accept' || tab === 'accepted' ? 1 : -1
     return list.sort((a, b) => (Date.parse(a.createdAt) - Date.parse(b.createdAt)) * dir)
-  }, [inSource, tab, search])
+  }, [inSource, tab, search, company.allowed])
 
   const loading = bookings.isLoading || loads.isLoading
   const failed = bookings.error && loads.error
@@ -371,7 +369,7 @@ export default function RequestsPage() {
     },
   ]
 
-  const tabs = STAGE_IDS.map(id => ({ id, label: STAGE_LABELS[id], count: loading || id === 'accept' ? undefined : counts[id] }))
+  const tabs = STAGE_IDS.map(id => ({ id, label: STAGE_LABELS[id], count: loading ? undefined : counts[id] }))
 
   const exportCsv = () => {
     const csv = toCsv(rows.map(r => ({
@@ -452,7 +450,7 @@ export default function RequestsPage() {
             <LoadMarket onOpen={id => setSelected({ source: 'vendor', id })} selectedId={selectedLoad?.id ?? null} />
           </div>
         )}
-        {tab === 'accept' && source !== 'customer' && rows.length > 0 && <h2 className="mb-2 text-sm font-medium text-text">Customer bookings to accept</h2>}
+        {tab === 'accept' && source !== 'customer' && rows.length > 0 && company.allowed && <h2 className="mb-2 text-sm font-medium text-text">Customer bookings to accept</h2>}
         {(tab !== 'accept' || source === 'customer' || rows.length > 0) && <DataTable
           caption="Requests"
           columns={columns}

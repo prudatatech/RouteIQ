@@ -200,7 +200,7 @@ export function LoadDrawer({ request, onClose, busy, accepting, rejecting, onAcc
             </Alert>
           )}
 
-          <QuotePanel key={request.id} loadId={request.id} status={request.status} />
+          <QuotePanel key={request.id} loadId={request.id} status={request.status} load={request} />
 
           <DetailList
             items={[

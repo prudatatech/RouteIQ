@@ -93,8 +93,9 @@ export const notificationService = {
    */
   async sendNotificationOnce(userId: string, title: string, body: string, type: string, data: Record<string, unknown>, key: string, hours = DEDUPE_HOURS) {
     const since = new Date(Date.now() - hours * 3600_000).toISOString();
-    const { data: recent } = await supabase
+    const { data: recent, error } = await supabase
       .from('notifications').select('id, data').eq('user_id', userId).eq('type', type).gte('created_at', since);
+    if (error) throw new Error(`Failed to check duplicate notification: ${error.message}`);
     if ((recent ?? []).some((r: any) => r.data?.[key] === data[key])) return null;
     return this.sendNotification(userId, title, body, type, data);
   },

@@ -55,7 +55,6 @@ const te: Record<keyof typeof en, string> = {
   home_choose_drop: 'డ్రాప్ ప్రదేశం ఎంచుకోండి',
   home_choose_pickup: 'పికప్ ప్రదేశం ఎంచుకోండి',
   home_close_map: 'మ్యాప్ మూసివేయండి',
-  home_find_truck: 'ట్రక్ కనుగొనండి',
   home_need_both: 'ముందు పికప్, డ్రాప్ ఎంచుకోండి',
   home_opens_search: 'ప్రదేశం శోధన తెరుస్తుంది',
   home_search_pickup: 'పికప్ ప్రదేశం వెతకండి',

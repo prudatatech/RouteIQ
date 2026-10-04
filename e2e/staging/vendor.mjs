@@ -935,16 +935,15 @@ async function s6() {
   r = await raw('/public/spare-space?min_kg=-3')
   check('6.25 spare space with min_kg -3 is a 400', r.status === 400, `${r.status}`)
 
-  const lane = { pickup: { lat: 19.0760, lng: 72.8777, label: 'Mumbai' }, drop: { lat: 28.6139, lng: 77.2090, label: 'Delhi' }, weight_kg: 20900 }
-  r = await raw('/public/quote', { method: 'POST', body: lane })
-  check('6.26 indicative quote Mumbai to Delhi: low <= suggested <= high, distance, no rate card, not cached', r.status === 200 && (r.body.status === 'unavailable' || (r.body.low <= r.body.suggested && r.body.suggested <= r.body.high && r.body.distance_km > 1000)) && /no-store/.test(r.headers.get('cache-control') || '') && !/rate_card|margin|factors|demand/i.test(r.text), `${r.status} ${r.text.slice(0, 200)}`)
-  console.log(`   (observation) quote answer: ${r.text.slice(0, 200)}`)
-  r = await raw('/public/quote', { method: 'POST', body: { ...lane, weight_kg: 0 } })
-  check('6.27 a quote with 0 kg is a 400', r.status === 400, `${r.status}`)
-  r = await raw('/public/quote', { method: 'POST', body: { ...lane, pickup: { lat: 99, lng: 0 } } })
-  check('6.28 a quote with latitude 99 is a 400', r.status === 400, `${r.status}`)
-  r = await raw('/public/quote', { method: 'POST', body: '{bad' , headers: {} })
-  check('6.29 a quote with broken JSON is a 400, not a 500', r.status === 400, `${r.status}`)
+  // The standalone lane-search price endpoint has been removed.
+  r = await raw('/public/quote', { method: 'POST', body: {} })
+  check('6.26 retired lane-search quote endpoint is 404', r.status === 404, `${r.status}`)
+  r = await raw('/public/loads/assist', { method: 'POST', body: {} })
+  check('6.27 the load assistant rejects an empty load', r.status === 400, `${r.status}`)
+  r = await raw('/public/loads/assist', { method: 'POST', body: loadBody({ pickup_lat: 99 }) })
+  check('6.28 the load assistant rejects latitude 99', r.status === 400, `${r.status}`)
+  r = await raw('/public/loads/assist', { method: 'POST', body: '{bad', headers: {} })
+  check('6.29 the load assistant rejects broken JSON', r.status === 400, `${r.status}`)
 
   // load assist: the PRD 8.3 example: 20,900 kg, Rs 7,62,500; GST per the master
   const assistBody = {
@@ -1006,9 +1005,9 @@ async function s6() {
 
   // rate limits answer 429 not 500
   let codes = []
-  for (let i = 0; i < 24; i++) codes.push((await raw('/public/quote', { method: 'POST', body: lane })).status)
-  check('6.48 hammering /public/quote (limit 20/min) turns to 429, with no 5xx', codes.includes(429) && !codes.some(c => c >= 500), codes.join(','))
-  const lim = await raw('/public/quote', { method: 'POST', body: lane })
+  for (let i = 0; i < 65; i++) codes.push((await raw('/public/loads/assist', { method: 'POST', body: assistBody })).status)
+  check('6.48 hammering /public/loads/assist (limit 60/min) turns to 429, with no 5xx', codes.includes(429) && !codes.some(c => c >= 500), codes.join(','))
+  const lim = await raw('/public/loads/assist', { method: 'POST', body: assistBody })
   check('6.49 the 429 carries a message and Retry-After or a clear detail', lim.status !== 429 || (lim.body?.detail || lim.body?.error), lim.text.slice(0, 100))
   r = await raw('/public/nonexistent')
   check('6.50 an unknown public path is a 404', r.status === 404, `${r.status}`)

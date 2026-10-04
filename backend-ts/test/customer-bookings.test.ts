@@ -4,6 +4,7 @@ import { supabaseMock } from './support/mock-supabase';
 import { testApp } from './support/test-app';
 import { createAccessToken } from '../src/core/auth';
 import { indianDateKey } from '../src/core/istDate';
+import { goodsTables } from './support/goods-world';
 
 const app = testApp();
 const CUSTOMER = '11111111-1111-4111-8111-111111111111';
@@ -36,6 +37,8 @@ function reset(bookings: Record<string, unknown>[] = [], rate: number | null = 2
     users: [{ id: 'admin-1', role: 'admin', is_active: true }, { id: 'vendor-1', role: 'vendor', is_active: true }],
     customers: [{ id: CUSTOMER, phone: '+919800000001', full_name: 'Asha Rao', company_name: null }, { id: OTHER, phone: '+919800000002', full_name: 'Other', company_name: null }],
     system_settings: rate == null ? [] : [{ key: 'rate_per_km', value: { rate } }],
+    ...goodsTables(),
+    vehicle_classes: rate == null ? [] : goodsTables().vehicle_classes,
     customer_bookings: bookings,
     shipments: [], shipment_logs: [], delivery_points: [], parcels: [], route_stops: [], routes: [],
     vehicles: [{ id: VEHICLE, plate_number: 'MH04AB1234', capacity_kg: 5000, available_capacity_kg: 5000, status: 'available', driver_id: 'driver-1' }],
@@ -70,7 +73,7 @@ describe('customer books a shipment', () => {
     expect(body).not.toContain(iso);
   });
 
-  it('keeps the price empty when no rate is set', async () => {
+  it('keeps the price empty when no truck capacity reference is available', async () => {
     reset([], null);
     const res = await post('/customer/bookings', customer(), payload());
     expect(res.status).toBe(201);

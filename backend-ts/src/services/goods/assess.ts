@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { GST_STATES } from '../../core/gst';
 import { indianDateKey } from '../../core/istDate';
-import { pricingService } from '../pricing.service';
+import { marketFreightService } from './freight';
 import { HsnHit, HsnIndex, loadHsnIndex, searchHsn } from './hsn-index';
 import { GoodsCategory, loadGoodsCategories, loadVehicleClasses, VehicleClass } from './master';
 import { lookupPincode } from './pincode';
@@ -15,7 +15,7 @@ import { computeTax, ewayRule, ewayThreshold, isHazmatMixed, primaryLine, resolv
 import type { DraftPlace, Estimate, LoadAssessment, LoadDraft } from './types';
 import { suggestVehicle, vehicleNeedsOf } from './vehicle';
 
-export const ESTIMATE_LABEL = 'Actual rate confirmed after carrier assignment';
+export { ESTIMATE_LABEL } from './freight';
 /** At most this many lines are asked for an HSN suggestion (the search is the costly part). */
 const HINT_LINES = 10;
 
@@ -93,16 +93,13 @@ export async function stateOfPlace(p: DraftPlace | null | undefined): Promise<st
   return fromPin ?? validState(p.state_code);
 }
 
-/** The freight range for the draft, or null when it cannot be worked out (no coordinates, no rate card, a routing failure). */
-export async function estimateFreight(draft: LoadDraft, weightKg: number, vehicleClass: string | null): Promise<Estimate | null> {
+/** The same owner-provided reference range is used by the guest form and by server-side load creation. */
+export async function estimateFreight(draft: LoadDraft, weightKg: number, vehicleClass: string | null, classes?: VehicleClass[]): Promise<Estimate | null> {
   const a = draft.pickup, b = draft.delivery;
   if (!(weightKg > 0) || a?.lat == null || a?.lng == null || b?.lat == null || b?.lng == null) return null;
   try {
-    const out = await pricingService.quote(
-      { pickup: { lat: a.lat, lng: a.lng, label: a.city }, drop: { lat: b.lat, lng: b.lng, label: b.city }, weight_kg: weightKg, vehicle_type: vehicleClass, load_type: draft.load_type ?? null, date: a.date ?? null },
-      { role: 'guest', source: 'api', persist: false },
-    );
-    return out.status === 'ok' ? { low: out.low, high: out.high, distance_km: out.distance_km, label: ESTIMATE_LABEL } : null;
+    const vehicle = (classes ?? await loadVehicleClasses()).find(v => v.key === vehicleClass);
+    return await marketFreightService.estimate(draft, weightKg, vehicle);
   } catch {
     return null;
   }
@@ -130,7 +127,7 @@ export async function assessLoad(draft: LoadDraft, refs: AssessRefs = {}): Promi
   const hazmat_mixed = isHazmatMixed(lines) || special.includes('hazmat');
   const perishable = lines.some(l => l.perishable);
   const suggested = suggestVehicle(vehicleNeedsOf(lines, special, tax.basis === 'inter', primary?.category ?? null), classes, categories);
-  const estimate = refs.estimate !== undefined ? refs.estimate : await estimateFreight(draft, weight, draft.vehicle_class ?? suggested.vehicle_class);
+  const estimate = refs.estimate !== undefined ? refs.estimate : await estimateFreight(draft, weight, draft.vehicle_class ?? suggested.vehicle_class, classes);
   const eway = ewayRule(special.includes('hazmat') ? lines.map(l => ({ ...l, eway_always: true })) : lines, ewayThreshold(lines, categories));
 
   const hsnHints: HsnHit[][] = lines.map((l, i) => (!l.hsn && l.product.length >= 3 && i < HINT_LINES ? searchHsn(index, l.product) : []));

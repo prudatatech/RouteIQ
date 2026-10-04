@@ -12,7 +12,6 @@ import type {
   LoadTimelineResponse, Settlement, UploadUrl,
 } from '@/types/loadDocuments'
 import type { CompanyProfile, InvoiceDetail, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
-import type { QuoteRequest, QuoteResponse } from '@/services/pricing'
 import type {
   CompanyGroup, ExcludedPartner, Grouped, NetDriver, NetStatement, NetVehicle, NetVehicleInput, PartnerFleetSummary, AffiliationRules, StatementDeduction,
 } from '@/types/network'
@@ -474,38 +473,6 @@ const compact = (params: object) => Object.fromEntries(
   Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '' && !(typeof v === 'number' && Number.isNaN(v))),
 )
 
-interface PublicQuoteReply {
-  status: 'ok' | 'unavailable'
-  distance_km?: number
-  distance_is_estimate?: boolean
-  low?: number
-  suggested?: number
-  high?: number
-  per_km_suggested?: number
-}
-
-function toQuoteResponse(r: PublicQuoteReply): QuoteResponse {
-  if (r.status !== 'ok' || r.suggested == null || r.low == null || r.high == null) {
-    return { status: 'unavailable', reason: 'The price for this lane is on request. Post your load and companies will quote you.', notes: [] }
-  }
-  return {
-    status: 'ok',
-    quote_id: null,
-    distance_km: r.distance_km ?? 0,
-    distance_source: 'estimate',
-    distance_is_estimate: r.distance_is_estimate ?? true,
-    low: r.low,
-    suggested: r.suggested,
-    high: r.high,
-    per_km_suggested: r.per_km_suggested ?? 0,
-    factors: [],
-    notes: [],
-    demand: { open_loads: 0, available_vehicles: 0, radius_km: 0 },
-    history: { samples: 0, median_per_km: null, band_km: [0, 0] },
-    weather: { checked: false, severe: false, description: null },
-  }
-}
-
 export const publicAPI = {
   /** Aggregate counts for the landing page. No sign-in needed. */
   stats: () => publicClient.get('/public/stats').then(r => r.data as PublicStats),
@@ -515,13 +482,6 @@ export const publicAPI = {
   /** Active logistic companies, optionally by city or vehicle type. */
   companies: (params: PublicCompanyParams = {}) =>
     publicClient.get('/public/companies', { params: compact(params) }).then(r => ensureArray(r.data?.items) as PublicCompany[]),
-  /**
-   * An indicative price for a load. Writes nothing. Same body as the signed-in price check, without `source`.
-   * The answer is shaped like the signed-in one so the same price panel can show it; a public price has no
-   * line-by-line reasons.
-   */
-  quote: (body: Omit<QuoteRequest, 'source'>) =>
-    publicClient.post('/public/quote', body).then(r => toQuoteResponse(r.data as PublicQuoteReply)),
   /** City suggestions for a lane search. */
   cities: (q: string) =>
     publicClient.get('/public/cities', { params: { q } }).then(r => ensureArray(r.data?.cities).filter((c): c is string => typeof c === 'string' && c.length > 0)),
@@ -772,10 +732,12 @@ export const loadDocumentsAPI = {
 
 export const authAPI = {
   /** Texts a 6-digit code to a vendor's phone. No sign-in needed. */
-  vendorSendOtp: (phone: string) => publicClient.post('/auth/vendor/send-otp', { phone }).then(r => r.data),
+  vendorSendOtp: (phone: string, email?: string) => publicClient.post('/auth/vendor/send-otp', { phone, email }).then(r => r.data),
   /** Checks the code; the answer carries a session to hand to supabase.auth.setSession. */
-  vendorVerifyOtp: (phone: string, otp: string) =>
-    publicClient.post('/auth/vendor/verify-otp', { phone, otp }).then(r => r.data as VendorSession),
+  vendorVerifyOtp: (phone: string, otp: string, email?: string) =>
+    publicClient.post('/auth/vendor/verify-otp', { phone, otp, email }).then(r => r.data as VendorSession),
+  vendorSendResetLink: (email: string, redirect_to: string) =>
+    publicClient.post('/auth/reset-password', { email, redirect_to }).then(r => r.data),
   inviteVendor: (email: string, password: string) =>
     api.post('/auth/invite-vendor', { email, password }).then(r => r.data),
 }

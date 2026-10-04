@@ -15,6 +15,8 @@ const FULL_VEHICLE = {
   id: 'vehicle-1',
   plate_number: 'MH12AB1234',
   vehicle_type: 'truck',
+  capacity_kg: 30000,
+  body_type: 'container',
   available_capacity_kg: 800,
   current_location_name: 'Baner, Pune',
   driver_id: 'driver-1',
@@ -61,7 +63,7 @@ describe('GET /capacity/windows/open', () => {
       opens_at: '2026-09-29T10:00:00Z',
       closes_at: '2099-01-01T00:00:00Z',
       floor_price: 1000,
-      vehicles: { vehicle_type: 'truck', available_capacity_kg: 800 },
+      vehicles: { vehicle_type: 'truck', capacity_kg: 30000, body_type: 'container', available_capacity_kg: 800 },
     }]);
   });
 
@@ -70,7 +72,7 @@ describe('GET /capacity/windows/open', () => {
     const query = supabaseMock.requests.find(u => u.pathname === '/rest/v1/capacity_windows');
     const select = query?.searchParams.get('select') ?? '';
     // Position is read to apply the geofence, but never sent on
-    expect(select).toContain('vehicles(vehicle_type,available_capacity_kg,latitude,longitude,current_location_name)');
+    expect(select).toContain('vehicles(vehicle_type,capacity_kg,body_type,available_capacity_kg,latitude,longitude,current_location_name)');
     expect(select).not.toMatch(/plate|driver|\*/);
   });
 
