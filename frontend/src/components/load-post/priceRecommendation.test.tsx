@@ -14,7 +14,7 @@ const estimate: FreightEstimate = {
 
 describe('price recommendation modal', () => {
   it('explains fractional midpoint arithmetic, fallback distance and part-load limits, and closes', () => {
-    window.scrollTo = vi.fn()
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo
     render(<PriceRecommendationModal estimate={estimate} />)
     fireEvent.click(screen.getByRole('button', { name: 'View price recommendation' }))
     const dialog = screen.getByRole('dialog', { name: 'Price recommendation' })
