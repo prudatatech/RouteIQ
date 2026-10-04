@@ -46,7 +46,7 @@ function initialDraft(params: URLSearchParams): LoadDraft {
 }
 
 export default function VendorShipmentRequestPage() {
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const queryClient = useQueryClient()
   const token = useAuthStore(s => s.token)
   const blockedKind = useBlockedFromVendorActions()
@@ -112,7 +112,25 @@ export default function VendorShipmentRequestPage() {
   const [focusTick, setFocusTick] = useState(0)
   useScrollToFirstInvalid(formRoot, focusTick)
 
-  const goTo = (s: number) => { patch({ step: s }); scrollPageTop() }
+  const stepParam = params.get('step')
+  useEffect(() => {
+    if (stepParam) {
+      const s = parseInt(stepParam, 10)
+      if (Number.isInteger(s) && s !== draft.step && s >= 0 && s <= LAST_STEP) {
+        patch({ step: s })
+      }
+    }
+  }, [stepParam, draft.step, patch])
+
+  const goTo = (s: number) => {
+    patch({ step: s })
+    setParams(p => {
+      const next = new URLSearchParams(p)
+      next.set('step', String(s))
+      return next
+    })
+    scrollPageTop()
+  }
   const next = () => {
     setAttempted(a => ({ ...a, [step]: true }))
     if (Object.keys(validateStep(draft, step)).length === 0) goTo(step + 1)

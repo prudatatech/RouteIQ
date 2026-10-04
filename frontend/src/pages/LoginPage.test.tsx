@@ -184,6 +184,8 @@ describe('after signing in, each account goes to its own area', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send code' }))
     fireEvent.change(await screen.findByLabelText(/6-digit code/), { target: { value: '123456' } })
     fireEvent.click(screen.getByRole('button', { name: 'Verify and continue' }))
+    await screen.findByRole('heading', { name: /set a password/i })
+    fireEvent.click(screen.getByRole('button', { name: /skip for now/i }))
     await waitFor(() => expect(where()).toBe('/vendor/loads'))
     expect(mocks.signOut).not.toHaveBeenCalled()
   })

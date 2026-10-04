@@ -245,6 +245,10 @@ describe('OTP modal', () => {
 
     fireEvent.change(screen.getByLabelText(/6-digit code/i), { target: { value: '123456' } })
     fireEvent.click(screen.getByRole('button', { name: /verify and continue/i }))
+    
+    await screen.findByRole('heading', { name: /set a password/i })
+    fireEvent.click(screen.getByRole('button', { name: /skip for now/i }))
+    
     await waitFor(() => expect(onVerified).toHaveBeenCalledTimes(1))
     expect(api.vendorVerifyOtp).toHaveBeenCalledWith('+919820012345', '123456', 'vendor@example.com')
     expect(api.setSession).toHaveBeenCalledWith({ access_token: 'AT', refresh_token: 'RT' })

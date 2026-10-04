@@ -27,9 +27,12 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
   const [resendTimer, setResendTimer] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [verified, setVerified] = useState(false)
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
 
   useEffect(() => {
-    if (!open) { setCode(''); setSent(false); setError(null); setBusy(false); setResendTimer(0) }
+    if (!open) { setCode(''); setSent(false); setVerified(false); setError(null); setBusy(false); setResendTimer(0); setPassword(''); setConfirmPassword('') }
   }, [open])
 
   useEffect(() => {
@@ -66,9 +69,25 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
         refresh_token: res.session.refresh_token,
       })
       if (sessionError) throw sessionError
-      onVerified()
+      setVerified(true)
     } catch (err) {
       setError(errorMessage(err, 'That code did not work. Check it and try again.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const setAccountPassword = async () => {
+    if (!password) { onVerified(); return }
+    if (password !== confirmPassword) { setError('Passwords do not match.'); return }
+    if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
+    setBusy(true); setError(null)
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password })
+      if (updateError) throw updateError
+      onVerified()
+    } catch (err) {
+      setError(errorMessage(err, 'We could not set your password. Try again.'))
     } finally {
       setBusy(false)
     }
@@ -79,18 +98,35 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
       open={open}
       onClose={onClose}
       size="sm"
-      title={sent ? 'Enter the code' : 'Verify your email address'}
-      description={sent ? `We sent a 6-digit code to ${email}.` : 'We use it to sign you in and send updates on your load.'}
-      onSubmit={sent ? verify : send}
+      title={verified ? 'Set a password (Optional)' : sent ? 'Enter the code' : 'Verify your email address'}
+      description={verified ? 'Set a password to easily log in next time without needing an email code.' : sent ? `We sent a 6-digit code to ${email}.` : 'We use it to sign you in and send updates on your load.'}
+      onSubmit={verified ? setAccountPassword : sent ? verify : send}
       footer={(
         <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" loading={busy}>{sent ? 'Verify and continue' : 'Send code'}</Button>
+          {verified ? (
+            <Button variant="secondary" onClick={onVerified}>Skip for now</Button>
+          ) : (
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          )}
+          <Button type="submit" loading={busy}>{verified ? 'Save and continue' : sent ? 'Verify and continue' : 'Send code'}</Button>
         </>
       )}
     >
       <div className="space-y-4">
-        {sent ? (
+        {verified ? (
+          <div className="space-y-4">
+            <Input
+              label="Password (optional)" type="password" autoComplete="new-password"
+              value={password} onChange={e => setPassword(e.target.value)} autoFocus
+            />
+            {password.length > 0 && (
+              <Input
+                label="Confirm password" type="password" autoComplete="new-password"
+                value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+              />
+            )}
+          </div>
+        ) : sent ? (
           <>
             <Input
               label="6-digit code" required inputMode="numeric" autoComplete="one-time-code" maxLength={6}
@@ -107,8 +143,8 @@ export default function OtpModal({ open, onClose, onVerified, emailSignInHref, o
         ) : (
           <div className="space-y-4">
             <Input
-              label="Mobile number" required type="tel" inputMode="tel" autoComplete="tel-national" leading="+91"
-              value={phone} onChange={e => setPhone(e.target.value)} autoFocus inputClassName="pl-12"
+              label="Mobile number" required type="tel" inputMode="tel" autoComplete="tel-national" leading="+91 "
+              value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} autoFocus inputClassName="pl-14"
             />
             <Input
               label="Email address" required type="email" autoComplete="email"
