@@ -20,7 +20,7 @@ const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url')
 const unsigned = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: account.id, role: 'authenticated', iss: `${DATA}/auth/v1`, aud: 'authenticated', iat: now, exp: now + 600 })}`
 const token = `${unsigned}.${createHmac('sha256', localEnv.JWT_SECRET).update(unsigned).digest('base64url')}`
 const probes = [
-  ...['/orgs/mine', '/ops/today', '/messages/unread', '/bookings', '/company/loads/market?tab=new', '/vehicles?limit=50', '/shipments?limit=50', '/routes?limit=50', '/dashboard/kpis', '/dashboard/shipment-counts']
+  ...['/orgs/mine', '/ops/today', '/messages/unread', '/bookings', '/company/loads/market?tab=new', '/vehicles?limit=50', '/shipments?limit=50', '/routes?limit=50', '/dashboard/kpis', '/dashboard/shipment-counts', '/finance/summary', '/finance/unpriced', '/analytics/fleet-overview', '/analytics/daily-activity', '/fleet/health']
     .map(path => ({ name: path, url: `${API}${path}`, method: 'GET', headers: {} })),
   { name: 'notifications badge', url: `${DATA}/rest/v1/notifications?select=id&user_id=eq.${account.id}&is_read=eq.false`, method: 'HEAD', headers: { apikey: env.ANON, Prefer: 'count=exact' } },
   { name: 'notifications list', url: `${DATA}/rest/v1/notifications?select=*&user_id=eq.${account.id}&order=created_at.desc&limit=20`, method: 'GET', headers: { apikey: env.ANON } },

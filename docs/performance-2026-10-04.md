@@ -65,4 +65,30 @@ and overlapping/hidden-tab map polls. Backend tests cover aggregation, status ma
 The actual staging SQL function was checked with temporary fixtures inside a rolled-back transaction, and its
 execute permissions were verified: anon/authenticated cannot call it; service_role can.
 
-Post-deployment measurements and workflow results are recorded below once deployment completes.
+## Deployed results
+
+All 51 read-only requests across 17 probes returned HTTP 200 after deployment.
+
+| Measurement | Before | After |
+|---|---:|---:|
+| Shipment counts median | 317 ms | 90 ms |
+| Shipment counts database calls | 22 | 1 |
+| Dashboard KPI median | 98 ms | 92 ms |
+| Initial JavaScript | 553.10 KB | 464.78 KB |
+| Initial JavaScript, gzip | 161.81 KB | 135.29 KB |
+
+Shipment counts improved by about 72%; initial JavaScript fell by about 16%. Notifications avoid loading
+message bodies until requested; this reduces startup work rather than materially changing individual REST latency.
+Other API medians were generally 80–110 ms. Finance summary was 96 ms, fleet overview 109 ms,
+daily activity 100 ms and fleet health 85 ms.
+
+`/ops/today` still makes 20 database calls and measured 287 ms versus 170 ms in the baseline. It remains a
+performance target; this work does not establish that every screen is faster. Three sequential samples on a
+cleared staging database cannot establish concurrency capacity or performance with substantial business data.
+A realistic load test and browser walkthrough remain open.
+
+Application commit `7506306` passed [CI](https://github.com/prudatatech/RouteIQ/actions/runs/37196724446),
+[Azure deployment](https://github.com/prudatatech/RouteIQ/actions/runs/37196721861), and
+[UAT: 91/91](https://github.com/prudatatech/RouteIQ/actions/runs/37196722146).
+Targeted checks passed: 37 backend tests and 11 frontend tests, plus TypeScript, query checks, lint and vocabulary.
+
