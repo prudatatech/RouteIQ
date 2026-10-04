@@ -49,6 +49,8 @@ try {
     await page.getByRole('navigation', { name: 'Steps' }).waitFor();
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('margix:guest-draft:load')).data.pickup_city), 'Pune');
     await page.screenshot({ path: `e2e/shots/vendor-entry-${width}.png`, fullPage: true });
+    // Unmount the form before seeding a resumed draft so its autosave cannot overwrite this fixture.
+    await page.goto(`${web}/login`);
 
     await page.evaluate(() => localStorage.setItem('margix:guest-draft:load', JSON.stringify({
       savedAt: Date.now(), data: { v: 2, step: 2, pickup_city: 'Pune', delivery_city: 'Mumbai', pickup_lat: 18.52, pickup_lng: 73.85,

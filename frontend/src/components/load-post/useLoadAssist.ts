@@ -33,5 +33,9 @@ export function useLoadAssist(draft: LoadDraft, enabled = true): { assist: Assis
   }, [key, enabled, worthAsking])
 
   const current = enabled && worthAsking && answer?.key === key
-  return { assist: current ? answer.assist : null, loading: enabled && worthAsking && (loading || !current) }
+  // Keep non-price suggestions stable while their dependent capacity field updates. Only money must match the current inputs.
+  const assist = enabled && worthAsking && answer?.assist
+    ? current ? answer.assist : { ...answer.assist, estimate: null }
+    : null
+  return { assist, loading: enabled && worthAsking && (loading || !current) }
 }
