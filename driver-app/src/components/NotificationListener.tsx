@@ -1,11 +1,13 @@
 import React, { useEffect } from 'react';
 import { DeviceEventEmitter, ToastAndroid, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { supabase } from '../services/supabase';
 import { api } from '../services/api';
 import { colors } from '../theme';
 import { openNotification } from '../services/driverLinks';
+
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 // Configure how notifications behave when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -59,27 +61,29 @@ export const NotificationListener = () => {
       }
     });
 
-    // Listen for incoming push notifications to play custom sounds if needed
-    const subscription = Notifications.addNotificationReceivedListener(notification => {
-      const type = (notification.request.content.data as { type?: unknown } | undefined)?.type;
-      if (isCargoType(type)) DeviceEventEmitter.emit(CARGO_CHANGED_EVENT, type);
-      DeviceEventEmitter.emit(NOTIFICATIONS_CHANGED_EVENT);
-    });
+    if (!isExpoGo) {
+      // Listen for incoming push notifications to play custom sounds if needed
+      const subscription = Notifications.addNotificationReceivedListener(notification => {
+        const type = (notification.request.content.data as { type?: unknown } | undefined)?.type;
+        if (isCargoType(type)) DeviceEventEmitter.emit(CARGO_CHANGED_EVENT, type);
+        DeviceEventEmitter.emit(NOTIFICATIONS_CHANGED_EVENT);
+      });
 
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener(openTarget);
+      const responseSubscription = Notifications.addNotificationResponseReceivedListener(openTarget);
 
-    // The app was closed and a notification tap started it.
-    Notifications.getLastNotificationResponseAsync()
-      .then((response) => {
-        // Home takes the target when it mounts, so no delay is needed here
-        if (response) openTarget(response);
-      })
-      .catch(() => {});
+      // The app was closed and a notification tap started it.
+      Notifications.getLastNotificationResponseAsync()
+        .then((response) => {
+          // Home takes the target when it mounts, so no delay is needed here
+          if (response) openTarget(response);
+        })
+        .catch(() => {});
 
-    return () => {
-      subscription.remove();
-      responseSubscription.remove();
-    };
+      return () => {
+        subscription.remove();
+        responseSubscription.remove();
+      };
+    }
   }, []);
 
   useEffect(() => {
@@ -117,6 +121,10 @@ export const NotificationListener = () => {
 };
 
 async function registerForPushNotificationsAsync() {
+  if (isExpoGo) {
+    console.log('Push notifications are not supported in Expo Go for SDK 53+');
+    return undefined;
+  }
   let token;
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {

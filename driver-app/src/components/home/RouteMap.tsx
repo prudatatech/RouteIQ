@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE, UrlTile, type Region } from 'react-native-maps';
 import { useTranslation } from '../../hooks/useTranslation';
 import type { MapPoint } from '../../hooks/useSnappedRoute';
 import type { DriverRoute, LatLng } from '../../types/route';
@@ -99,7 +99,16 @@ export default function RouteMap({ route, currentLoc, line }: RouteMapProps) {
         showsMyLocationButton={false}
         initialRegion={initialRegion}
         accessibilityLabel={t('map_label')}
+        mapType="none"
       >
+        <UrlTile
+          urlTemplate="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+          maximumZ={19}
+          flipY={false}
+          shouldReplaceMapContent={true}
+          zIndex={100}
+        />
+        
         {line.length > 1 && <Polyline coordinates={line} strokeColor={colors.info} strokeWidth={5} />}
         {sortedStops(route).map((stop) => {
           const c = stopCoord(stop);
