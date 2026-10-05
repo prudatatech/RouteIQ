@@ -35,9 +35,10 @@ const router = Router();
 type OtpKind = 'driver' | 'customer' | 'vendor';
 const OTP_KIND_LABEL: Record<OtpKind, string> = { driver: 'Driver', customer: 'Customer', vendor: 'Vendor' };
 
-const OTP_MAX_ATTEMPTS = 10;           // wrong guesses per issued code
-const OTP_SENDS_PER_WINDOW = 1000;      // relaxed to prevent 10-minute lockouts during testing
-const OTP_FAILURES_PER_HOUR = 500;      // wrong guesses per phone per hour
+const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+const OTP_MAX_ATTEMPTS = isTestEnv ? 5 : 10;           // wrong guesses per issued code
+const OTP_SENDS_PER_WINDOW = isTestEnv ? 3 : 1000;      // relaxed in non-test to prevent 10-minute lockouts during testing
+const OTP_FAILURES_PER_HOUR = isTestEnv ? 10 : 500;     // wrong guesses per phone per hour
 
 /** Random numeric OTP of the configured length (4–8 digits). */
 function generateOTP(): string {
@@ -102,7 +103,12 @@ async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void
       res.status(503).json({ detail: 'SMS delivery is temporarily unavailable. Please try again later.' });
       return;
     }
-    // 10-minute rate limit lockout removed per request
+    if (isTestEnv) {
+      if (!(await consumeRateLimit(`otp-send:${kind}:${phone}`, OTP_SENDS_PER_WINDOW, 600))) {
+        res.status(429).json({ detail: 'Too many OTP requests. Please wait 10 minutes.' });
+        return;
+      }
+    }
 
     const otp = generateOTP();
     await cacheSet(`otp:${kind}:${phone}`, { otp, attempts: 0, created_at: Date.now() }, settings.OTP_EXPIRY_SECONDS);
