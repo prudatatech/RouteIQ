@@ -73,7 +73,7 @@ const RING = 3;
 const styles = StyleSheet.create({
   ringWrap: { padding: RING },
   ring: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: radius.full,
     borderWidth: RING,
     borderColor: colors.dangerHover,
