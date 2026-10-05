@@ -36,7 +36,7 @@ type OtpKind = 'driver' | 'customer' | 'vendor';
 const OTP_KIND_LABEL: Record<OtpKind, string> = { driver: 'Driver', customer: 'Customer', vendor: 'Vendor' };
 
 const OTP_MAX_ATTEMPTS = 5;            // wrong guesses per issued code
-const OTP_SENDS_PER_WINDOW = 100;      // codes per phone per 10 minutes (increased for testing)
+const OTP_SENDS_PER_WINDOW = 3;        // codes per phone per 10 minutes
 const OTP_FAILURES_PER_HOUR = 10;      // wrong guesses per phone per hour, across resends
 
 /** Random numeric OTP of the configured length (4–8 digits). */
