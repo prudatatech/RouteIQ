@@ -18,18 +18,20 @@ import { locationService } from './src/services/location';
 import { TranslationProvider } from './src/hooks/useTranslation';
 import AnimatedSplashScreen from './src/components/AnimatedSplashScreen';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Audio } from 'expo-av';
+// import { Audio } from 'expo-av';
 import { themeFonts } from './src/theme/fonts';
 
 const queryClient = new QueryClient();
 
 // Enable background audio so sounds don't pause when app minimizes
+/*
 Audio.setAudioModeAsync({
   staysActiveInBackground: true,
   playsInSilentModeIOS: true,
   shouldDuckAndroid: true,
   playThroughEarpieceAndroid: false,
 }).catch(console.warn);
+*/
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);

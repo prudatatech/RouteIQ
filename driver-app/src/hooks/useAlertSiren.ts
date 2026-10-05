@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { Animated, Vibration } from 'react-native';
-import { Audio } from 'expo-av';
+// import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
 import { useTranslation } from './useTranslation';
 
@@ -21,7 +21,7 @@ interface Options {
 
 export function useAlertSiren({ ringing, assignmentWaiting }: Options) {
   const { t } = useTranslation();
-  const soundRef = useRef<Audio.Sound | null>(null);
+  // const soundRef = useRef<Audio.Sound | null>(null);
   const pulse = useRef(new Animated.Value(1)).current;
 
   // Background reminder through the "alarms" channel
@@ -66,6 +66,8 @@ export function useAlertSiren({ ringing, assignmentWaiting }: Options) {
 
     (async () => {
       try {
+        // Bypass expo-av for now to fix Expo Go crash
+        /*
         const { sound } = await Audio.Sound.createAsync(require('../../assets/uber_driver_sound.mp3'), {
           isLooping: true,
           volume: 1.0,
@@ -76,6 +78,7 @@ export function useAlertSiren({ ringing, assignmentWaiting }: Options) {
         } else {
           sound.unloadAsync();
         }
+        */
       } catch (e) {
         console.warn('Failed to play notification sound', e);
       }
@@ -86,9 +89,9 @@ export function useAlertSiren({ ringing, assignmentWaiting }: Options) {
       loop.stop();
       pulse.setValue(1);
       Vibration.cancel();
-      const sound = soundRef.current;
-      soundRef.current = null;
-      if (sound) sound.stopAsync().then(() => sound.unloadAsync()).catch(() => {});
+      // const sound = soundRef.current;
+      // soundRef.current = null;
+      // if (sound) sound.stopAsync().then(() => sound.unloadAsync()).catch(() => {});
     };
   }, [ringing, pulse]);
 
