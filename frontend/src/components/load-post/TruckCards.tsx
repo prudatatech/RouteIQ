@@ -60,19 +60,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
 
   return (
     <>
-      <Card padded className="space-y-4 !p-4">
-        <Segmented
-          name="load_type" legend="Load type" required value={draft.load_type} columns="grid-cols-2"
-          onChange={t => onChange({ load_type: t, transport_touched: true })}
-          options={(['ftl', 'ptl'] as const).map(t => ({
-            value: t,
-            label: <>{t === 'ftl' ? 'Full truck (FTL)' : 'Part truck (PTL)'}{recommended === t && weightKg > 0 && <span className="ml-2 rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success">Recommended</span>}</>,
-            hint: t === 'ftl' ? 'The whole truck is yours.' : 'You share the truck with other goods.',
-          }))}
-          error={errors.load_type}
-        />
-        {notes}
-      </Card>
+      {notes && <Card padded className="space-y-4 !p-4">{notes}</Card>}
 
       <Card padded className="space-y-3 !p-4">
         <Segmented

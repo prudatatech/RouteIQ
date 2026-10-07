@@ -264,7 +264,7 @@ export default function VendorShipmentRequestPage() {
         )}
         {step === 1 && (
           <GoodsStep
-            items={draft.items} onChangeRow={changeRow} onAdd={addRow} onRemove={removeRow} errors={errors}
+            items={draft.items} isPtl={draft.load_type === 'ptl'} onChangeRow={changeRow} onAdd={addRow} onRemove={removeRow} errors={errors}
             recommendations={recs}
             notes={notes(recsFor(1).filter(r => r.code !== 'bulk_template' && r.code !== 'eway_required' && !isProductRecommendation(r)))}
             bulkHint={recs.find(r => r.code === 'bulk_template')?.message}

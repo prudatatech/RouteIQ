@@ -3,7 +3,7 @@
  * conversion to and from what the server sends. Plain functions so they are easy to test.
  */
 import type {
-  LoadDraft, LoadItemPayload, LoadPayload, LoadPriority, ProductRow, Recommendation, SpecialHandling, TempChoice, TempMode, VehicleClass,
+  LoadDraft, LoadItemPayload, LoadPayload, LoadPriority, ProductRow, Recommendation, SpecialHandling, TempChoice, TempMode, VehicleClass, ProductHandling
 } from '@/types/load'
 
 export const STEP_LABELS = ['Pickup & delivery', 'Goods', 'Truck & price', 'Review'] as const
@@ -206,10 +206,10 @@ export function toPayload(d: LoadDraft): LoadPayload {
     weight_kg: toNum(i.weight_kg),
     // The server needs a number; no value entered is 0
     declared_value: toNum(i.declared_value),
-    handling: i.handling,
+    handling: i.handling as ProductHandling[],
     category: i.category,
-    is_hazmat: i.handling.includes('hazmat'),
-    is_perishable: i.handling.includes('temperature_controlled'),
+    is_hazmat: i.handling.includes('hazmat' as any),
+    is_perishable: i.handling.includes('temperature_controlled' as any),
   }))
   const pickupPhone = phoneDigits(d.pickup_contact_phone)
   const deliveryPhone = phoneDigits(d.delivery_contact_phone)

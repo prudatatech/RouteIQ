@@ -244,10 +244,18 @@ export const pricingService = {
     // 1. Rate card & Parcel Logic
     const cardRate = (vehicleType && cfg[`rate_per_km_${vehicleType}`]) || cfg.rate_per_km || null;
     let cardPrice = 0;
+    
+    // Determine PTL vs FTL
     let isParcel = false;
-
-    if (input.weight_kg <= 5) {
+    if (input.load_type === 'ptl') {
       isParcel = true;
+    } else if (input.load_type === 'ftl') {
+      isParcel = false;
+    } else if (input.weight_kg <= 5) {
+      isParcel = true; // Fallback if load_type is not provided
+    }
+
+    if (isParcel) {
       // Parcel Rate Card logic
       let zone = 'D'; // National
       if (km <= 50) zone = 'A';
@@ -268,7 +276,7 @@ export const pricingService = {
       };
 
       cardPrice = parcelRates[zone][slab];
-      factors.push({ key: 'rate_card', code: 'parcel_slab', label: 'Margix Parcel', detail: `Parcel slab rate for Zone ${zone} up to ${slab} kg.`, amount_inr: Math.round(cardPrice) });
+      factors.push({ key: 'rate_card', code: 'parcel_slab', label: 'Margix PTL/Parcel', detail: `PTL document base rate for Zone ${zone} up to ${slab} kg.`, amount_inr: Math.round(cardPrice) });
     } else {
       if (cardRate === null && !useHistory) {
         return {
@@ -286,9 +294,14 @@ export const pricingService = {
       }
     }
 
-    // 2. Weight (only apply per_kg_surcharge for PTL/Cargo, not Parcel)
+    // 2. Weight
     let subtotal = cardPrice;
-    if (!isParcel && cardRate !== null && cfg.per_kg_surcharge) {
+    if (isParcel && input.weight_kg > 5 && cfg.per_kg_surcharge) {
+      const extraWeight = input.weight_kg - 5;
+      const add = extraWeight * cfg.per_kg_surcharge;
+      subtotal += add;
+      factors.push({ key: 'weight', code: 'weight', label: 'Overweight PTL', detail: `Extra ${extraWeight.toLocaleString('en-IN')} kg above the 5kg document slab at ${inr(cfg.per_kg_surcharge)} per kg ${signed(add)}.`, amount_inr: Math.round(add) });
+    } else if (!isParcel && cardRate !== null && cfg.per_kg_surcharge) {
       const add = input.weight_kg * cfg.per_kg_surcharge;
       subtotal += add;
       factors.push({ key: 'weight', code: 'weight', label: 'Weight', detail: `${input.weight_kg.toLocaleString('en-IN')} kg at ${inr(cfg.per_kg_surcharge)} per kg ${signed(add)}.`, amount_inr: Math.round(add) });

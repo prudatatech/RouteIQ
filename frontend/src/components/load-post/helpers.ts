@@ -37,7 +37,7 @@ export function profileErrors(p: BusinessProfile): Record<string, string> {
 
 /** What picking a search result does to a row: fill the code and rate (both stay editable), and flag hazardous or perishable goods. */
 export function applyHsnHit(row: ProductRow, hit: HsnHit): Partial<ProductRow> {
-  const handling = new Set<ProductHandling>(row.handling)
+  const handling = new Set<ProductHandling>(row.handling as ProductHandling[])
   if (hit.is_hazmat) handling.add('hazmat')
   if (hit.is_perishable) handling.add('temperature_controlled')
   const typed = row.product_name.trim()

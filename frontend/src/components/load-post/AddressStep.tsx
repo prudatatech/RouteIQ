@@ -6,6 +6,7 @@ import type { LoadDraft, LoadPriority } from '@/types/load'
 import { isWeekend, PRIORITIES, taxBasisLocal, todayIso } from './logic'
 import type { StepErrors } from './validate'
 import AddressBlock from './AddressBlock'
+import Segmented from './Segmented'
 
 const SLOTS = [
   { value: 'morning', label: 'Morning, 6am–12pm' },
@@ -100,7 +101,22 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
       </div>
 
       <Section
-        n={1} title="Pickup date and time" description="When the logistic company should collect the goods."
+        n={1} title="Load Type" description="Are you booking a full truck (FTL) or a parcel/partial truck (PTL)?"
+      >
+        <Segmented
+          name="load_type" legend="Load type" required value={draft.load_type} columns="grid-cols-2"
+          onChange={t => onChange({ load_type: t, transport_touched: true })}
+          options={(['ftl', 'ptl'] as const).map(t => ({
+            value: t,
+            label: t === 'ftl' ? 'Full truck (FTL)' : 'Part truck (PTL)',
+            hint: t === 'ftl' ? 'The whole truck is yours.' : 'You share the truck with other goods.',
+          }))}
+          error={errors.load_type}
+        />
+      </Section>
+
+      <Section
+        n={2} title="Pickup date and time" description="When the logistic company should collect the goods."
         aside={(
           <div className="flex items-center rounded-full border border-border bg-surface-subtle p-1 text-sm font-medium">
             <button type="button" className={chip(draft.pickup_date === today)} onClick={() => onChange({ pickup_date: today })}>Today</button>
@@ -130,7 +146,7 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
       </Section>
 
       <Section
-        n={2} title="Contacts" description="The driver calls these numbers at pickup and before delivery."
+        n={3} title="Contacts" description="The driver calls these numbers at pickup and before delivery."
         aside={(
           <Checkbox
             label="Receiver is the same as the pickup contact" checked={sameContact}
@@ -177,7 +193,7 @@ export default function AddressStep({ draft, onChange, errors, pickupNotes, deli
       <fieldset className="space-y-6 rounded-card border border-border bg-surface p-6">
         <legend className="sr-only">Priority</legend>
         <div className="flex gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-fill/20 text-lg font-semibold text-brand-dark" aria-hidden="true">3</div>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-fill/20 text-lg font-semibold text-brand-dark" aria-hidden="true">4</div>
           <div>
             <p className="text-lg font-semibold text-text" aria-hidden="true">Priority</p>
             <p className="text-sm text-muted">How quickly you need a truck.</p>
