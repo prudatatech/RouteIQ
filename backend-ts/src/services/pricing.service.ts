@@ -241,35 +241,68 @@ export const pricingService = {
     const historyMedian = useHistory ? quantile(sorted, 0.5) : null;
     const band = Math.max(BAND_MIN_KM, km * BAND_SHARE);
 
-    // 1. Rate card
+    // 1. Rate card & Parcel Logic
     const cardRate = (vehicleType && cfg[`rate_per_km_${vehicleType}`]) || cfg.rate_per_km || null;
-    if (cardRate === null && !useHistory) {
-      return {
-        status: 'unavailable',
-        reason: 'No rate card is set and there are too few accepted prices on similar distances. Ask staff to set the rate per km.',
-        notes,
-      };
-    }
     let cardPrice = 0;
-    if (cardRate !== null) {
-      cardPrice = km * cardRate;
-      const which = vehicleType && cfg[`rate_per_km_${vehicleType}`] ? `the ${input.vehicle_type} rate` : 'the standard rate';
-      factors.push({ key: 'rate_card', code: 'rate_card', label: 'Rate card', detail: `${km.toLocaleString('en-IN')} km at ${inr(cardRate)} per km (${which}).`, amount_inr: Math.round(cardPrice) });
+    let isParcel = false;
+
+    if (input.weight_kg <= 5) {
+      isParcel = true;
+      // Parcel Rate Card logic
+      let zone = 'D'; // National
+      if (km <= 50) zone = 'A';
+      else if (km <= 500) zone = 'B';
+      // Fallback to National (D) for >500km. Metro (C) and Special (E) omitted for simplicity unless requested.
+
+      let slab = 5;
+      if (input.weight_kg <= 0.5) slab = 0.5;
+      else if (input.weight_kg <= 1) slab = 1;
+      else if (input.weight_kg <= 2) slab = 2;
+      else if (input.weight_kg <= 3) slab = 3;
+
+      // Slab table [0.5, 1, 2, 3, 5]
+      const parcelRates: Record<string, Record<number, number>> = {
+        'A': { 0.5: 35, 1: 45, 2: 65, 3: 75, 5: 99 },
+        'B': { 0.5: 45, 1: 55, 2: 79, 3: 99, 5: 129 },
+        'D': { 0.5: 65, 1: 89, 2: 125, 3: 149, 5: 179 }
+      };
+
+      cardPrice = parcelRates[zone][slab];
+      factors.push({ key: 'rate_card', code: 'parcel_slab', label: 'Margix Parcel', detail: `Parcel slab rate for Zone ${zone} up to ${slab} kg.`, amount_inr: Math.round(cardPrice) });
     } else {
-      notes.push('No rate card is set, so the price comes from past accepted prices only.');
+      if (cardRate === null && !useHistory) {
+        return {
+          status: 'unavailable',
+          reason: 'No rate card is set and there are too few accepted prices on similar distances. Ask staff to set the rate per km.',
+          notes,
+        };
+      }
+      if (cardRate !== null) {
+        cardPrice = km * cardRate;
+        const which = vehicleType && cfg[`rate_per_km_${vehicleType}`] ? `the ${input.vehicle_type} rate` : 'the standard rate';
+        factors.push({ key: 'rate_card', code: 'rate_card', label: 'Rate card', detail: `${km.toLocaleString('en-IN')} km at ${inr(cardRate)} per km (${which}).`, amount_inr: Math.round(cardPrice) });
+      } else {
+        notes.push('No rate card is set, so the price comes from past accepted prices only.');
+      }
     }
 
-    // 2. Weight
+    // 2. Weight (only apply per_kg_surcharge for PTL/Cargo, not Parcel)
     let subtotal = cardPrice;
-    if (cardRate !== null && cfg.per_kg_surcharge) {
+    if (!isParcel && cardRate !== null && cfg.per_kg_surcharge) {
       const add = input.weight_kg * cfg.per_kg_surcharge;
       subtotal += add;
       factors.push({ key: 'weight', code: 'weight', label: 'Weight', detail: `${input.weight_kg.toLocaleString('en-IN')} kg at ${inr(cfg.per_kg_surcharge)} per kg ${signed(add)}.`, amount_inr: Math.round(add) });
     }
 
-    // 3. Load type
-    const loadMult = loadType ? cfg[`load_multiplier_${loadType}`] : undefined;
-    if (cardRate !== null && loadMult && loadMult !== 1) {
+    // 3. Load type & Standard Surcharges
+    let loadMult = loadType ? cfg[`load_multiplier_${loadType}`] : undefined;
+    if (!loadMult) {
+      if (loadType === 'fragile') loadMult = 1.10;
+      else if (loadType === 'hazmat') loadMult = 1.25;
+      else if (loadType === 'reefer' || loadType === 'temperature_controlled') loadMult = 1.30;
+    }
+    const hasBaseRate = isParcel || cardRate !== null;
+    if (hasBaseRate && loadMult && loadMult !== 1) {
       const add = subtotal * (loadMult - 1);
       subtotal += add;
       factors.push({ key: 'load_type', code: 'load_type', label: 'Load type', detail: `${input.load_type} loads are priced at ${loadMult} times the base ${signed(add)}.`, amount_inr: Math.round(add) });
@@ -279,7 +312,7 @@ export const pricingService = {
     const maxAdj = (cfg.demand_adjustment_max_pct ?? DEFAULT_DEMAND_MAX_PCT) / 100;
     const { open_loads, available_vehicles } = demand;
     let price = subtotal;
-    if (cardRate !== null) {
+    if (hasBaseRate) {
       if (open_loads + available_vehicles === 0) {
         factors.push({ key: 'demand', code: 'demand', label: 'Demand near pickup', detail: `No open loads or free vehicles within ${DEMAND_RADIUS_KM} km of pickup, so no adjustment.`, amount_inr: 0 });
       } else {
@@ -294,15 +327,15 @@ export const pricingService = {
     // 5. Past accepted prices
     if (useHistory && historyMedian !== null) {
       const fromHistory = historyMedian * km;
-      const blended = cardRate !== null ? (price + fromHistory) / 2 : fromHistory;
+      const blended = hasBaseRate ? (price + fromHistory) / 2 : fromHistory;
       const add = blended - price;
       price = blended;
       factors.push({
         key: 'history',
         code: 'history',
         label: 'Past accepted prices',
-        detail: `${sorted.length} accepted prices on trips of ${Math.round(km - band)} to ${Math.round(km + band)} km averaged ${inr(historyMedian)} per km${cardRate !== null ? `; the price is halfway between that and the rate card` : ''}${cardRate !== null ? ` (${signed(add)})` : ''}.`,
-        amount_inr: cardRate !== null ? Math.round(add) : Math.round(blended),
+        detail: `${sorted.length} accepted prices on trips of ${Math.round(km - band)} to ${Math.round(km + band)} km averaged ${inr(historyMedian)} per km${hasBaseRate ? `; the price is halfway between that and the rate card` : ''}${hasBaseRate ? ` (${signed(add)})` : ''}.`,
+        amount_inr: hasBaseRate ? Math.round(add) : Math.round(blended),
       });
     } else {
       notes.push(`Fewer than ${MIN_HISTORY_SAMPLES} accepted prices on similar distances, so past prices were not used.`);
