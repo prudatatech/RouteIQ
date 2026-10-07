@@ -133,8 +133,11 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
 
       {error && <Alert tone="danger">{error}</Alert>}
 
-      <div className="space-y-2">
-        <Button size="lg" fullWidth loading={submitting} disabled={disabled} onClick={onSubmit} className="!h-14 text-base font-semibold">Submit Load</Button>
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <Button size="lg" variant="secondary" className="flex-1 sm:flex-none" onClick={() => onEdit(2)}>Back</Button>
+          <Button size="lg" className="flex-1 !h-14 text-base font-semibold" loading={submitting} disabled={disabled} onClick={onSubmit}>Submit Load</Button>
+        </div>
         <p className="text-center text-xs text-muted">
           {signedIn ? 'Nothing is posted until you press Submit Load.' : 'You will verify your mobile number next. Nothing is posted until then.'}
         </p>
