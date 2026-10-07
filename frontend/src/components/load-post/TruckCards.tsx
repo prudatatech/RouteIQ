@@ -5,6 +5,7 @@ import { hasPerishable, TEMP_RANGES } from './logic'
 import type { StepErrors } from './validate'
 import { capacityText } from './helpers'
 import Radio from './Radio'
+import Segmented from './Segmented'
 
 /** What the vehicle can carry against the load, in words. The capacity is worked out, never typed. */
 export function CapacityNote({ vehicle, capacity, weightKg }: { vehicle?: VehicleClass; capacity: number | null; weightKg: number }) {
