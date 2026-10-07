@@ -17,7 +17,7 @@ export function ProductTotals({ items, isPtl }: { items: ProductRow[], isPtl?: b
   const reason = eway.hazmat && eway.declared_value <= EWAY_THRESHOLD_INR ? 'hazardous goods' : `value above ${inr(EWAY_THRESHOLD_INR)}`
   return (
     <Card padded className="!p-4" aria-label="Totals">
-      {isPtl && <h3 className="text-lg font-bold text-text mb-4">Summary</h3>}
+      {isPtl && <h3 className="text-lg font-semibold text-text mb-4">Summary</h3>}
       <dl className="grid grid-cols-2 gap-3 mb-4">
         <div><dt className="text-xs text-muted">Total weight</dt><dd className="text-lg font-semibold tabular text-text" data-testid="total-weight">{kgText(totals.weight_kg)}</dd></div>
         <div><dt className="text-xs text-muted">Total declared value</dt><dd className="text-lg font-semibold tabular text-text" data-testid="total-value">{inr(totals.declared_value)}</dd></div>

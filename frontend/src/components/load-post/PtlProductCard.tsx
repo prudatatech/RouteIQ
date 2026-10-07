@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { X } from 'lucide-react'
 import { Alert, Card, Checkbox, IconButton, Input, Select } from '@/components/ui'
 import type { ProductRow } from '@/types/load'
+import type { ProductHandling } from '@/types/load'
 import type { ProductNote } from './helpers'
 import HsnSearch from './HsnSearch'
 import type { StepErrors } from './validate'
@@ -36,7 +37,7 @@ export default function PtlProductCard({ row, index, onChange, onRemove, onActiv
   return (
     <Card padded className="scroll-mt-24 space-y-6 !p-6" role="group" aria-label={`Product ${i + 1}`} onFocus={onActivate}>
       <div className="flex items-center justify-between border-b border-border pb-2">
-        <h3 className="text-lg font-bold text-text w-full">Product {i + 1}</h3>
+        <h3 className="text-lg font-semibold text-text w-full">Product {i + 1}</h3>
         {onRemove && <div className="-mt-1 -mr-2"><IconButton label={`Remove product ${i + 1}`} icon={<X size={16} />} onClick={onRemove} /></div>}
       </div>
 
@@ -171,8 +172,8 @@ export default function PtlProductCard({ row, index, onChange, onRemove, onActiv
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
           {HANDLING_OPTIONS.map(h => (
             <Checkbox
-              key={h.id} label={h.label} checked={row.handling.includes(h.id as any)}
-              onChange={e => onChange({ handling: e.target.checked ? [...row.handling, h.id as any] : row.handling.filter(x => x !== h.id) })}
+              key={h.id} label={h.label} checked={row.handling.includes(h.id as ProductHandling)}
+              onChange={e => onChange({ handling: e.target.checked ? [...row.handling, h.id as ProductHandling] : row.handling.filter(x => x !== h.id) })}
             />
           ))}
         </div>

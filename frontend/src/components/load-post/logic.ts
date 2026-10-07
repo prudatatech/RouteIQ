@@ -208,8 +208,8 @@ export function toPayload(d: LoadDraft): LoadPayload {
     declared_value: toNum(i.declared_value),
     handling: i.handling as ProductHandling[],
     category: i.category,
-    is_hazmat: i.handling.includes('hazmat' as any),
-    is_perishable: i.handling.includes('temperature_controlled' as any),
+    is_hazmat: i.handling.includes('hazmat' as ProductHandling),
+    is_perishable: i.handling.includes('temperature_controlled' as ProductHandling),
   }))
   const pickupPhone = phoneDigits(d.pickup_contact_phone)
   const deliveryPhone = phoneDigits(d.delivery_contact_phone)

@@ -1,11 +1,10 @@
 import type { ReactNode } from 'react'
 import { Alert, Card, Select, Skeleton } from '@/components/ui'
-import type { LoadDraft, LoadType, VehicleClass, VehicleMode } from '@/types/load'
-import { hasPerishable, localLoadType, TEMP_RANGES } from './logic'
+import type { LoadDraft, VehicleClass, VehicleMode } from '@/types/load'
+import { hasPerishable, TEMP_RANGES } from './logic'
 import type { StepErrors } from './validate'
 import { capacityText } from './helpers'
 import Radio from './Radio'
-import Segmented from './Segmented'
 
 /** What the vehicle can carry against the load, in words. The capacity is worked out, never typed. */
 export function CapacityNote({ vehicle, capacity, weightKg }: { vehicle?: VehicleClass; capacity: number | null; weightKg: number }) {
@@ -27,13 +26,12 @@ export function CapacityNote({ vehicle, capacity, weightKg }: { vehicle?: Vehicl
 const vehicleLine = (v: VehicleClass) => `${v.name} · ${capacityText(v)}`
 
 /** Load type (a compact choice), the vehicle (the suggestion, or one picked from a list), the derived capacity and the temperature. */
-export default function TruckCards({ draft, onChange, errors, vehicles, vehiclesLoading, suggestedType, suggestedVehicleKey, assistLoading, weightKg, capacity, notes }: {
+export default function TruckCards({ draft, onChange, errors, vehicles, vehiclesLoading, suggestedVehicleKey, assistLoading, weightKg, capacity, notes }: {
   draft: LoadDraft
   onChange: (patch: Partial<LoadDraft>) => void
   errors: StepErrors
   vehicles: VehicleClass[]
   vehiclesLoading?: boolean
-  suggestedType: LoadType | undefined
   /** assist.suggested.vehicle_class: the vehicle sent when "Recommend for my goods" is on. */
   suggestedVehicleKey?: string | null
   assistLoading?: boolean
@@ -41,7 +39,6 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
   capacity: number | null
   notes?: ReactNode
 }) {
-  const recommended = suggestedType ?? localLoadType(weightKg)
   const ptl = draft.load_type === 'ptl'
   const vehicle = vehicles.find(v => v.key === draft.vehicle_class)
   const suggested = suggestedVehicleKey ? vehicles.find(v => v.key === suggestedVehicleKey) : undefined
