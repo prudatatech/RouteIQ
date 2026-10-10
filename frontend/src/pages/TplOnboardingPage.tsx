@@ -86,11 +86,37 @@ export default function TplOnboardingPage() {
     })
   }, [])
 
+  // Warn on refresh if form has data and is not submitted
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if ((ownerName || mobile || location || step > 0) && !submitted) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [ownerName, mobile, location, step, submitted])
+
+  // Return to step 1 if state is lost (e.g. after a refresh)
+  useEffect(() => {
+    if (step > 0 && !submitted) {
+      if (!ownerName || !mobile || !location) {
+        setSearchParams({ step: '0' }, { replace: true })
+      }
+    }
+  }, [step, ownerName, mobile, location, submitted, setSearchParams])
+
   const next = async () => {
     setDirection('forward')
     if (step === 0) {
       if (!ownerName || !mobile || !location) {
         toast.error('Please fill all fields.')
+        return
+      }
+      const digits = mobile.replace(/\D/g, '')
+      if (digits.length < 10) {
+        toast.error('Please enter a valid 10-digit mobile number.')
         return
       }
     }
