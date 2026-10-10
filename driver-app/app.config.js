@@ -1,5 +1,3 @@
-import type { ConfigContext, ExpoConfig } from 'expo/config';
-
 // Injected at build time from the environment (driver-app/.env locally, EAS
 // environment variables for cloud builds). Never commit the key itself.
 const googleMapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
@@ -14,7 +12,7 @@ if (!googleMapsApiKey) {
   console.warn(message);
 }
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
+module.exports = ({ config }) => ({
   ...config,
   name: 'MargixIndia Driver',
   slug: 'routeiq',

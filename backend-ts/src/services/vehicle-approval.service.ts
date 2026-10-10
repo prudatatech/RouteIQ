@@ -156,7 +156,9 @@ export type RegistrationState = 'none' | 'pending' | 'approved' | 'rejected';
  */
 export async function getMyRegistration(driverId: string): Promise<{ state: RegistrationState; vehicle: Row | null; photos: VehiclePhoto[] }> {
   const { live: liveRows, rejected: rejectedRows } = await loadDriverVehicles(driverId);
-  const vehicle = liveRows.find(v => !isTempPlate(v.plate_number)) ?? rejectedRows[0] ?? null;
+  const approvedVehicle = liveRows.find(v => !isTempPlate(v.plate_number) && v.status !== PENDING_VEHICLE_STATUS);
+  const pendingVehicle = liveRows.find(v => !isTempPlate(v.plate_number) && v.status === PENDING_VEHICLE_STATUS);
+  const vehicle = approvedVehicle ?? pendingVehicle ?? rejectedRows[0] ?? null;
   if (!vehicle) return { state: 'none', vehicle: null, photos: [] };
   const state: RegistrationState = vehicle.status === PENDING_VEHICLE_STATUS ? 'pending' : vehicle.status === 'archived' ? 'rejected' : 'approved';
   return { state, vehicle, photos: await listVehiclePhotos(vehicle.id) };
