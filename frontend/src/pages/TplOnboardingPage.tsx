@@ -162,7 +162,7 @@ export default function TplOnboardingPage() {
           <div className="mx-auto w-16 h-16 bg-success/10 text-success flex items-center justify-center rounded-full mb-4">
             <CheckCircle2 size={32} />
           </div>
-          <h2 className="text-2xl font-bold text-text">Application Submitted!</h2>
+          <h2 className="text-2xl font-semibold text-text">Application Submitted!</h2>
           <p className="text-muted">
             Your truck details have been successfully registered.
           </p>
@@ -171,7 +171,7 @@ export default function TplOnboardingPage() {
               Please check your email for your login credentials to access the 3PL Portal.
             </p>
           </div>
-          <button onClick={() => navigate('/3pl/dashboard')} className="w-full py-3 bg-brand text-brand-fill font-bold rounded-control transition-opacity hover:opacity-90">
+          <button onClick={() => navigate('/3pl/dashboard')} className="w-full py-3 bg-brand text-brand-fill font-semibold rounded-control transition-opacity hover:opacity-90">
             Go to Dashboard
           </button>
         </Card>
