@@ -6,13 +6,12 @@ import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import type { Session } from '@supabase/supabase-js'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { publicAPI, tplAPI } from '@/services/api'
 
 const STEPS = [
   'Contact Details',
   'Fleet Details',
-  'Operations',
-  'Documents',
   'Review',
 ]
 
@@ -54,8 +53,15 @@ function Stepper({ step }: { step: number }) {
 }
 
 export default function TplOnboardingPage() {
-  const [step, setStep] = useState(0)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const step = parseInt(searchParams.get('step') || '0', 10)
+  const setStep = (newStep: number | ((s: number) => number)) => {
+    const nextStep = typeof newStep === 'function' ? newStep(step) : newStep
+    setSearchParams({ step: nextStep.toString() })
+  }
   const [direction, setDirection] = useState<'forward' | 'backward'>('forward')
+  const [submitted, setSubmitted] = useState(false)
   
   // Step 1
   const [ownerName, setOwnerName] = useState('')
@@ -65,7 +71,7 @@ export default function TplOnboardingPage() {
   // Step 2
   const [fleetSize, setFleetSize] = useState<'single' | 'multiple' | null>(null)
   const [truckType, setTruckType] = useState('')
-  const [multipleTruckTypes, setMultipleTruckTypes] = useState<string[]>([])
+  const [multipleTruckCounts, setMultipleTruckCounts] = useState<Record<string, number>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const [userLoading, setUserLoading] = useState(true)
@@ -92,8 +98,8 @@ export default function TplOnboardingPage() {
       toast.error('Please select a truck type.')
       return
     }
-    if (step === 1 && fleetSize === 'multiple' && multipleTruckTypes.length === 0) {
-      toast.error('Please select at least one truck type.')
+    if (step === 1 && fleetSize === 'multiple' && Object.values(multipleTruckCounts).reduce((a, b) => a + b, 0) === 0) {
+      toast.error('Please select at least one truck.')
       return
     }
     
@@ -106,11 +112,11 @@ export default function TplOnboardingPage() {
           email: session?.user?.email || '',
           operatingFrom: location,
           fleetSize,
-          truckType: fleetSize === 'single' ? truckType : multipleTruckTypes.join(','),
+          truckType: fleetSize === 'single' ? truckType : JSON.stringify(multipleTruckCounts),
           user_id: session?.user?.id
         })
-        toast.success('Successfully onboarded! Redirecting to Dashboard...')
-        setTimeout(() => window.location.href = '/3pl/dashboard', 2000)
+        toast.success('Successfully onboarded!')
+        setSubmitted(true)
       } catch (err) {
         toast.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to onboard.')
       } finally {
@@ -148,6 +154,30 @@ export default function TplOnboardingPage() {
   }
 
   const selectedVehicle = vehicles?.find(v => v.key === truckType)
+
+  if (submitted) {
+    return (
+      <Page width="form" className="!space-y-4 py-8 flex items-center justify-center min-h-[60vh]">
+        <Card padded className="text-center space-y-6 max-w-md w-full">
+          <div className="mx-auto w-16 h-16 bg-success/10 text-success flex items-center justify-center rounded-full mb-4">
+            <CheckCircle2 size={32} />
+          </div>
+          <h2 className="text-2xl font-bold text-text">Application Submitted!</h2>
+          <p className="text-muted">
+            Your truck details have been successfully registered.
+          </p>
+          <div className="p-4 bg-surface-subtle border border-border rounded-control">
+            <p className="font-medium text-text">
+              Please check your email for your login credentials to access the 3PL Portal.
+            </p>
+          </div>
+          <button onClick={() => navigate('/3pl/dashboard')} className="w-full py-3 bg-brand text-brand-fill font-bold rounded-control transition-opacity hover:opacity-90">
+            Go to Dashboard
+          </button>
+        </Card>
+      </Page>
+    )
+  }
 
   return (
     <Page width="form" className="!space-y-4 py-8 overflow-hidden">
@@ -221,20 +251,27 @@ export default function TplOnboardingPage() {
 
                 {fleetSize === 'multiple' && (
                   <div className="space-y-4 pt-4 border-t border-border">
-                    <p className="text-sm font-medium text-text">Select all vehicle types in your fleet:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {vehicles?.map(v => (
-                        <button
-                          key={v.key}
-                          onClick={() => setMultipleTruckTypes(prev => prev.includes(v.key) ? prev.filter(k => k !== v.key) : [...prev, v.key])}
-                          className={clsx(
-                            'px-4 py-2 rounded-full border text-sm font-medium transition-colors',
-                            multipleTruckTypes.includes(v.key) ? 'border-brand bg-brand-fill text-brand' : 'border-border text-muted hover:border-text hover:text-text'
-                          )}
-                        >
-                          {v.name}
-                        </button>
-                      ))}
+                    <p className="text-sm font-medium text-text">Specify how many of each vehicle you have:</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {vehicles?.map(v => {
+                        const count = multipleTruckCounts[v.key] || 0;
+                        return (
+                          <div key={v.key} className={clsx("flex items-center justify-between p-3 border rounded-control transition-colors", count > 0 ? "border-brand bg-brand-fill/50" : "border-border")}>
+                            <span className="font-medium text-sm text-text">{v.name}</span>
+                            <div className="flex items-center space-x-3 bg-surface rounded-full border border-border px-2 py-1">
+                              <button 
+                                onClick={() => setMultipleTruckCounts(p => ({...p, [v.key]: Math.max(0, count - 1)}))}
+                                className="w-6 h-6 flex items-center justify-center text-muted hover:text-text hover:bg-surface-subtle rounded-full transition-colors"
+                              >-</button>
+                              <span className="text-sm font-semibold w-4 text-center">{count}</span>
+                              <button 
+                                onClick={() => setMultipleTruckCounts(p => ({...p, [v.key]: count + 1}))}
+                                className="w-6 h-6 flex items-center justify-center text-brand hover:bg-brand-fill rounded-full transition-colors"
+                              >+</button>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
@@ -242,7 +279,7 @@ export default function TplOnboardingPage() {
                 {fleetSize === 'single' && (
                   <div className="space-y-4 pt-4 border-t border-border">
                     <Select
-                      label="Select Truck Type"
+                      label="Select Truck Name"
                       value={truckType}
                       onChange={(e) => setTruckType(e.target.value)}
                     >
@@ -264,8 +301,43 @@ export default function TplOnboardingPage() {
             )}
 
             {step > 1 && (
-              <div className="flex items-center justify-center h-48 text-muted border-2 border-dashed border-border rounded-control">
-                <p>This is a placeholder for the {STEPS[step]} step.</p>
+              <div className="space-y-6">
+                <div className="p-6 bg-surface-subtle border border-border rounded-control space-y-4">
+                  <h3 className="font-semibold text-text">Application Summary</h3>
+                  
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted block mb-1">Owner Name</span>
+                      <span className="font-medium text-text">{ownerName}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted block mb-1">Operating From</span>
+                      <span className="font-medium text-text">{location}</span>
+                    </div>
+                    
+                    <div className="col-span-2 pt-4 border-t border-border">
+                      <span className="text-muted block mb-3">Selected Trucks</span>
+                      {fleetSize === 'single' && truckType ? (
+                        <div className="inline-flex items-center px-3 py-1 bg-surface border border-border rounded-full font-medium">
+                          1x {vehicles?.find(v => v.key === truckType)?.name}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {Object.entries(multipleTruckCounts).filter(([_, count]) => count > 0).map(([key, count]) => (
+                            <div key={key} className="inline-flex items-center px-3 py-1 bg-brand-fill text-brand border border-brand rounded-full font-medium">
+                              {count}x {vehicles?.find(v => v.key === key)?.name || key}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                <p className="text-sm text-muted text-center">
+                  Please review your details above. If everything is correct, submit your application. 
+                  These trucks are requested for our active load tracking system.
+                </p>
               </div>
             )}
           </Card>
