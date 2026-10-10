@@ -150,7 +150,7 @@ export const tplService = {
         ...bank.columns,
         sla_commitment: slaCommitment || '2 Hours',
         tax_treatment: taxTreatment || null,
-        status: isQuick ? 'quick_added' : 'pending',
+        status: 'pending',
         operating_from: operatingFrom || null,
         fleet_size: fleetSize || null,
         truck_type: truckType || null,
