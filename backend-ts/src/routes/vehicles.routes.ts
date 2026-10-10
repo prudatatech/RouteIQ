@@ -266,8 +266,14 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 // fleet assets, so they are counted apart as `drafts` and stay out of every
 // other number. `total` is the active fleet (archived vehicles are counted
 // under `archived`).
-router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+router.get('/summary', requireAuth, async (req: Request, res: Response) => {
   try {
+    const isStaffMember = ['superadmin', 'admin', 'manager'].includes(req.user?.role ?? '');
+    const isCarrierOrg = req.org && (req.org.kind === 'logistic_company' || req.org.kind === 'tpl_partner');
+    if (!isStaffMember && !isCarrierOrg) {
+      res.status(403).json({ detail: 'Staff or fleet partner access required' });
+      return;
+    }
     // "On trip" means a trip in progress, the same rule Today uses, even when the vehicle's own status lags.
     // The two reads are independent.
     const [{ data: vehicles, error }, onTrip] = await Promise.all([
