@@ -1,47 +1,40 @@
 ﻿const fs = require('fs');
 let content = fs.readFileSync('frontend/src/pages/TplOnboardingPage.tsx', 'utf8');
 
-// Add multipleTruckTypes state
+// 1. Update imports for react-router-dom
 content = content.replace(
-  "const [truckType, setTruckType] = useState('')",
-  "const [truckType, setTruckType] = useState('')\n  const [multipleTruckTypes, setMultipleTruckTypes] = useState<string[]>([])"
+  "import { useQuery } from '@tanstack/react-query'",
+  "import { useQuery } from '@tanstack/react-query'\nimport { useSearchParams, useNavigate } from 'react-router-dom'"
 );
 
-// Update validation
+// 2. Remove extra steps
 content = content.replace(
-  "if (step === 1 && fleetSize === 'single' && !truckType) {",
-  "if (step === 1 && fleetSize === 'single' && !truckType) {\n      toast.error('Please select a truck type.')\n      return\n    }\n    if (step === 1 && fleetSize === 'multiple' && multipleTruckTypes.length === 0) {"
+  "const STEPS = [\n  'Contact Details',\n  'Fleet Details',\n  'Operations',\n  'Documents',\n  'Review',\n]",
+  "const STEPS = [\n  'Contact Details',\n  'Fleet Details',\n  'Review',\n]"
 );
 
-// Update payload
+// 3. Update step state to use searchParams
 content = content.replace(
-  "truckType: fleetSize === 'single' ? truckType : null,",
-  "truckType: fleetSize === 'single' ? truckType : multipleTruckTypes.join(','),"
+  "const [step, setStep] = useState(0)",
+  "const [searchParams, setSearchParams] = useSearchParams()\n  const navigate = useNavigate()\n  const step = parseInt(searchParams.get('step') || '0', 10)\n  const setStep = (newStep: number) => setSearchParams({ step: newStep.toString() })"
 );
 
-// Update UI
+// 4. Update direction
 content = content.replace(
-  "{fleetSize === 'single' && (",
-  {fleetSize === 'multiple' && (
-                  <div className="space-y-4 pt-4 border-t border-border">
-                    <p className="text-sm font-medium text-text">Select all vehicle types in your fleet:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {vehicles?.map(v => (
-                        <button
-                          key={v.key}
-                          onClick={() => setMultipleTruckTypes(prev => prev.includes(v.key) ? prev.filter(k => k !== v.key) : [...prev, v.key])}
-                          className={clsx(
-                            'px-4 py-2 rounded-full border text-sm font-medium transition-colors',
-                            multipleTruckTypes.includes(v.key) ? 'border-brand bg-brand-fill text-brand' : 'border-border text-muted hover:border-text hover:text-text'
-                          )}
-                        >
-                          {v.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {fleetSize === 'single' && (
+  "const [direction, setDirection] = useState<'forward' | 'backward'>('forward')",
+  "const [direction, setDirection] = useState<'forward' | 'backward'>('forward')\n  const [submitted, setSubmitted] = useState(false)"
+);
+
+// 5. Update submit success handling
+content = content.replace(
+  "toast.success('Successfully onboarded! Redirecting to Dashboard...')\n        setTimeout(() => window.location.href = '/3pl/dashboard', 2000)",
+  "toast.success('Successfully onboarded!')\n        setSubmitted(true)"
+);
+
+// 6. Return Check Email UI if submitted
+content = content.replace(
+  "return (\n    <Page width=\"form\" className=\"!space-y-4 py-8 overflow-hidden\">",
+  "if (submitted) {\n    return (\n      <Page width=\"form\" className=\"!space-y-4 py-8 flex items-center justify-center min-h-[60vh]\">\n        <Card padded className=\"text-center space-y-6 max-w-md w-full\">\n          <div className=\"mx-auto w-16 h-16 bg-success/10 text-success flex items-center justify-center rounded-full mb-4\">\n            <CheckCircle2 size={32} />\n          </div>\n          <h2 className=\"text-2xl font-bold text-text\">Application Submitted!</h2>\n          <p className=\"text-muted\">\n            Your truck details have been successfully registered.\n          </p>\n          <div className=\"p-4 bg-surface-subtle border border-border rounded-control\">\n            <p className=\"font-medium text-text\">\n              Please check your email for your login credentials to access the 3PL Portal.\n            </p>\n          </div>\n          <button onClick={() => navigate('/3pl/dashboard')} className=\"w-full py-3 bg-brand text-brand-fill font-bold rounded-control transition-opacity hover:opacity-90\">\n            Go to Dashboard\n          </button>\n        </Card>\n      </Page>\n    )\n  }\n\n  return (\n    <Page width=\"form\" className=\"!space-y-4 py-8 overflow-hidden\">"
 );
 
 fs.writeFileSync('frontend/src/pages/TplOnboardingPage.tsx', content);
