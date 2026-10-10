@@ -218,7 +218,7 @@ export const tplService = {
               <p style="margin: 5px 0;">Email / ID: ${email}</p>
               <p style="margin: 5px 0;">Password: ${tempPassword}</p>
             </div>
-            <a href="${settings.WEB_APP_URL}/login?email=${encodeURIComponent(email)}" style="display: inline-block; background-color: #000; color: #FFD300; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Login to your Dashboard</a>
+            <a href="${settings.WEB_APP_URL}/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(tempPassword)}" style="display: inline-block; background-color: #000; color: #FFD300; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Login to your Dashboard</a>
             <p style="margin-top: 30px; font-size: 12px; color: #888;">If you signed in with Google, you can continue using Google Auth or use these fallback credentials.</p>
           </div>
         </div>

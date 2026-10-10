@@ -133,7 +133,7 @@ function SignInPage() {
 
   const [mode, setMode] = useState<Mode>(params.get('reset') ? 'reset' : registering ? 'sign-up' : 'sign-in')
   const [email, setEmail] = useState(params.get('email') ?? '')
-  const [password, setPassword] = useState('')
+  const [password, setPassword] = useState(params.get('password') ?? '')
   const [confirm, setConfirm] = useState('')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState<string | null>(null)
