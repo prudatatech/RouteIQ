@@ -232,6 +232,7 @@ export interface TodayResponse {
     needs_vehicle: { count: number; shipments: number; vendor_loads: number }
     trips_to_send: { count: number }
     vehicle_requests: { count: number }
+    pending_vehicles?: { count: number }
     documents: { count: number }
     driver_actions: { count: number }
     unpriced?: { count: number; no_price: number }

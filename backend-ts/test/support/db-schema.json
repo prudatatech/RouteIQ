@@ -813,7 +813,8 @@
     "carrier_org_id",
     "hazmat_certified",
     "is_reefer",
-    "body_type"
+    "body_type",
+    "profile_status"
   ],
   "vendor_profiles": [
     "id",
