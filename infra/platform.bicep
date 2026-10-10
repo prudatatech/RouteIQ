@@ -140,7 +140,8 @@ resource auth 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'GOTRUE_EXTERNAL_GOOGLE_ENABLED', value: empty(googleClientId) ? 'false' : 'true' }
           { name: 'GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID', secretRef: 'google-client-id' }
           { name: 'GOTRUE_EXTERNAL_GOOGLE_SECRET', secretRef: 'google-client-secret' }
-          { name: 'GOTRUE_EXTERNAL_EMAIL_ENABLED', value: 'true' }
+          { name: 'GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI', value: 'https:///auth/v1/callback' }
+            { name: 'GOTRUE_EXTERNAL_EMAIL_ENABLED', value: 'true' }
           { name: 'GOTRUE_EXTERNAL_PHONE_ENABLED', value: 'false' }
           { name: 'GOTRUE_MAILER_AUTOCONFIRM', value: empty(smtpHost) ? 'true' : 'false' }
           { name: 'GOTRUE_SMTP_HOST', value: smtpHost }
