@@ -65,6 +65,7 @@ export default function TplOnboardingPage() {
   // Step 2
   const [fleetSize, setFleetSize] = useState<'single' | 'multiple' | null>(null)
   const [truckType, setTruckType] = useState('')
+  const [multipleTruckTypes, setMultipleTruckTypes] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const [userLoading, setUserLoading] = useState(true)
@@ -91,6 +92,10 @@ export default function TplOnboardingPage() {
       toast.error('Please select a truck type.')
       return
     }
+    if (step === 1 && fleetSize === 'multiple' && multipleTruckTypes.length === 0) {
+      toast.error('Please select at least one truck type.')
+      return
+    }
     
     if (step === STEPS.length - 1) {
       setIsSubmitting(true)
@@ -101,7 +106,7 @@ export default function TplOnboardingPage() {
           email: session?.user?.email || '',
           operatingFrom: location,
           fleetSize,
-          truckType: fleetSize === 'single' ? truckType : null,
+          truckType: fleetSize === 'single' ? truckType : multipleTruckTypes.join(','),
           user_id: session?.user?.id
         })
         toast.success('Successfully onboarded! Redirecting to Dashboard...')
@@ -213,6 +218,26 @@ export default function TplOnboardingPage() {
                     <span className="font-semibold text-sm">Multiple Trucks</span>
                   </button>
                 </div>
+
+                {fleetSize === 'multiple' && (
+                  <div className="space-y-4 pt-4 border-t border-border">
+                    <p className="text-sm font-medium text-text">Select all vehicle types in your fleet:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {vehicles?.map(v => (
+                        <button
+                          key={v.key}
+                          onClick={() => setMultipleTruckTypes(prev => prev.includes(v.key) ? prev.filter(k => k !== v.key) : [...prev, v.key])}
+                          className={clsx(
+                            'px-4 py-2 rounded-full border text-sm font-medium transition-colors',
+                            multipleTruckTypes.includes(v.key) ? 'border-brand bg-brand-fill text-brand' : 'border-border text-muted hover:border-text hover:text-text'
+                          )}
+                        >
+                          {v.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {fleetSize === 'single' && (
                   <div className="space-y-4 pt-4 border-t border-border">
