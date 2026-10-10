@@ -50,6 +50,11 @@ param s3proxyIdentity string
 @secure()
 param s3proxyCredential string
 
+@secure()
+param googleClientId string = ''
+@secure()
+param googleClientSecret string = ''
+
 @description('Optional SMTP for password reset emails (e.g. smtp.resend.com); empty disables mail')
 param smtpHost string = ''
 param smtpUser string = ''
@@ -107,6 +112,8 @@ resource auth 'Microsoft.App/containerApps@2024-03-01' = {
         { name: 'db-url', value: format(dbBase, 'supabase_auth_admin', uriComponent(authAdminPassword)) }
         { name: 'jwt-secret', value: jwtSecret }
         { name: 'smtp-pass', value: empty(smtpPass) ? 'unset' : smtpPass }
+        { name: 'google-client-id', value: empty(googleClientId) ? 'unset' : googleClientId }
+        { name: 'google-client-secret', value: empty(googleClientSecret) ? 'unset' : googleClientSecret }
       ]
     }
     template: {
@@ -130,6 +137,9 @@ resource auth 'Microsoft.App/containerApps@2024-03-01' = {
           // Must equal the backend's SUPABASE_URL + /auth/v1, which it checks on every staff token
           { name: 'GOTRUE_JWT_ISSUER', value: 'https://${gatewayHost}/auth/v1' }
           { name: 'GOTRUE_JWT_SECRET', secretRef: 'jwt-secret' }
+          { name: 'GOTRUE_EXTERNAL_GOOGLE_ENABLED', value: empty(googleClientId) ? 'false' : 'true' }
+          { name: 'GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID', secretRef: 'google-client-id' }
+          { name: 'GOTRUE_EXTERNAL_GOOGLE_SECRET', secretRef: 'google-client-secret' }
           { name: 'GOTRUE_EXTERNAL_EMAIL_ENABLED', value: 'true' }
           { name: 'GOTRUE_EXTERNAL_PHONE_ENABLED', value: 'false' }
           { name: 'GOTRUE_MAILER_AUTOCONFIRM', value: empty(smtpHost) ? 'true' : 'false' }

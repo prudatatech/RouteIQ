@@ -671,7 +671,7 @@
     "bank_name",
     "bank_branch",
     "bank_ifsc_details",
-    "bank_ifsc_verified_at"
+    "bank_ifsc_verified_at", "operating_from", "fleet_size", "truck_type"
   ],
   "traffic_incidents": [
     "id",

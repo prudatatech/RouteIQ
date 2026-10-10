@@ -48,6 +48,8 @@ REALTIME_ADMIN_PASSWORD=$(r)
 REALTIME_SECRET_KEY_BASE=$(openssl rand -hex 32)
 S3PROXY_IDENTITY=$(r)
 S3PROXY_CREDENTIAL=$(openssl rand -hex 32)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 EOF
   )
   log "Generated $PF"
@@ -61,6 +63,9 @@ if ! grep -q '^S3PROXY_IDENTITY=' "$PF"; then
 fi
 set -a; # shellcheck disable=SC1090
 source "$PF"; set +a
+
+GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
+GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
 
 PG_SERVER="$P-pg"
 log "PostgreSQL server $PG_SERVER"
@@ -91,6 +96,7 @@ GATEWAY="$(az deployment group create -g "$RG" -n "$P-platform" --template-file 
     storageAdminPassword="$STORAGE_ADMIN_PASSWORD" realtimeAdminPassword="$REALTIME_ADMIN_PASSWORD" \
     realtimeSecretKeyBase="$REALTIME_SECRET_KEY_BASE" seedRealtimeTenant="$SEED_RT" \
     s3proxyIdentity="$S3PROXY_IDENTITY" s3proxyCredential="$S3PROXY_CREDENTIAL" \
+    googleClientId="$GOOGLE_CLIENT_ID" googleClientSecret="$GOOGLE_CLIENT_SECRET" \
   --only-show-errors --query properties.outputs.gatewayUrl.value -o tsv)"
 # The gateway's custom domain is not part of the Bicep template, and redeploying the app drops its hostname
 # binding (the site then answers with a TLS failure and every sign-in breaks). Bind it again every run, with the

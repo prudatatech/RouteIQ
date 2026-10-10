@@ -106,13 +106,17 @@ export const tplService = {
    * Submit a new 3PL onboarding application
    */
   async onboard(data: any) {
-    const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
+    const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents, operatingFrom, fleetSize, truckType, user_id } = data;
     const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
-    if (!companyName || !email || !pan) throw new HttpError(400, 'Company name, email and PAN are required');
+    const isQuick = !!fleetSize;
+    if (!companyName || !email || (!isQuick && !pan)) throw new HttpError(400, 'Company name, email and PAN are required');
     if (!EMAIL_PATTERN.test(email)) throw new HttpError(400, 'Enter a valid email address, for example name@company.in');
-    const gstProblem = gstinError(gst, pan);
-    if (gstProblem) throw new HttpError(400, gstProblem);
-    assertApplicationFields(data);
+    
+    if (!isQuick) {
+      const gstProblem = gstinError(gst, pan);
+      if (gstProblem) throw new HttpError(400, gstProblem);
+      assertApplicationFields(data);
+    }
     const phone = parseMobile(data.phone);
     const bank = await ifscColumns(bankIfsc);
 
@@ -146,7 +150,11 @@ export const tplService = {
         ...bank.columns,
         sla_commitment: slaCommitment || '2 Hours',
         tax_treatment: taxTreatment || null,
-        status: 'pending'
+        status: isQuick ? 'quick_added' : 'pending',
+        operating_from: operatingFrom || null,
+        fleet_size: fleetSize || null,
+        truck_type: truckType || null,
+        user_id: user_id || null
       })
       .select()
       .single();
@@ -186,6 +194,38 @@ export const tplService = {
       );
     } catch (e) {
       console.error('[tpl] Application notification failed:', e);
+    }
+
+    if (isQuick) {
+      const { emailService } = require('./email.service');
+      const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + "!";
+      
+      if (user_id) {
+        await supabase.auth.admin.updateUserById(user_id, { password: tempPassword });
+      }
+
+      const html = `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; background-color: #fff; border: 2px solid #FFD300; border-radius: 8px; overflow: hidden;">
+          <div style="background-color: #FFD300; padding: 20px; text-align: center;">
+            <h1 style="color: #000; margin: 0;">Welcome to Margix India!</h1>
+          </div>
+          <div style="padding: 30px; color: #333;">
+            <p>Hi ${companyName},</p>
+            <p>You have successfully registered as a 3PL Truck Partner.</p>
+            <p>Your tracking ID is: <strong>${partnerId}</strong></p>
+            <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p style="margin: 0;"><strong>Login Details:</strong></p>
+              <p style="margin: 5px 0;">Email / ID: ${email}</p>
+              <p style="margin: 5px 0;">Password: ${tempPassword}</p>
+            </div>
+            <a href="${settings.WEB_APP_URL}/login?email=${encodeURIComponent(email)}" style="display: inline-block; background-color: #000; color: #FFD300; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Login to your Dashboard</a>
+            <p style="margin-top: 30px; font-size: 12px; color: #888;">If you signed in with Google, you can continue using Google Auth or use these fallback credentials.</p>
+          </div>
+        </div>
+      `;
+      
+      await emailService.send(email, 'Welcome to Margix - Your 3PL Access Details', html);
+      await emailService.send('u702pad-platform@margix.test', 'New 3PL Partner Onboarded', html);
     }
 
     return { partner, warnings: bank.check?.warnings ?? [] };
