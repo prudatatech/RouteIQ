@@ -86,16 +86,8 @@ export default function TplOnboardingPage() {
   useEffect(() => {
     let isMounted = true
 
-    const checkExistingPartner = async (userSession: Session | null) => {
-      if (!userSession?.user) {
-        if (isMounted) setUserLoading(false)
-        return
-      }
-
+    const checkExistingPartner = async (userSession: Session) => {
       try {
-        // Use the lightweight check-partner endpoint that works even for
-        // fresh OAuth users who don't yet have a row in the `users` table.
-        // It also does an email-based fallback and links user_id automatically.
         const existing = await tplAPI.checkPartner({
           user_id: userSession.user.id,
           email: userSession.user.email,
@@ -113,31 +105,52 @@ export default function TplOnboardingPage() {
       } catch (err) {
         console.error('Error verifying 3PL partner status:', err)
       }
-
-      if (isMounted) {
-        setUserLoading(false)
-      }
+      // Not an existing partner — show the onboarding form
+      if (isMounted) setUserLoading(false)
     }
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!isMounted) return
-      setSession(data.session)
-      checkExistingPartner(data.session)
-    })
+    // After Google OAuth, Supabase redirects back with a hash fragment (#access_token=...).
+    const isOAuthReturn = window.location.hash.includes('access_token')
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-      if (!isMounted) return
-      setSession(currentSession)
-      if (currentSession?.user) {
-        checkExistingPartner(currentSession)
-      }
-    })
-
-    return () => {
-      isMounted = false
-      authListener.subscription.unsubscribe()
+    if (isOAuthReturn) {
+      // OAuth just returned — wait for Supabase to process the hash and establish the session
+      const { data: authListener } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+        if (!isMounted) return
+        setSession(currentSession)
+        if (currentSession?.user) {
+          checkExistingPartner(currentSession)
+        } else {
+          setUserLoading(false)
+        }
+      })
+      return () => { isMounted = false; authListener.subscription.unsubscribe() }
     }
+
+    // First visit (not an OAuth return): sign out any stale session so the
+    // user always authenticates fresh with Google for 3PL onboarding.
+    const startFreshOAuth = async () => {
+      await supabase.auth.signOut().catch(() => {})
+      if (!isMounted) return
+      setSession(null)
+      setUserLoading(false)
+    }
+    startFreshOAuth()
+
+    return () => { isMounted = false }
   }, [navigate])
+
+  // Auto-trigger Google OAuth once loading finishes and there is no session
+  const [oauthTriggered, setOauthTriggered] = useState(false)
+  useEffect(() => {
+    const isOAuthReturn = window.location.hash.includes('access_token')
+    if (!userLoading && !session && !oauthTriggered && !isOAuthReturn) {
+      setOauthTriggered(true)
+      supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}/3pl/onboard` },
+      })
+    }
+  }, [userLoading, session, oauthTriggered])
 
   // Warn on refresh if form has data and is not submitted
   useEffect(() => {
@@ -159,6 +172,28 @@ export default function TplOnboardingPage() {
       }
     }
   }, [step, ownerName, mobile, location, submitted, setSearchParams])
+
+  if (userLoading) {
+    return <div className="min-h-screen bg-bg flex items-center justify-center">Loading...</div>
+  }
+
+  if (!session) {
+    return (
+      <Page width="form" className="py-12">
+        <PageHeader title="Join Margix as a Truck Partner" description="Redirecting to Google sign-in..." />
+        <Card padded className="mt-8 text-center max-w-sm mx-auto">
+          <div className="flex items-center justify-center py-4 text-muted">Redirecting to Google...</div>
+          <Button
+            className="w-full flex justify-center items-center gap-2 mt-4"
+            onClick={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/3pl/onboard` } })}
+          >
+            Sign in with Google
+          </Button>
+          <p className="mt-4 text-xs text-muted">Sign in to start your quick 3PL application.</p>
+        </Card>
+      </Page>
+    )
+  }
 
   const next = async () => {
     setDirection('forward')
@@ -240,26 +275,6 @@ export default function TplOnboardingPage() {
     setStep((s) => Math.max(0, s - 1))
   }
 
-  if (userLoading) {
-    return <div className="min-h-screen bg-bg flex items-center justify-center">Loading...</div>
-  }
-
-  if (!session) {
-    return (
-      <Page width="form" className="py-12">
-        <PageHeader title="Join Margix as a Truck Partner" description="Register in under a minute" />
-        <Card padded className="mt-8 text-center max-w-sm mx-auto">
-          <Button
-            className="w-full flex justify-center items-center gap-2"
-            onClick={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.href } })}
-          >
-            Sign in with Google
-          </Button>
-          <p className="mt-4 text-xs text-muted">Sign in to start your quick 3PL application.</p>
-        </Card>
-      </Page>
-    )
-  }
 
   const selectedVehicle = vehicles?.find(v => v.key === truckType)
 
