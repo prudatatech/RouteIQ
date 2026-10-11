@@ -93,7 +93,13 @@ export default function TplOnboardingPage() {
       }
 
       try {
-        const existing = await tplAPI.byUser(userSession.user.id)
+        // Use the lightweight check-partner endpoint that works even for
+        // fresh OAuth users who don't yet have a row in the `users` table.
+        // It also does an email-based fallback and links user_id automatically.
+        const existing = await tplAPI.checkPartner({
+          user_id: userSession.user.id,
+          email: userSession.user.email,
+        })
         if (existing?.id) {
           const account = await loadAccount(userSession.user.id).catch(() => ({
             role: 'vendor',

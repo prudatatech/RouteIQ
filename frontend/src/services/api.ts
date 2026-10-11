@@ -1025,6 +1025,9 @@ export const dispatchAPI = {
 }
 
 export const tplAPI = {
+  /** Lightweight check for existing partner — works even for fresh OAuth users without a `users` row. */
+  checkPartner: (data: { user_id?: string; email?: string }): Promise<{ id: string; status: string } | null> =>
+    api.post('/tpl/check-partner', data).then(r => r.data),
   onboard: (data: Record<string, unknown>) => api.post('/tpl/onboard', data).then(r => r.data),
   queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),
   /** The partner record linked to this sign-in (the caller's own, or any for staff). */
