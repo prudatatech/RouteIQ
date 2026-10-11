@@ -44,6 +44,9 @@ export interface PortalPartner {
   pending_updates?: PortalPendingUpdates | null
   tpl_corridors?: PortalCorridor[]
   tpl_documents?: PortalDocument[]
+  fleet_size?: string | null
+  truck_type?: string | null
+  operating_from?: string | null
 }
 
 export interface PortalContextValue {

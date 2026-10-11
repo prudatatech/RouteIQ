@@ -155,6 +155,14 @@ function SignInPage() {
     return () => { document.title = previous }
   }, [title])
 
+  useEffect(() => {
+    if (params.has('password')) {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('password')
+      window.history.replaceState({}, '', url.pathname + url.search)
+    }
+  }, [params])
+
   /**
    * Resolves what the account is from the database and sends the user to the right place. An account of another
    * kind never keeps a session here: it is signed out and told which sign-in to use (unless it was already

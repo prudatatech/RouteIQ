@@ -46,6 +46,9 @@ interface TplPartnerDetail {
   tpl_documents?: TplDocument[]
   tpl_corridors?: TplCorridor[]
   pending_updates?: PendingUpdates | null
+  fleet_size?: string | null
+  truck_type?: string | null
+  operating_from?: string | null
 }
 
 type DiffKind = 'added' | 'modified' | 'unchanged'
@@ -321,6 +324,9 @@ export default function TplPartnerDetailPage() {
               columns={2}
               items={[
                 { label: 'SLA commitment', value: partner.sla_commitment || '—' },
+                { label: 'Base operating location', value: partner.operating_from || '—' },
+                { label: 'Fleet size declared', value: partner.fleet_size ? (partner.fleet_size === 'single' ? 'Single truck' : 'Multiple trucks') : '—' },
+                { label: 'Truck type / fleet breakdown', value: partner.truck_type || '—' },
               ]}
             />
             <div className="mt-6 border-t border-border pt-4">
