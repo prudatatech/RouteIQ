@@ -8,6 +8,8 @@ import type { Session } from '@supabase/supabase-js'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { publicAPI, tplAPI } from '@/services/api'
+import { useAuthStore } from '@/store/authStore'
+import { loadAccount } from '@/services/account'
 
 const STEPS = [
   'Contact Details',
@@ -77,14 +79,59 @@ export default function TplOnboardingPage() {
   const [userLoading, setUserLoading] = useState(true)
   const [session, setSession] = useState<Session | null>(null)
 
+  const [createdPartnerId, setCreatedPartnerId] = useState<string | null>(null)
+
   const { data: vehicles } = useQuery({ queryKey: ['public', 'vehicle-classes'], queryFn: () => publicAPI.vehicleClasses() })
 
   useEffect(() => {
+    let isMounted = true
+
+    const checkExistingPartner = async (userSession: Session | null) => {
+      if (!userSession?.user) {
+        if (isMounted) setUserLoading(false)
+        return
+      }
+
+      try {
+        const existing = await tplAPI.byUser(userSession.user.id)
+        if (existing?.id) {
+          const account = await loadAccount(userSession.user.id).catch(() => ({
+            role: 'vendor',
+            hasVendorProfile: false,
+            tplPartnerId: existing.id,
+          }))
+          useAuthStore.getState().setSession(userSession, account.role || 'vendor', existing.id)
+          navigate(`/3pl-portal/${existing.id}`, { replace: true })
+          return
+        }
+      } catch (err) {
+        console.error('Error verifying 3PL partner status:', err)
+      }
+
+      if (isMounted) {
+        setUserLoading(false)
+      }
+    }
+
     supabase.auth.getSession().then(({ data }) => {
+      if (!isMounted) return
       setSession(data.session)
-      setUserLoading(false)
+      checkExistingPartner(data.session)
     })
-  }, [])
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      if (!isMounted) return
+      setSession(currentSession)
+      if (currentSession?.user) {
+        checkExistingPartner(currentSession)
+      }
+    })
+
+    return () => {
+      isMounted = false
+      authListener.subscription.unsubscribe()
+    }
+  }, [navigate])
 
   // Warn on refresh if form has data and is not submitted
   useEffect(() => {
@@ -132,7 +179,7 @@ export default function TplOnboardingPage() {
     if (step === STEPS.length - 1) {
       setIsSubmitting(true)
       try {
-        await tplAPI.onboard({
+        const res = await tplAPI.onboard({
           companyName: ownerName,
           phone: mobile,
           email: session?.user?.email || '',
@@ -142,9 +189,38 @@ export default function TplOnboardingPage() {
           user_id: session?.user?.id
         })
         toast.success('Successfully onboarded!')
+        const partnerId = res?.partner?.id
+        if (partnerId && session) {
+          const account = await loadAccount(session.user.id).catch(() => ({
+            role: 'vendor',
+            hasVendorProfile: false,
+            tplPartnerId: partnerId,
+          }))
+          useAuthStore.getState().setSession(session, account.role || 'vendor', partnerId)
+          navigate(`/3pl-portal/${partnerId}`, { replace: true })
+          return
+        }
+        setCreatedPartnerId(partnerId || null)
         setSubmitted(true)
       } catch (err) {
-        toast.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to onboard.')
+        const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to onboard.'
+        toast.error(message)
+        if (session?.user && /already exists/i.test(message)) {
+          try {
+            const existing = await tplAPI.byUser(session.user.id)
+            if (existing?.id) {
+              const account = await loadAccount(session.user.id).catch(() => ({
+                role: 'vendor',
+                hasVendorProfile: false,
+                tplPartnerId: existing.id,
+              }))
+              useAuthStore.getState().setSession(session, account.role || 'vendor', existing.id)
+              navigate(`/3pl-portal/${existing.id}`, { replace: true })
+            }
+          } catch {
+            // ignore
+          }
+        }
       } finally {
         setIsSubmitting(false)
       }
@@ -197,8 +273,8 @@ export default function TplOnboardingPage() {
               Please check your email for your login credentials to access the 3PL Portal.
             </p>
           </div>
-          <button onClick={() => navigate('/3pl/dashboard')} className="w-full py-3 bg-brand text-brand-fill font-semibold rounded-control transition-opacity hover:opacity-90">
-            Go to Dashboard
+          <button onClick={() => navigate(createdPartnerId ? `/3pl-portal/${createdPartnerId}` : '/3pl/onboard/track')} className="w-full py-3 bg-brand text-brand-fill font-semibold rounded-control transition-opacity hover:opacity-90">
+            Go to 3PL Portal
           </button>
         </Card>
       </Page>

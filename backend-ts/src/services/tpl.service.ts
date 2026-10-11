@@ -537,14 +537,41 @@ export const tplService = {
   },
 
   /**
-   * Get a 3PL partner by their user ID
+   * Get a 3PL partner by their user ID or email
    */
   async getPartnerByUserId(userId: string) {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('tpl_partners')
-      .select('id')
+      .select('id, user_id, status, email')
       .eq('user_id', userId)
       .maybeSingle();
+
+    if (!data) {
+      const { data: userAuth } = await supabase.auth.admin.getUserById(userId);
+      const email = userAuth?.user?.email?.trim().toLowerCase();
+      if (email) {
+        const { data: byEmail } = await supabase
+          .from('tpl_partners')
+          .select('id, user_id, status, email')
+          .ilike('email', email)
+          .maybeSingle();
+        if (byEmail) {
+          if (byEmail.user_id !== userId) {
+            await supabase.from('tpl_partners').update({ user_id: userId }).eq('id', byEmail.id);
+            byEmail.user_id = userId;
+          }
+          data = byEmail;
+        }
+      }
+    }
+
+    if (data?.id) {
+      try {
+        await supabase.from('users').upsert({ id: userId, role: 'vendor' }, { onConflict: 'id' });
+      } catch {
+        // non-blocking role ensure
+      }
+    }
 
     if (error) throw new Error(`Failed to fetch partner by user ID: ${error.message}`);
     return data;
