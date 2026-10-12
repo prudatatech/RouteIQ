@@ -59,14 +59,18 @@ export type ThirdPartyAgreementCreate = z.infer<typeof ThirdPartyAgreementCreate
 /** How the vehicle's body is built; ODC needs open or trailer (services/loads/vehicle-fit.ts). */
 export const VehicleBodyType = z.enum(['closed', 'open', 'container', 'reefer', 'tanker', 'trailer']);
 
+export const VehicleProfileStatus = z.enum(['quick_added', 'pending_documents', 'complete']);
+export type VehicleProfileStatus = z.infer<typeof VehicleProfileStatus>;
+
 export const VehicleCreateSchema = z.object({
   plate_number: z.string().min(4).max(20),
-  vehicle_type: z.enum(['truck', 'van', 'bike', 'car']),
-  capacity_kg: z.number().positive().max(50000),
+  vehicle_type: z.enum(['truck', 'van', 'bike', 'car']).default('truck'),
+  capacity_kg: z.number().positive().max(50000).optional().default(1000),
   fuel_type: z.string().default('diesel'),
   fuel_capacity_liters: z.number().positive().max(1000).default(60.0),
   fuel_efficiency_kmpl: z.number().positive().max(100).default(12.0),
   status: z.enum(['available', 'on_route', 'idle', 'maintenance', 'offline', 'archived']).optional(),
+  profile_status: VehicleProfileStatus.optional().default('quick_added'),
   spark_id: z.string().max(50).optional().nullable(),
   driver_name: z.string().trim().max(255).optional().nullable(),
   driver_phone: z.string().max(20).optional().nullable(),
@@ -131,6 +135,7 @@ export const VehicleUpdateSchema = z.object({
   fuel_efficiency_kmpl: z.number().positive().max(100).optional(),
   spark_id: z.string().max(50).optional().nullable(),
   status: z.enum(['available', 'on_route', 'idle', 'maintenance', 'offline', 'archived']).optional(),
+  profile_status: VehicleProfileStatus.optional(),
   latitude: z.number().optional().nullable(),
   longitude: z.number().optional().nullable(),
   driver_id: z.string().uuid().optional().nullable(),

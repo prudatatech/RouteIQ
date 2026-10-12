@@ -23,7 +23,7 @@ export default function TransportStep({ draft, onChange, errors, vehicles, vehic
     <div className="space-y-4">
       <TruckCards
         draft={draft} onChange={onChange} errors={errors} vehicles={vehicles} vehiclesLoading={vehiclesLoading}
-        suggestedType={assist?.suggested.load_type} suggestedVehicleKey={assist?.suggested.vehicle_class} assistLoading={assistLoading}
+        suggestedVehicleKey={assist?.suggested.vehicle_class} assistLoading={assistLoading}
         weightKg={weightKg} capacity={capacity} notes={truckNotes}
       />
       <HandlingCard draft={draft} onChange={onChange} />

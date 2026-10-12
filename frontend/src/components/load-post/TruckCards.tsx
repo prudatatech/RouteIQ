@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Alert, Card, Select, Skeleton } from '@/components/ui'
-import type { LoadDraft, LoadType, VehicleClass, VehicleMode } from '@/types/load'
-import { hasPerishable, localLoadType, TEMP_RANGES } from './logic'
+import type { LoadDraft, VehicleClass, VehicleMode } from '@/types/load'
+import { hasPerishable, TEMP_RANGES } from './logic'
 import type { StepErrors } from './validate'
 import { capacityText } from './helpers'
 import Radio from './Radio'
@@ -27,13 +27,12 @@ export function CapacityNote({ vehicle, capacity, weightKg }: { vehicle?: Vehicl
 const vehicleLine = (v: VehicleClass) => `${v.name} · ${capacityText(v)}`
 
 /** Load type (a compact choice), the vehicle (the suggestion, or one picked from a list), the derived capacity and the temperature. */
-export default function TruckCards({ draft, onChange, errors, vehicles, vehiclesLoading, suggestedType, suggestedVehicleKey, assistLoading, weightKg, capacity, notes }: {
+export default function TruckCards({ draft, onChange, errors, vehicles, vehiclesLoading, suggestedVehicleKey, assistLoading, weightKg, capacity, notes }: {
   draft: LoadDraft
   onChange: (patch: Partial<LoadDraft>) => void
   errors: StepErrors
   vehicles: VehicleClass[]
   vehiclesLoading?: boolean
-  suggestedType: LoadType | undefined
   /** assist.suggested.vehicle_class: the vehicle sent when "Recommend for my goods" is on. */
   suggestedVehicleKey?: string | null
   assistLoading?: boolean
@@ -41,7 +40,6 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
   capacity: number | null
   notes?: ReactNode
 }) {
-  const recommended = suggestedType ?? localLoadType(weightKg)
   const ptl = draft.load_type === 'ptl'
   const vehicle = vehicles.find(v => v.key === draft.vehicle_class)
   const suggested = suggestedVehicleKey ? vehicles.find(v => v.key === suggestedVehicleKey) : undefined
@@ -60,19 +58,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
 
   return (
     <>
-      <Card padded className="space-y-4 !p-4">
-        <Segmented
-          name="load_type" legend="Load type" required value={draft.load_type} columns="grid-cols-2"
-          onChange={t => onChange({ load_type: t, transport_touched: true })}
-          options={(['ftl', 'ptl'] as const).map(t => ({
-            value: t,
-            label: <>{t === 'ftl' ? 'Full truck (FTL)' : 'Part truck (PTL)'}{recommended === t && weightKg > 0 && <span className="ml-2 rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success">Recommended</span>}</>,
-            hint: t === 'ftl' ? 'The whole truck is yours.' : 'You share the truck with other goods.',
-          }))}
-          error={errors.load_type}
-        />
-        {notes}
-      </Card>
+      {notes && <Card padded className="space-y-4 !p-4">{notes}</Card>}
 
       <Card padded className="space-y-3 !p-4">
         <Segmented

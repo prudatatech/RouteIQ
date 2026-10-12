@@ -22,6 +22,7 @@ import { useLiveMinutes } from '@/components/fleet/vehicleStatus'
 import type { FleetAlert } from '@/components/fleet/health'
 import { usePendingOrgCount } from '@/hooks/usePendingOrgCount'
 import { formatDate, formatRelative } from '@/utils/display'
+import DirectLoadAllocation from '@/components/today/DirectLoadAllocation'
 
 interface VehicleRow {
   id: string
@@ -368,6 +369,9 @@ export default function TodayPage() {
           ))}.
         </p>
       )}
+
+      {/* Direct Load Allocation — Side-by-side trucks & loads with 1-tap direct assignment */}
+      <DirectLoadAllocation />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
         <Card className="flex flex-col overflow-hidden">

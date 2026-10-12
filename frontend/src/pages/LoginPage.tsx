@@ -133,7 +133,7 @@ function SignInPage() {
 
   const [mode, setMode] = useState<Mode>(params.get('reset') ? 'reset' : registering ? 'sign-up' : 'sign-in')
   const [email, setEmail] = useState(params.get('email') ?? '')
-  const [password, setPassword] = useState('')
+  const [password, setPassword] = useState(params.get('password') ?? '')
   const [confirm, setConfirm] = useState('')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState<string | null>(null)
@@ -154,6 +154,14 @@ function SignInPage() {
     document.title = `${title} · MargixIndia`
     return () => { document.title = previous }
   }, [title])
+
+  useEffect(() => {
+    if (params.has('password')) {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('password')
+      window.history.replaceState({}, '', url.pathname + url.search)
+    }
+  }, [params])
 
   /**
    * Resolves what the account is from the database and sends the user to the right place. An account of another

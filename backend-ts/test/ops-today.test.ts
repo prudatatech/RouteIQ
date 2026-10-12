@@ -103,7 +103,7 @@ describe('GET /ops/today', () => {
     expect(res.status).toBe(200);
     expect(res.body.scope).toBe('operations');
     expect(Object.keys(res.body.queues).sort()).toEqual([
-      'documents', 'driver_actions', 'needs_vehicle', 'problems', 'requests', 'sos', 'trips_to_send', 'vehicle_requests',
+      'documents', 'driver_actions', 'needs_vehicle', 'pending_vehicles', 'problems', 'requests', 'sos', 'trips_to_send', 'vehicle_requests',
     ]);
     expect(res.body.queues.driver_actions).toEqual({ count: 1 });
   });

@@ -116,9 +116,19 @@ async function invalidateVehicleCaches(): Promise<void> {
 // ── GET / ──────────────────────────────────────────────────
 // Stable order (plate, then id) so skip/limit pages never repeat or miss a
 // vehicle. Callers that need every vehicle page through with skip, or pass limit (max 500).
-router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: Request, res: Response) => {
+router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
+    const isStaffMember = ['superadmin', 'admin', 'manager', 'driver'].includes(req.user?.role ?? '');
+    const isCarrierOrg = req.org && (req.org.kind === 'logistic_company' || req.org.kind === 'tpl_partner');
+    if (!isStaffMember && !isCarrierOrg) {
+      res.status(403).json({ detail: 'Not authorized for this action' });
+      return;
+    }
+
     const status = req.query.status as string | undefined;
+    const profileStatus = req.query.profile_status as string | undefined;
+    const vehicleType = req.query.vehicle_type as string | undefined;
+    const carrierOrgId = req.query.carrier_org_id as string | undefined;
     const skip = Math.max(parseInt(req.query.skip as string) || 0, 0);
     const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 500);
 
@@ -126,7 +136,7 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
     const isDriver = req.user!.role === 'driver';
     const cacheKey = isDriver
       ? `vehicles:list:driver:${req.user!.user_id}:${scopeKey()}:${skip}:${limit}`
-      : `vehicles:list:staff:${scopeKey()}:${status}:${skip}:${limit}`;
+      : `vehicles:list:staff:${scopeKey()}:${status}:${profileStatus}:${vehicleType}:${carrierOrgId}:${skip}:${limit}`;
     const cached = await cacheGet(cacheKey);
     if (cached) { res.json(cached); return; }
 
@@ -134,8 +144,11 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
 
     if (isDriver) {
       query = query.eq('driver_id', req.user!.user_id);
-    } else if (status) {
-      query = query.eq('status', status);
+    } else {
+      if (status) query = query.eq('status', status);
+      if (profileStatus) query = query.eq('profile_status', profileStatus);
+      if (vehicleType) query = query.eq('vehicle_type', vehicleType);
+      if (req.isPlatformAdmin && carrierOrgId) query = query.eq('carrier_org_id', carrierOrgId);
     }
 
     query = query
@@ -147,7 +160,21 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
     if (error) throw error;
 
     // Warning data for dispatch: the state of each driver's licence
-    const vehicles = await withDriverLicenceStatus(found || []);
+    let vehicles = await withDriverLicenceStatus(found || []);
+
+    // Enrich with carrier org for platform owner
+    if (req.isPlatformAdmin && vehicles.length > 0) {
+      const orgIds = [...new Set(vehicles.map((v: any) => v.carrier_org_id).filter(Boolean))];
+      if (orgIds.length > 0) {
+        const { data: orgs } = await supabase.from('organizations').select('id, name, kind').in('id', orgIds);
+        const orgMap = new Map((orgs ?? []).map((o: any) => [o.id, o]));
+        vehicles = vehicles.map((v: any) => ({
+          ...v,
+          carrier_org: orgMap.get(v.carrier_org_id) ?? null,
+        }));
+      }
+    }
+
     await cacheSet(cacheKey, vehicles, 30);
     res.json(vehicles);
   } catch (e: any) {
@@ -156,8 +183,15 @@ router.get('/', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (req: 
 });
 
 // ── POST / ─────────────────────────────────────────────────
-router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Request, res: Response) => {
+router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
+    const isStaffMember = ['superadmin', 'admin', 'manager'].includes(req.user?.role ?? '');
+    const isCarrierOwner = req.org && (req.org.kind === 'logistic_company' || req.org.kind === 'tpl_partner') && ['owner', 'admin', 'ops', 'dispatcher'].includes(req.orgRole ?? '');
+    if (!isStaffMember && !isCarrierOwner) {
+      res.status(403).json({ detail: 'Not authorized for this action' });
+      return;
+    }
+
     const parsed = VehicleCreateSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ detail: parsed.error.issues[0].message });
@@ -165,6 +199,9 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
     }
 
     const insertData: any = { ...carrierStamp(), ...parsed.data };
+    if (!insertData.status) insertData.status = 'available';
+    if (!insertData.capacity_kg) insertData.capacity_kg = 1000;
+    if (insertData.available_capacity_kg === undefined) insertData.available_capacity_kg = insertData.capacity_kg;
 
     // If driver details are provided, link (or create) the driver user.
     // A saved draft (archived) is not assigned to anyone yet, so it links no driver.
@@ -229,12 +266,18 @@ router.post('/', requireAuth, requireRole('admin', 'manager'), async (req: Reque
 // fleet assets, so they are counted apart as `drafts` and stay out of every
 // other number. `total` is the active fleet (archived vehicles are counted
 // under `archived`).
-router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+router.get('/summary', requireAuth, async (req: Request, res: Response) => {
   try {
+    const isStaffMember = ['superadmin', 'admin', 'manager'].includes(req.user?.role ?? '');
+    const isCarrierOrg = req.org && (req.org.kind === 'logistic_company' || req.org.kind === 'tpl_partner');
+    if (!isStaffMember && !isCarrierOrg) {
+      res.status(403).json({ detail: 'Staff or fleet partner access required' });
+      return;
+    }
     // "On trip" means a trip in progress, the same rule Today uses, even when the vehicle's own status lags.
     // The two reads are independent.
     const [{ data: vehicles, error }, onTrip] = await Promise.all([
-      scopeQuery(supabase.from('vehicles').select('id, status, plate_number'), OWNED.carrier),
+      scopeQuery(supabase.from('vehicles').select('id, status, plate_number, profile_status'), OWNED.carrier),
       vehicleIdsOnActiveTrip(),
     ]);
 
@@ -242,7 +285,15 @@ router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Req
 
     const counts: Record<string, number> = {};
     let drafts = 0;
-    for (const v of vehicles || []) {
+    let quickAdded = 0;
+    let pendingDocs = 0;
+    let complete = 0;
+
+    for (const v of (vehicles || []) as any[]) {
+      if (v.profile_status === 'quick_added') quickAdded++;
+      else if (v.profile_status === 'pending_documents') pendingDocs++;
+      else if (v.profile_status === 'complete') complete++;
+
       if (isPlaceholderPlate(v.plate_number)) {
         // An archived TEMP-… row is a replaced placeholder, not a pending draft
         if (!(isTempPlate(v.plate_number) && v.status === 'archived')) drafts++;
@@ -264,6 +315,10 @@ router.get('/summary', requireAuth, requireRole(...STAFF_ROLES), async (req: Req
       archived,
       drafts,
       pending_approval: counts['pending_approval'] || 0,
+      quick_added: quickAdded,
+      pending_documents: pendingDocs,
+      complete,
+      needs_completion: quickAdded + pendingDocs,
     });
   } catch (e: any) {
     sendError(req, res, e);

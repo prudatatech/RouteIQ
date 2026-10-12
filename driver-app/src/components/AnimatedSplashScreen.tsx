@@ -64,7 +64,7 @@ export default function AnimatedSplashScreen({ onAnimationFinish }: SplashScreen
 
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: colors.text,
     justifyContent: 'center',
     alignItems: 'center',

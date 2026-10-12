@@ -48,6 +48,12 @@ export interface Vehicle {
   /** Set when staff rejected the vehicle a driver registered (it is archived, with the reason). */
   rejection_reason?: string | null
   review_decision?: string | null
+  profile_status?: 'quick_added' | 'pending_documents' | 'complete' | null
+  hazmat_certified?: boolean | null
+  is_reefer?: boolean | null
+  body_type?: string | null
+  carrier_org_id?: string | null
+  carrier_org?: { id: string; name: string; kind: string } | null
 }
 
 export const hasContainer = (v: Vehicle) => (v.container_length_ft ?? 0) > 0

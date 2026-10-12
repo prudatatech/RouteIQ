@@ -141,11 +141,20 @@ export const platformSection: NavSection = {
   ],
 }
 
+/**
+ * The platform owns no fleet or shipments, so while acting as the platform the menu drops every
+ * day-to-day logistics section (Today, Requests, Shipments, Dispatch, On the road, Fleet, Return trips,
+ * Money, Reports) and shows only its own governance work: Platform, its own staff and its own settings.
+ */
+const PLATFORM_SECTION_PATHS = new Set(['/admin/users', '/admin/settings'])
+
 /** Sections and links this role may see. A section left with no page of its own is dropped. */
 export function menuFor(role: string | null | undefined, actor: 'platform' | 'company' = 'company'): NavSection[] {
   if (!role) return []
   const allowed = (roles: StaffRole[]) => (roles as string[]).includes(role)
-  const sections = (actor === 'platform' ? [navSections[0], platformSection, ...navSections.slice(1)] : navSections)
+  const sections = actor === 'platform'
+    ? [platformSection, ...navSections.filter(s => PLATFORM_SECTION_PATHS.has(s.to))]
+    : navSections
   return sections
     .filter(s => allowed(s.roles))
     .map(s => ({ ...s, children: s.children.filter(c => allowed(c.roles)) }))
@@ -191,6 +200,7 @@ export interface QueueCounts {
   needs_vehicle?: { count: number }
   trips_to_send?: { count: number }
   vehicle_requests?: { count: number }
+  pending_vehicles?: { count: number }
   documents?: { count: number }
   kyc?: { count: number }
   bids?: { count: number }
@@ -206,6 +216,7 @@ export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners:
   const needsVehicle = n(queues?.needs_vehicle)
   const tripsToSend = n(queues?.trips_to_send)
   const vehicleRequests = n(queues?.vehicle_requests)
+  const pendingVehicles = n(queues?.pending_vehicles)
   const documents = n(queues?.documents)
   const kyc = n(queues?.kyc)
   const bids = n(queues?.bids)
@@ -220,7 +231,7 @@ export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners:
     onTheRoad: sos + problems,
     problems,
     sos,
-    fleet: vehicleRequests,
+    fleet: vehicleRequests + pendingVehicles,
     vehicleRequests,
     people: documents + kyc,
     documents,

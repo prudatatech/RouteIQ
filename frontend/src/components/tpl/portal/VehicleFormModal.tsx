@@ -43,17 +43,26 @@ const fromVehicle = (v: NetVehicle | null): VehicleForm => {
   return next
 }
 
-/** Add or edit one of the partner's vehicles. A vehicle can take loads once its RC and insurance numbers are filled in. */
-export default function VehicleFormModal({ partnerId, vehicle, open, onClose }: {
+export default function VehicleFormModal({ partnerId, vehicle, open, onClose, defaultClass }: {
   partnerId: string
   vehicle: NetVehicle | null
   open: boolean
   onClose: () => void
+  defaultClass?: string
 }) {
   const queryClient = useQueryClient()
   const [form, setForm] = useState<VehicleForm>(EMPTY)
   const [submitted, setSubmitted] = useState(false)
-  useEffect(() => { if (open) { setForm(fromVehicle(vehicle)); setSubmitted(false) } }, [open, vehicle])
+  useEffect(() => {
+    if (open) {
+      const initial = fromVehicle(vehicle)
+      if (!vehicle && defaultClass) {
+        initial.vehicle_class = defaultClass
+      }
+      setForm(initial)
+      setSubmitted(false)
+    }
+  }, [open, vehicle, defaultClass])
   const set = <K extends keyof VehicleForm>(key: K, value: VehicleForm[K]) => setForm(prev => ({ ...prev, [key]: value }))
 
   const classes = useQuery({ queryKey: ['vehicle-classes'], queryFn: publicAPI.vehicleClasses, enabled: open, staleTime: 3_600_000 })

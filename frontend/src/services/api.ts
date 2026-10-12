@@ -232,6 +232,7 @@ export interface TodayResponse {
     needs_vehicle: { count: number; shipments: number; vendor_loads: number }
     trips_to_send: { count: number }
     vehicle_requests: { count: number }
+    pending_vehicles?: { count: number }
     documents: { count: number }
     driver_actions: { count: number }
     unpriced?: { count: number; no_price: number }
@@ -985,6 +986,9 @@ export const dispatchAPI = {
 }
 
 export const tplAPI = {
+  /** Lightweight check for existing partner — works even for fresh OAuth users without a `users` row. */
+  checkPartner: (data: { user_id?: string; email?: string }): Promise<{ id: string; status: string } | null> =>
+    api.post('/tpl/check-partner', data).then(r => r.data),
   onboard: (data: Record<string, unknown>) => api.post('/tpl/onboard', data).then(r => r.data),
   queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),
   /** The partner record linked to this sign-in (the caller's own, or any for staff). */

@@ -106,7 +106,7 @@ export default function RequestsPage() {
     const q = search.trim().toLowerCase()
     const list = rowsForStage(inSource, tab, company.allowed).filter(r => {
       if (!q) return true
-      return [r.requester, r.pickup, r.drop, r.trackingId ?? ''].some(v => v.toLowerCase().includes(q))
+      return [r.requester, r.pickup, r.drop, r.trackingId ?? '', r.id, r.vendor?.load_number ?? ''].some(v => v.toLowerCase().includes(q))
     })
     // What has waited longest comes first where someone has to act; elsewhere the newest
     const dir = tab === 'accept' || tab === 'accepted' ? 1 : -1
@@ -314,6 +314,7 @@ export default function RequestsPage() {
               ? <Link to={r.requesterHref} onClick={e => e.stopPropagation()} className="font-medium underline-offset-2 hover:underline">{r.requester}</Link>
               : <span className="font-medium">{r.requester}</span>}
             <StatusPill tone="neutral" dot={false}>{r.source === 'customer' ? 'Customer' : 'Vendor'}</StatusPill>
+            {r.trackingId && <span className="font-mono text-xs text-muted">· {r.trackingId}</span>}
           </div>
           <StatusPill tone={r.statusTone}>{r.statusLabel}</StatusPill>
         </div>

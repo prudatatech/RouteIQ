@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { Animated, Vibration } from 'react-native';
-import { Audio } from 'expo-av';
+import { useAudioPlayer } from 'expo-audio';
 import * as Notifications from 'expo-notifications';
 import { useTranslation } from './useTranslation';
 
@@ -19,10 +19,14 @@ interface Options {
   assignmentWaiting: 'route' | 'stop' | null;
 }
 
+const sirenSource = require('../../assets/uber_driver_sound.mp3');
+
 export function useAlertSiren({ ringing, assignmentWaiting }: Options) {
   const { t } = useTranslation();
-  const soundRef = useRef<Audio.Sound | null>(null);
   const pulse = useRef(new Animated.Value(1)).current;
+
+  // expo-audio: create a player for the siren sound
+  const player = useAudioPlayer(sirenSource);
 
   // Background reminder through the "alarms" channel
   useEffect(() => {
@@ -53,7 +57,6 @@ export function useAlertSiren({ ringing, assignmentWaiting }: Options) {
   // Foreground siren
   useEffect(() => {
     if (!ringing) return;
-    let isMounted = true;
 
     const loop = Animated.loop(
       Animated.sequence([
@@ -64,33 +67,26 @@ export function useAlertSiren({ ringing, assignmentWaiting }: Options) {
     loop.start();
     Vibration.vibrate([500, 500, 500], true);
 
-    (async () => {
-      try {
-        const { sound } = await Audio.Sound.createAsync(require('../../assets/uber_driver_sound.mp3'), {
-          isLooping: true,
-          volume: 1.0,
-        });
-        if (isMounted) {
-          soundRef.current = sound;
-          await sound.playAsync();
-        } else {
-          sound.unloadAsync();
-        }
-      } catch (e) {
-        console.warn('Failed to play notification sound', e);
-      }
-    })();
+    try {
+      player.loop = true;
+      player.volume = 1.0;
+      player.play();
+    } catch (e) {
+      console.warn('Failed to play notification sound', e);
+    }
 
     return () => {
-      isMounted = false;
       loop.stop();
       pulse.setValue(1);
       Vibration.cancel();
-      const sound = soundRef.current;
-      soundRef.current = null;
-      if (sound) sound.stopAsync().then(() => sound.unloadAsync()).catch(() => {});
+      try {
+        player.pause();
+        player.seekTo(0);
+      } catch {
+        // already released
+      }
     };
-  }, [ringing, pulse]);
+  }, [ringing, pulse, player]);
 
   return { pulse };
 }

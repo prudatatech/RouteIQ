@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   textContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
   },

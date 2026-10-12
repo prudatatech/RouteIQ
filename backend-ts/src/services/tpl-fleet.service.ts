@@ -79,8 +79,10 @@ export const hasRequiredDocuments = (vehicle: VehicleRow): boolean => !blank(veh
 const vehicleView = (v: VehicleRow) => {
   const documents = documentStatuses(v);
   const states = documents.map(d => d.status);
+  const profileStatus = v.profile_status ?? (hasRequiredDocuments(v) && v.driver_id ? 'complete' : (documents.some(d => d.number) || v.driver_id ? 'pending_documents' : 'quick_added'));
   return {
     ...v,
+    profile_status: profileStatus,
     documents,
     docs_status: states.includes('expired') ? 'expired' : states.includes('missing') ? 'missing' : states.includes('expiring') ? 'expiring' : 'ok',
     usable: v.status !== PENDING_VEHICLE_STATUS && v.status !== 'archived' && hasRequiredDocuments(v),
@@ -118,6 +120,8 @@ export async function createVehicle(orgId: string, userId: string, body: unknown
   const parsed = parseInput(PartnerVehicleCreateSchema, body);
   const now = new Date().toISOString();
   const ready = hasRequiredDocuments(parsed);
+  const hasSomeDocs = Object.keys(parsed).some(k => ['rc_number', 'insurance_number', 'fitness_certificate_number', 'permit_number', 'puc_number'].includes(k) && (parsed as any)[k]);
+  const profile_status = (parsed as any).profile_status ?? (ready ? 'complete' : hasSomeDocs ? 'pending_documents' : 'quick_added');
   const row = {
     ...parsed,
     id: crypto.randomUUID(),
@@ -127,6 +131,7 @@ export async function createVehicle(orgId: string, userId: string, body: unknown
     available_capacity_kg: parsed.capacity_kg ?? null,
     current_load_kg: 0,
     status: ready ? 'available' : PENDING_VEHICLE_STATUS,
+    profile_status,
     review_decision: ready ? 'approved' : null,
     reviewed_at: ready ? now : null,
     submitted_by: userId,

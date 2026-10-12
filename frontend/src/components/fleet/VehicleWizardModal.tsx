@@ -106,7 +106,7 @@ const STEPS = [
 export default function VehicleWizardModal({ isOpen, onClose, initialData = null }: {
   isOpen: boolean
   onClose: () => void
-  initialData?: (Partial<Record<keyof VehicleFormData, string | number | null | undefined>> & { id: string }) | null
+  initialData?: (Partial<Record<keyof VehicleFormData, string | number | boolean | null | undefined>> & { id: string }) | null
 }) {
   const queryClient = useQueryClient()
   const [step, setStep] = useState(1)

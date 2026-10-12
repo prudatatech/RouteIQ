@@ -1,5 +1,3 @@
-import type { ConfigContext, ExpoConfig } from 'expo/config';
-
 // Injected at build time from the environment (driver-app/.env locally, EAS
 // environment variables for cloud builds). Never commit the key itself.
 const googleMapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
@@ -14,7 +12,7 @@ if (!googleMapsApiKey) {
   console.warn(message);
 }
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
+module.exports = ({ config }) => ({
   ...config,
   name: 'MargixIndia Driver',
   slug: 'routeiq',
@@ -23,11 +21,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
-  splash: {
-    image: './assets/splash.png',
-    resizeMode: 'contain',
-    backgroundColor: '#000000',
-  },
+
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.margixindia.driverapp',
@@ -103,6 +97,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         cameraPermission: 'Allow MargixIndia Driver to use the camera to scan parcel codes and photograph deliveries.',
         microphonePermission: false,
         recordAudioAndroid: false,
+      },
+    ],
+    'expo-audio',
+    'expo-asset',
+    'expo-status-bar',
+    [
+      'expo-splash-screen',
+      {
+        image: './assets/splash.png',
+        resizeMode: 'contain',
+        backgroundColor: '#000000',
       },
     ],
   ],

@@ -83,7 +83,21 @@ export interface ProductRow {
   unit: string
   weight_kg: string
   declared_value: string
-  handling: ProductHandling[]
+  handling: ProductHandling[] | string[]
+  commercial_shipment?: 'personal' | 'business'
+  packaging_type?: string
+  num_packages?: string
+  length_cm?: string
+  width_cm?: string
+  height_cm?: string
+  gst_applicable?: boolean
+  invoice_available?: boolean
+  invoice_number?: string
+  supplier_gstin?: string
+  recipient_gstin?: string
+  eway_status?: 'already_have' | 'provide_later' | 'not_applicable' | ''
+  eway_number?: string
+  special_instructions?: string
 }
 
 /**

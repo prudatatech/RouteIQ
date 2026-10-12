@@ -16,6 +16,7 @@ import { settings } from '../core/config';
 import { attachOrgContext, currentOrgContext } from '../core/org-context';
 import { isStaff } from '../core/ownership';
 import { partnerRowIdsOf, withoutPrivateDetails } from '../services/tpl-affiliation';
+import { supabase } from '../core/supabase';
 
 const router = Router();
 
@@ -85,6 +86,47 @@ async function panMatches(req: Request, partner: any, pan: unknown): Promise<boo
   }
   return typeof partner.pan_number === 'string' && partner.pan_number.toUpperCase() === pan.trim().toUpperCase();
 }
+
+// POST /api/v1/tpl/check-partner — lightweight lookup for the onboarding page.
+// Uses optionalAuth so it works even when the user has no `users` row yet (fresh OAuth sign-up).
+router.post('/check-partner', rateLimitByIp('tpl-check', 30, 60), optionalAuth, async (req, res) => {
+  try {
+    const userId = req.user?.user_id ?? req.body?.user_id;
+    const email = req.body?.email?.trim().toLowerCase();
+    if (!userId && !email) {
+      res.json(null);
+      return;
+    }
+    // Try by user_id first (includes email-based fallback + user_id linking)
+    if (userId) {
+      const partner = await tplService.getPartnerByUserId(userId);
+      if (partner?.id) {
+        res.json({ id: partner.id, status: partner.status });
+        return;
+      }
+    }
+    // Direct email lookup if user_id didn't match (e.g. staff-created partner)
+    if (email) {
+      const { data } = await supabase
+        .from('tpl_partners')
+        .select('id, status, user_id')
+        .ilike('email', email)
+        .maybeSingle();
+      if (data?.id) {
+        // Link user_id if not yet set
+        if (userId && data.user_id !== userId) {
+          await supabase
+            .from('tpl_partners').update({ user_id: userId }).eq('id', data.id);
+        }
+        res.json({ id: data.id, status: data.status });
+        return;
+      }
+    }
+    res.json(null);
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
 
 // POST /api/v1/tpl/onboard
 router.post('/onboard', rateLimitByIp('tpl-onboard', 5, 60 * 60), async (req, res) => {
