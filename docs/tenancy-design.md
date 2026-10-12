@@ -63,6 +63,9 @@ All the new columns are nullable `uuid` referencing `organizations(id)`, with an
   and set `req.org` = the active organisation, picked by the `X-Org-Id` header, else the user's only
   one, else their first `logistic_company`, plus `req.orgRole`, `req.memberships`, `req.isPlatformAdmin`.
   An `X-Org-Id` the user isn't a member of gets **403**.
+- `appRoleFor()` turns a company membership's `org_role` into the effective app role: `owner`/`admin` →
+  `admin`; `driver` → `driver`; `finance` → `finance` (Money, driver pay, invoices and Reports only — none
+  of the operations screens); `ops`/`dispatcher`/`member` → `manager` (operations only, no Money).
 - **Writes** stamp `carrier_org_id` / `vendor_org_id` / `issuer_org_id` from `req.org`, or from the order
   being acted on, on every create path for the listed tables.
 - **Reads, Phase 1 scope:** the main lists filter by the active company: vehicles, shipments, routes

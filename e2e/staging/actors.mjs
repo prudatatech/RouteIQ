@@ -105,12 +105,17 @@ export async function makeCompany(name = `Co ${tag()}`, extra = {}) {
   return r.body[0]
 }
 
-/** Company staff: role 'admin' (owner/admin membership) or 'manager' ('ops') or 'driver'. Omit orgId for the default company. */
+/**
+ * Company staff: role 'admin' (owner/admin membership), 'manager' ('ops'), 'finance' or 'driver'. Omit
+ * orgId for the default company. 'finance' is an org_role only (never a signup role), so the account's
+ * own `users.role` stays 'vendor', same as the Post a Load vendor-owner fixture: the membership decides.
+ */
 export async function makeCompanyAdmin(orgId, role = 'admin') {
   const { defaultCompany } = await platformIds()
   const org = orgId || defaultCompany
   const user = await makeUser(`${tag()}-${role}`, 'driver')
-  await seat(user, role, org, { admin: 'admin', manager: 'ops', driver: 'driver' }[role] || 'admin')
+  const baseRole = role === 'finance' ? 'vendor' : role
+  await seat(user, baseRole, org, { admin: 'admin', manager: 'ops', finance: 'finance', driver: 'driver' }[role] || 'admin')
   return { ...user, orgId: org, role, token: await login(user.email) }
 }
 export const makeDriver = (orgId) => makeCompanyAdmin(orgId, 'driver')

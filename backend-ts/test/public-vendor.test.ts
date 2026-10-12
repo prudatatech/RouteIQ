@@ -104,6 +104,7 @@ describe('GET /public/companies', () => {
     expect(res.status).toBe(200);
     expect(res.headers['cache-control']).toBe('public, max-age=60');
     expect(res.body.items).toEqual([{ id: 'o1', name: 'Alpha Logistics', city: 'Pune', vehicle_types: ['truck'], trips_completed: 2 }]);
+    expect(res.body.truncated).toBe(false);
     expect(forbiddenKeys(res.body)).toEqual([]);
     expect(JSON.stringify(res.body)).not.toMatch(/gstin|27AAAAA|a@x\.in|9999999999|Pending Carriers|Suspended Freight|A Vendor Org/);
   });
@@ -112,6 +113,14 @@ describe('GET /public/companies', () => {
     expect((await request(app).get(`${base}/companies?city=pune&vehicle_type=Truck`)).body.items).toHaveLength(1);
     expect((await request(app).get(`${base}/companies?city=Delhi`)).body.items).toHaveLength(0);
     expect((await request(app).get(`${base}/companies?vehicle_type=tempo`)).body.items).toHaveLength(0);
+  });
+
+  it('says so, instead of silently dropping companies, when there are more active companies than the page scans', async () => {
+    const extra = Array.from({ length: 205 }, (_, i) => ({ id: `extra-${i}`, kind: 'logistic_company', status: 'active', name: `Carrier ${i}`, city: 'Nagpur' }));
+    supabaseMock.rows('organizations').push(...extra);
+    const res = await request(app).get(`${base}/companies`);
+    expect(res.status).toBe(200);
+    expect(res.body.truncated).toBe(true);
   });
 });
 

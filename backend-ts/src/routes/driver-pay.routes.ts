@@ -2,7 +2,7 @@
  * margixindia — Driver pay routes (staff): the rate card per vehicle type, what drivers earned per
  * trip, approval, adjustments, and payouts made outside the app.
  *
- * Admin and superadmin only; managers run operations and have no access to pay. A driver reads
+ * Admin, superadmin and the finance role only; managers run operations and have no access to pay. A driver reads
  * their own pay from GET /driver/pay.
  */
 import { Router, Request, Response } from 'express';
@@ -14,7 +14,7 @@ import {
 } from '../services/driver-pay.service';
 
 const router = Router();
-router.use(requireAuth, requireRole('admin'));
+router.use(requireAuth, requireRole('admin', 'finance'));
 
 const actorOf = (req: Request) => ({ user_id: req.user!.user_id, role: req.user!.role });
 const text = (v: unknown) => (typeof v === 'string' && v ? v : undefined);

@@ -205,8 +205,11 @@ router.get('/companies', rateLimitByIp('public-companies', 60, 60), async (req: 
   try {
     const q = CompaniesQuery.safeParse(req.query);
     if (!q.success) return badRequest(res, q.error);
-    const { data, error } = await supabase
-      .from('organizations').select('id, name, city').eq('kind', 'logistic_company').eq('status', 'active').order('name', { ascending: true }).limit(COMPANY_SCAN);
+    const activeCompanies = (qb: any) => qb.eq('kind', 'logistic_company').eq('status', 'active');
+    const [{ data, error }, totalActive] = await Promise.all([
+      activeCompanies(supabase.from('organizations').select('id, name, city')).order('name', { ascending: true }).limit(COMPANY_SCAN),
+      count('organizations', activeCompanies),
+    ]);
     if (error) throw new Error(`Failed to read companies: ${error.message}`);
     const orgs = (data ?? []) as any[];
     const ids = orgs.map(o => o.id);
@@ -223,13 +226,16 @@ router.get('/companies', rateLimitByIp('public-companies', 60, 60), async (req: 
     const trips = new Map<string, number>();
     for (const s of delivered) trips.set(s.carrier_org_id, (trips.get(s.carrier_org_id) ?? 0) + 1);
 
-    const items: PublicCompany[] = orgs
+    const matched = orgs
       .map(o => ({ id: o.id, name: o.name, city: o.city ?? null, vehicle_types: [...(types.get(o.id) ?? [])].sort(), trips_completed: trips.get(o.id) ?? 0 }))
       .filter(c => !q.data.city || sameText(c.city, q.data.city))
-      .filter(c => !q.data.vehicle_type || c.vehicle_types.some(t => sameText(t, q.data.vehicle_type)))
-      .slice(0, PUBLIC_LIMIT);
+      .filter(c => !q.data.vehicle_type || c.vehicle_types.some(t => sameText(t, q.data.vehicle_type)));
+    const items: PublicCompany[] = matched.slice(0, PUBLIC_LIMIT);
+    // Companies beyond the scan window never reached `matched`, so a plain length check can't see them:
+    // any unscanned company means the list may be incomplete, not just that this particular page was capped.
+    const truncated = totalActive > orgs.length || matched.length > PUBLIC_LIMIT;
     res.set('Cache-Control', PUBLIC_CACHE);
-    res.json({ items });
+    res.json({ items, truncated });
   } catch (e: any) {
     sendError(req, res, e);
   }

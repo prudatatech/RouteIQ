@@ -99,7 +99,8 @@ const STAFF_APP_ROLES = ['superadmin', 'admin', 'manager'];
  * The app role a membership grants. Permissions come from the person's role in the organisation they act for,
  * never from the global `users.role` (which only says what they signed up as):
  *   platform: owner/admin -> superadmin, anyone else -> admin;
- *   logistic company: owner/admin -> admin; ops, dispatcher, finance, member -> manager; driver -> driver;
+ *   logistic company: owner/admin -> admin; ops, dispatcher, member -> manager; finance -> finance (Money,
+ *   reports, driver pay, invoices only; none of the operations screens); driver -> driver;
  *   vendor -> vendor; 3PL partner: driver -> driver, anyone else -> vendor.
  * Staff roles need an active organisation: a pending (or suspended, rejected) one gives none, and a caller
  * who was staff by `users.role` drops to vendor there. No membership (or no organisation set up): `baseRole`.
@@ -111,7 +112,8 @@ export function appRoleFor(membership: Membership | null, baseRole: string): str
   if (org.status !== 'active') return STAFF_APP_ROLES.includes(baseRole) ? 'vendor' : baseRole;
   switch (org.kind) {
     case 'platform': return elevated ? 'superadmin' : 'admin';
-    case 'logistic_company': return elevated ? 'admin' : role === 'driver' ? 'driver' : 'manager';
+    case 'logistic_company':
+      return elevated ? 'admin' : role === 'driver' ? 'driver' : role === 'finance' ? 'finance' : 'manager';
     // A 3PL partner's own driver (invited from the partner portal, docs/network-design.md) needs the same
     // carve-out as a company's driver: without it, their org membership outranks the backend-issued phone-OTP
     // token only when something else ever authenticates them through Supabase, silently refusing every

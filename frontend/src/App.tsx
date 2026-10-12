@@ -77,9 +77,13 @@ const VendorDocumentsPage = vendorDocuments.Component
 const VendorCorridorPage = vendorCorridor.Component
 const RequestsPage = requests.Component
 
-/** Who may open which part of the console. Managers run operations only: no money, settings, audit, KYC or 3PL. */
+/**
+ * Who may open which part of the console. Managers run operations only: no money, settings, audit, KYC or
+ * 3PL. The finance role is the opposite: money and reports only, no operations, settings, audit, KYC or 3PL.
+ */
 const OPERATIONS = ['superadmin', 'admin', 'manager']
 const ADMINS = ['superadmin', 'admin']
+const MONEY_AND_REPORTS = ['superadmin', 'admin', 'finance']
 const SUPERADMIN = ['superadmin']
 
 /** Fallback for a route that isn't behind a shell (no sidebar/header to keep on screen). */
@@ -382,19 +386,19 @@ export default function App() {
               </PrivateRoute>
             } />
             <Route path="analytics" element={
-              <PrivateRoute allowedRoles={ADMINS}>
+              <PrivateRoute allowedRoles={MONEY_AND_REPORTS}>
                 <AnalyticsPage />
               </PrivateRoute>
             } />
             <Route path="money" element={
-              <PrivateRoute allowedRoles={ADMINS}>
+              <PrivateRoute allowedRoles={MONEY_AND_REPORTS}>
                 <MoneyPage />
               </PrivateRoute>
             } />
             {/* The menu's Invoices link: the Invoices tab of Money */}
             <Route path="money/invoices" element={<Navigate to="/money?tab=invoices" replace />} />
             <Route path="money/invoices/:id" element={
-              <PrivateRoute allowedRoles={ADMINS}>
+              <PrivateRoute allowedRoles={MONEY_AND_REPORTS}>
                 <InvoicePage />
               </PrivateRoute>
             } />
@@ -454,7 +458,7 @@ export default function App() {
               </PrivateRoute>
             } />
             <Route path="insights" element={
-              <PrivateRoute allowedRoles={ADMINS}>
+              <PrivateRoute allowedRoles={MONEY_AND_REPORTS}>
                 <InsightsPage />
               </PrivateRoute>
             } />
