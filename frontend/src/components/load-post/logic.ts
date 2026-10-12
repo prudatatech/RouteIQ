@@ -250,7 +250,7 @@ export function toPayload(d: LoadDraft): LoadPayload {
     temp_min_c: temp ? temp.min : null,
     temp_max_c: temp ? temp.max : null,
     special_handling: allSpecialHandling(d),
-    budget_inr: d.budget_inr ?? null,
+    budget_inr: typeof d.budget_inr === 'number' && Number.isFinite(d.budget_inr) ? d.budget_inr : null,
     quote_requested: false,
     loading_help: false,
     unloading_help: false,
