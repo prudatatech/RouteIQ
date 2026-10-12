@@ -157,6 +157,18 @@ describe('the board', () => {
     expect(one.body).toMatchObject({ priority: 'low', price_min_inr: 100, price_max_inr: 200 });
   });
 
+  it('breaks a tie of equal priority and pickup date by who has waited longest, not who is newest', async () => {
+    routingWorld({
+      vendor_shipment_requests: [
+        loadRow(L.open, { priority: 'medium', pickup_date: '2026-12-05', created_at: '2026-12-01T09:00:00Z' }),
+        loadRow(L.chosenB, { priority: 'medium', pickup_date: '2026-12-05', routing: 'open', created_at: '2026-12-02T09:00:00Z' }),
+      ],
+    });
+    const res = await request(app).get(api('/company/loads/market?tab=new')).set(adminA());
+    expect(res.status).toBe(200);
+    expect(res.body.items.map((i: any) => i.id)).toEqual([L.open, L.chosenB]);
+  });
+
   it('shows the network size to platform staff only', async () => {
     routingWorld({ vehicles: [{ id: 'v1', carrier_org_id: ORG.companyA, status: 'idle' }, { id: 'v2', carrier_org_id: ORG.companyA, status: 'archived' }] });
     const staff = await request(app).get(api('/company/loads/market')).set(as('super-1', ORG.companyA));

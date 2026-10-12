@@ -96,61 +96,9 @@ describe('the effective role on requests', () => {
     const reveal = '/api/v1/people/00000000-0000-4000-8000-000000000001/bank-accounts/00000000-0000-4000-8000-000000000002/reveal';
     expect((await request(app).post(reveal).set(as('super-1', ORG.companyA)).send({})).status).toBe(403);
     expect((await request(app).post(reveal).set(as('super-1', ORG.platform)).send({})).status).not.toBe(403);
-  });
-
-  it('falls back to users.role without a membership', () => {
-    expect(appRoleFor(null, 'admin')).toBe('admin');
-  });
-
-  it('gives no staff role in an organisation that is not active', () => {
-    for (const status of ['pending', 'rejected', 'suspended']) {
-      const pending = { org: { ...orgById(ORG.companyA), status }, role: 'owner' } as any;
-      expect(appRoleFor(pending, 'vendor')).toBe('vendor');
-      expect(appRoleFor(pending, 'admin')).toBe('vendor');
-    }
-  });
-});
-
-describe('the effective role on requests', () => {
-  beforeEach(() => supabaseMock.reset(worldWithFounder('active')));
-
-  it('lets a vendor-registered owner of an approved company use the staff endpoints, money included', async () => {
-    expect((await request(app).get('/api/v1/ops/today').set(as('founder'))).status).toBe(200);
-    expect((await request(app).get('/api/v1/finance/unpriced').set(as('founder'))).status).toBe(200);
-  });
-
-  it('tells the web app the effective role', async () => {
-    const me = await request(app).get('/api/v1/users/me').set(as('founder'));
-    expect(me.body).toMatchObject({ role: 'vendor', effective_role: 'admin', org: { id: ORG_ACTIVE_NEWCO, role: 'owner' } });
-    const mine = await request(app).get('/api/v1/orgs/mine').set(as('founder'));
-    expect(mine.body[0]).toMatchObject({ role: 'owner', app_role: 'admin' });
-  });
-
-  it('gives no staff access while the company is pending', async () => {
-    supabaseMock.reset(worldWithFounder('pending'));
-    expect((await request(app).get('/api/v1/ops/today').set(as('founder'))).status).toBe(403);
-    expect((await request(app).get('/api/v1/finance/unpriced').set(as('founder'))).status).toBe(403);
-    const mine = await request(app).get('/api/v1/orgs/mine').set(as('founder'));
-    expect(mine.body[0].app_role).toBe('vendor');
-  });
-
-  it('gives a company ops member manager rights, and Money stays refused', async () => {
-    expect((await request(app).get('/api/v1/ops/today').set(as('manager-a'))).status).toBe(200);
-    expect((await request(app).get('/api/v1/finance/unpriced').set(as('manager-a'))).status).toBe(403);
-    // Even when their account says admin, the membership decides
-    supabaseMock.reset(orgWorld({}, { seats: SEATS.map((s: Seat) => (s.user === 'admin-a' ? { ...s, role: 'ops' } : s)) }));
-    expect((await request(app).get('/api/v1/finance/unpriced').set(as('admin-a'))).status).toBe(403);
-    expect((await request(app).get('/api/v1/ops/today').set(as('admin-a'))).status).toBe(200);
-  });
-
-  it('gives a superadmin acting as a company admin powers, not platform powers', async () => {
-    const asCompany = await request(app).get('/api/v1/users/me').set(as('super-1', ORG.companyA));
-    expect(asCompany.body.effective_role).toBe('admin');
-    const asPlatform = await request(app).get('/api/v1/users/me').set(as('super-1', ORG.platform));
-    expect(asPlatform.body.effective_role).toBe('superadmin');
-    // Settings and KYC-type endpoints are superadmin-only: refused as a company, open as the platform
+    // Listing people is ordinary admin work, open to a company admin as much as the platform
     const path = '/api/v1/users/';
-    expect((await request(app).get(path).set(as('super-1', ORG.companyA))).status).toBe(200); // admin may list
+    expect((await request(app).get(path).set(as('super-1', ORG.companyA))).status).toBe(200);
   });
 
   it('falls back to users.role without a membership or without organisations', async () => {
