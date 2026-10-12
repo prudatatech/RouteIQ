@@ -428,8 +428,8 @@ export const pricingService = {
       generated_at: new Date().toISOString(),
     };
 
-    // 8. WheelsEye Market Benchmark (Zero-coupling: skipped if disabled or on any external error)
-    if (settings.WHEELSEYE_MARKET_BENCHMARK_ENABLED) {
+    // 8. WheelsEye Market Benchmark (Zero-coupling: skipped if disabled, in tests, or on any external error)
+    if (settings.WHEELSEYE_MARKET_BENCHMARK_ENABLED && settings.APP_ENV !== 'test') {
       try {
         const benchmark = await marketPricingProvider.getMarketBenchmark({
           pickup: input.pickup,

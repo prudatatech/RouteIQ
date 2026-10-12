@@ -91,6 +91,8 @@ Object.assign(process.env, {
   EWAYBILL_GSP_CLIENT_ID: '',
   EWAYBILL_GSP_BASE_URL: '',
   AWS_S3_BUCKET: '',
+  WHEELSEYE_TOKEN: '',
+  WHEELSEYE_MARKET_BENCHMARK_ENABLED: 'false',
 });
 
 afterAll(() => supabaseMock.stop());
