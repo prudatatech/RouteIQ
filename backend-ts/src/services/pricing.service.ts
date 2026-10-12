@@ -23,6 +23,56 @@ const DEFAULT_WEATHER_SURCHARGE_PCT = 5;
 
 const SETTING_KEY_RE = /^(rate_per_km(_[a-z0-9_]+)?|load_multiplier_[a-z0-9_]+|min_charge|per_kg_surcharge|fuel_price_per_litre|demand_adjustment_max_pct|price_range_pct|weather_surcharge_pct)$/;
 
+/**
+ * Vehicle-tonnage-based rate multipliers (Indian FTL freight market benchmarks).
+ * Applied when no vehicle-specific rate_per_km_<type> is set to scale the base
+ * rate_per_km to realistic levels for heavier vehicles.
+ * Source: avg Indian road freight cost per km by tonnage class (2024-25 market data).
+ * The multiplier is relative to a small tempo (1T) base rate.
+ */
+const VEHICLE_RATE_MULTIPLIERS: [number, number][] = [
+  // [max_tonnes, multiplier_of_base_rate]
+  [1.0, 1.0],    // Tata Ace, Suzuki Carry — tempo base
+  [2.5, 1.3],    // Tata Ace Gold, pickup
+  [4.5, 1.8],    // Tata 407, Eicher Pro 1049
+  [7.0, 2.4],    // Eicher 14ft, 10-wheel
+  [9.0, 3.0],    // 17ft closed body
+  [12.0, 3.5],   // 20ft open / container
+  [15.0, 4.2],   // 22ft open / closed body
+  [18.0, 4.8],   // 32ft single-axle, MXL
+  [25.0, 5.8],   // 40ft multi-axle trailer
+  [40.0, 7.0],   // ODC / hydraulic low-bed
+];
+
+/** Returns a rate multiplier based on vehicle tonnage capacity */
+function vehicleRateMultiplier(vehicleType: string | null, weightKg: number): number {
+  // If vehicle type contains a clear tonnage hint, use it
+  const tons = weightKg / 1000;
+  if (tons <= 0) return 1;
+
+  // Parse tonnage hint from vehicle name if available
+  let capacityTons = tons;
+  if (vehicleType) {
+    const v = vehicleType.toLowerCase();
+    // Match patterns like "trailer_40_ft", "22_wheel", "32ft", etc.
+    if (v.includes('trailer') || v.includes('40_ft') || v.includes('40ft')) capacityTons = Math.max(tons, 25);
+    else if (v.includes('32_ft') || v.includes('32ft') || v.includes('mxl')) capacityTons = Math.max(tons, 18);
+    else if (v.includes('22_ft') || v.includes('22ft') || v.includes('22_wheel')) capacityTons = Math.max(tons, 15);
+    else if (v.includes('20_ft') || v.includes('20ft')) capacityTons = Math.max(tons, 12);
+    else if (v.includes('17_ft') || v.includes('17ft') || v.includes('14_ft') || v.includes('14ft')) capacityTons = Math.max(tons, 9);
+    else if (v.includes('eicher') || v.includes('1049')) capacityTons = Math.max(tons, 7);
+    else if (v.includes('407') || v.includes('canter')) capacityTons = Math.max(tons, 4.5);
+    else if (v.includes('ace') || v.includes('pickup') || v.includes('bolero')) capacityTons = Math.max(tons, 2.5);
+    else if (v.includes('tempo') || v.includes('three_wheeler')) capacityTons = Math.max(tons, 1);
+  }
+
+  // Find the matching bracket
+  for (const [maxT, mult] of VEHICLE_RATE_MULTIPLIERS) {
+    if (capacityTons <= maxT) return mult;
+  }
+  return VEHICLE_RATE_MULTIPLIERS[VEHICLE_RATE_MULTIPLIERS.length - 1][1]; // Heaviest bracket
+}
+
 export interface QuoteInput {
   pickup: LatLng & { label?: string | null; placeId?: string };
   drop: LatLng & { label?: string | null; placeId?: string };
@@ -289,9 +339,17 @@ export const pricingService = {
         };
       }
       if (cardRate !== null) {
-        cardPrice = km * cardRate;
-        const which = vehicleType && cfg[`rate_per_km_${vehicleType}`] ? `the ${input.vehicle_type} rate` : 'the standard rate';
-        factors.push({ key: 'rate_card', code: 'rate_card', label: 'Rate card', detail: `${km.toLocaleString('en-IN')} km at ${inr(cardRate)} per km (${which}).`, amount_inr: Math.round(cardPrice) });
+        // Apply vehicle-tonnage multiplier when using the generic rate (no vehicle-specific rate set)
+        const hasVehicleSpecific = !!(vehicleType && cfg[`rate_per_km_${vehicleType}`]);
+        const multiplier = hasVehicleSpecific ? 1 : vehicleRateMultiplier(vehicleType, input.weight_kg);
+        const effectiveRate = cardRate * multiplier;
+        cardPrice = km * effectiveRate;
+        const which = hasVehicleSpecific
+          ? `the ${input.vehicle_type} rate`
+          : multiplier > 1
+            ? `the standard rate ×${multiplier} for ${(input.weight_kg / 1000).toFixed(1)}T class`
+            : 'the standard rate';
+        factors.push({ key: 'rate_card', code: 'rate_card', label: 'Rate card', detail: `${km.toLocaleString('en-IN')} km at ${inr(effectiveRate)} per km (${which}).`, amount_inr: Math.round(cardPrice) });
       } else {
         notes.push('No rate card is set, so the price comes from past accepted prices only.');
       }
@@ -304,7 +362,7 @@ export const pricingService = {
       const add = extraWeight * cfg.per_kg_surcharge;
       subtotal += add;
       factors.push({ key: 'weight', code: 'weight', label: 'Overweight PTL', detail: `Extra ${extraWeight.toLocaleString('en-IN')} kg above the 5kg document slab at ${inr(cfg.per_kg_surcharge)} per kg ${signed(add)}.`, amount_inr: Math.round(add) });
-    } else if (!isParcel && cardRate !== null && cfg.per_kg_surcharge && input.weight_kg < 1000) {
+    } else if (!isParcel && cardRate !== null && cfg.per_kg_surcharge && input.weight_kg <= 1000) {
       const add = input.weight_kg * cfg.per_kg_surcharge;
       subtotal += add;
       factors.push({ key: 'weight', code: 'weight', label: 'Weight', detail: `${input.weight_kg.toLocaleString('en-IN')} kg at ${inr(cfg.per_kg_surcharge)} per kg ${signed(add)}.`, amount_inr: Math.round(add) });
