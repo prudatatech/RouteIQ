@@ -32,8 +32,8 @@ function failBoth(req: Request, res: Response, err: unknown): void {
   sendError(req, res, err, 'error');
 }
 const superadmin = [requireAuth, requireRole('superadmin')];
-// Marking a partner paid is money: admin and superadmin only
-const moneyStaff = [requireAuth, requireRole('admin')];
+// Marking a partner paid is money: admin, superadmin and the finance role only
+const moneyStaff = [requireAuth, requireRole('admin', 'finance')];
 
 const AUTO_ESCALATE_KEY = 'auto_escalate_3pl';
 

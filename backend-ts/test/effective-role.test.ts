@@ -34,7 +34,8 @@ describe('appRoleFor', () => {
     expect(appRoleFor(m(ORG.platform, 'ops'), 'superadmin')).toBe('admin');
     expect(appRoleFor(m(ORG.companyA, 'owner'), 'vendor')).toBe('admin');
     expect(appRoleFor(m(ORG.companyA, 'admin'), 'vendor')).toBe('admin');
-    for (const r of ['ops', 'dispatcher', 'finance', 'member']) expect(appRoleFor(m(ORG.companyA, r), 'vendor')).toBe('manager');
+    for (const r of ['ops', 'dispatcher', 'member']) expect(appRoleFor(m(ORG.companyA, r), 'vendor')).toBe('manager');
+    expect(appRoleFor(m(ORG.companyA, 'finance'), 'vendor')).toBe('finance');
     expect(appRoleFor(m(ORG.companyA, 'driver'), 'vendor')).toBe('driver');
     expect(appRoleFor(m(ORG.vendorV, 'owner'), 'admin')).toBe('vendor');
     expect(appRoleFor(m(ORG.tplT, 'owner'), 'superadmin')).toBe('vendor');
@@ -85,6 +86,13 @@ describe('the effective role on requests', () => {
     supabaseMock.reset(orgWorld({}, { seats: SEATS.map((s: Seat) => (s.user === 'admin-a' ? { ...s, role: 'ops' } : s)) }));
     expect((await request(app).get('/api/v1/finance/unpriced').set(as('admin-a'))).status).toBe(403);
     expect((await request(app).get('/api/v1/ops/today').set(as('admin-a'))).status).toBe(200);
+  });
+
+  it('gives a company finance member Money and reports, and operations stays refused', async () => {
+    expect((await request(app).get('/api/v1/finance/unpriced').set(as('finance-a'))).status).toBe(200);
+    expect((await request(app).get('/api/v1/driver-pay/rates').set(as('finance-a'))).status).toBe(200);
+    expect((await request(app).get('/api/v1/ops/today').set(as('finance-a'))).status).toBe(403);
+    expect((await request(app).post('/api/v1/vehicles/00000000-0000-4000-8000-000000000001/status').set(as('finance-a')).send({})).status).toBe(403);
   });
 
   it('gives a superadmin acting as a company admin powers, not platform powers', async () => {

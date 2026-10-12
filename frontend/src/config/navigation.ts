@@ -3,7 +3,7 @@ import {
   ClipboardList, Building2,
 } from 'lucide-react'
 
-export type StaffRole = 'admin' | 'superadmin' | 'manager'
+export type StaffRole = 'admin' | 'superadmin' | 'manager' | 'finance'
 
 /** The counts the menu shows: what needs someone, per section and per sub-link. */
 export type NavBadge =
@@ -41,10 +41,12 @@ export interface NavSection {
 const admins: StaffRole[] = ['admin', 'superadmin']
 const superadmin: StaffRole[] = ['superadmin']
 const everyone: StaffRole[] = ['admin', 'superadmin', 'manager']
+const moneyAndReports: StaffRole[] = ['admin', 'superadmin', 'finance']
 
 /**
  * The staff menu: eleven sections in the order the work happens (docs/workflow-blueprint.html).
- * Managers see the operations sections only: no Money, Reports, Settings, KYC or 3PL.
+ * Managers see the operations sections only: no Money, Reports, Settings, KYC or 3PL. The finance
+ * role sees only Money and Reports: no operations, Settings, KYC or 3PL.
  */
 export const navSections: NavSection[] = [
   {
@@ -103,22 +105,22 @@ export const navSections: NavSection[] = [
     ],
   },
   {
-    to: '/money', label: 'Money', icon: Banknote, roles: admins, badge: 'money',
+    to: '/money', label: 'Money', icon: Banknote, roles: moneyAndReports, badge: 'money',
     // Old claim links and notifications still open /cargo?tab=claims: keep Money lit for them
     also: ['/cargo?tab=claims'],
     children: [
-      { to: '/money', label: 'To price', roles: admins, badge: 'money' },
-      { to: '/money?tab=invoices', label: 'Invoices', roles: admins, alsoMatch: ['/money/invoices'] },
-      { to: '/money?tab=driver-pay', label: 'Driver pay', roles: admins },
-      { to: '/money?tab=expenses', label: 'Expenses', roles: admins },
-      { to: '/money?tab=claims', label: 'Claims', roles: admins },
+      { to: '/money', label: 'To price', roles: moneyAndReports, badge: 'money' },
+      { to: '/money?tab=invoices', label: 'Invoices', roles: moneyAndReports, alsoMatch: ['/money/invoices'] },
+      { to: '/money?tab=driver-pay', label: 'Driver pay', roles: moneyAndReports },
+      { to: '/money?tab=expenses', label: 'Expenses', roles: moneyAndReports },
+      { to: '/money?tab=claims', label: 'Claims', roles: moneyAndReports },
     ],
   },
   {
-    to: '/analytics', label: 'Reports', icon: BarChart3, roles: admins,
+    to: '/analytics', label: 'Reports', icon: BarChart3, roles: moneyAndReports,
     children: [
-      { to: '/analytics', label: 'Analytics', roles: admins },
-      { to: '/insights', label: 'Insights', roles: admins },
+      { to: '/analytics', label: 'Analytics', roles: moneyAndReports },
+      { to: '/insights', label: 'Insights', roles: moneyAndReports },
     ],
   },
   {
