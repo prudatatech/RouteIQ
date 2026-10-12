@@ -1608,15 +1608,13 @@ export class ShipmentService {
       await supabase.from('route_stops').delete().in('delivery_point_id', dpIds);
     }
 
-    // 3. Delete invoices/payments
+    // 3. Delete invoices
     const { data: invoices } = await supabase
       .from('invoices')
       .select('id')
       .eq('shipment_id', shipmentId);
 
     if (invoices && invoices.length > 0) {
-      const invoiceIds = invoices.map((inv: any) => inv.id);
-      await supabase.from('payments').delete().in('invoice_id', invoiceIds);
       await supabase.from('invoices').delete().eq('shipment_id', shipmentId);
     }
 
