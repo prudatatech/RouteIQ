@@ -141,6 +141,12 @@ function TplVerifyRedirect() {
   return <Navigate to={id ? `/3pl-partners/${id}` : '/return-trips?tab=partners'} replace />
 }
 
+function TplDashboardRedirect() {
+  const tplPartnerId = useAuthStore(s => s.tplPartnerId)
+  if (tplPartnerId) return <Navigate to={`/3pl-portal/${tplPartnerId}`} replace />
+  return <Navigate to="/3pl/onboard" replace />
+}
+
 export default function App() {
   useEffect(() => {
     const store = useAuthStore.getState()
@@ -275,6 +281,8 @@ export default function App() {
               <TplDashboardPage />
             </PrivateRoute></LazyRoute>
           } />
+          <Route path="/3pl/dashboard" element={<TplDashboardRedirect />} />
+          <Route path="/3pl" element={<TplDashboardRedirect />} />
 
           {/* Public Landing Page */}
           <Route path="/" element={<LandingPage />} />

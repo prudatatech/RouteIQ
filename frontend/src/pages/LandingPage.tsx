@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { buttonClasses } from '@/components/ui'
 import { publicAPI, type PublicStats } from '@/services/api'
+import { useAuthStore } from '@/store/authStore'
 
 interface Audience {
   icon: LucideIcon
@@ -84,6 +85,8 @@ function LiveNumbers() {
 }
 
 export default function LandingPage() {
+  const tplPartnerId = useAuthStore(s => s.tplPartnerId)
+
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [])
@@ -126,21 +129,25 @@ export default function LandingPage() {
         <section aria-labelledby="audiences-title" className="mx-auto max-w-content px-4 pb-12 sm:px-6 sm:pb-16">
           <h2 id="audiences-title" className="sr-only">Get started</h2>
           <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {audiences.map(({ icon: AudienceIcon, title, description, action, secondary }) => (
-              <li key={title} className="flex flex-col rounded-card border border-border bg-surface p-6">
-                <span className="flex h-10 w-10 items-center justify-center rounded-control bg-brand-soft text-brand">
-                  <AudienceIcon size={20} aria-hidden />
-                </span>
-                <h3 className="mt-4 text-lg font-semibold text-text">{title}</h3>
-                <p className="mt-2 flex-1 text-sm text-muted">{description}</p>
-                <div className="mt-6 flex flex-col gap-2">
-                  <Link to={action.to} className={buttonClasses({ variant: 'primary', fullWidth: true })}>{action.label}</Link>
-                  {secondary && (
-                    <Link to={secondary.to} className={buttonClasses({ variant: 'ghost', fullWidth: true })}>{secondary.label}</Link>
-                  )}
-                </div>
-              </li>
-            ))}
+            {audiences.map(({ icon: AudienceIcon, title, description, action, secondary }) => {
+              const to = title === '3PL partners' && tplPartnerId ? `/3pl-portal/${tplPartnerId}` : action.to
+              const label = title === '3PL partners' && tplPartnerId ? 'Go to partner portal' : action.label
+              return (
+                <li key={title} className="flex flex-col rounded-card border border-border bg-surface p-6">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-control bg-brand-soft text-brand">
+                    <AudienceIcon size={20} aria-hidden />
+                  </span>
+                  <h3 className="mt-4 text-lg font-semibold text-text">{title}</h3>
+                  <p className="mt-2 flex-1 text-sm text-muted">{description}</p>
+                  <div className="mt-6 flex flex-col gap-2">
+                    <Link to={to} className={buttonClasses({ variant: 'primary', fullWidth: true })}>{label}</Link>
+                    {secondary && (
+                      <Link to={secondary.to} className={buttonClasses({ variant: 'ghost', fullWidth: true })}>{secondary.label}</Link>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
           </ul>
         </section>
 
@@ -168,7 +175,9 @@ export default function LandingPage() {
           <p>© {new Date().getFullYear()} MargixIndia by Prudata</p>
           <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2">
             <Link to="/track" className="hover:text-text">Track a shipment</Link>
-            <Link to="/3pl/onboard" className="hover:text-text">Become a 3PL partner</Link>
+            <Link to={tplPartnerId ? `/3pl-portal/${tplPartnerId}` : '/3pl/onboard'} className="hover:text-text">
+              {tplPartnerId ? '3PL partner portal' : 'Become a 3PL partner'}
+            </Link>
             <Link to="/login" className="hover:text-text">Sign in</Link>
           </nav>
         </div>
