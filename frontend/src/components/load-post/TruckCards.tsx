@@ -6,6 +6,22 @@ import type { StepErrors } from './validate'
 import { capacityText } from './helpers'
 import Radio from './Radio'
 import Segmented from './Segmented'
+import type { QuoteOk } from '@/services/pricing'
+
+type MarketBenchmark = QuoteOk['market_benchmark']
+
+interface MarketVehicleOption {
+  vid?: number
+  name: string
+  bodyType: string
+  tyre: number
+  lengthFt: number
+  actualPriceInr: number
+  discountedPriceInr: number
+  discountPct: number
+  capacityTon: number
+  remark?: string | null
+}
 
 /** What the vehicle can carry against the load, in words. The capacity is worked out, never typed. */
 export function CapacityNote({ vehicle, capacity, weightKg }: { vehicle?: VehicleClass; capacity: number | null; weightKg: number }) {
@@ -39,7 +55,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
   weightKg: number
   capacity: number | null
   notes?: ReactNode
-  marketBenchmark?: any
+  marketBenchmark?: MarketBenchmark
 }) {
   const ptl = draft.load_type === 'ptl'
   const vehicle = vehicles.find(v => v.key === draft.vehicle_class)
@@ -55,8 +71,8 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
       ? suggestedVehicleKey.replace(/_/g, ' ')
       : assistLoading ? 'Working out the right vehicle…' : weightKg > 0 ? 'No vehicle to suggest yet' : 'Add the weight of your goods first'
 
-  const vehicleOptions = marketBenchmark?.ftl?.vehicleOptions ?? []
-  const visibleOptions = vehicleOptions.filter((opt: any) => {
+  const vehicleOptions: MarketVehicleOption[] = marketBenchmark?.ftl?.vehicleOptions ?? []
+  const visibleOptions = vehicleOptions.filter((opt) => {
     if (activeBodyTab === 'ALL') return true
     const b = (opt.bodyType || '').toUpperCase()
     return b === activeBodyTab
@@ -95,12 +111,12 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
 
       {/* WheelsEye Live Market Trucks (FTL) */}
       {vehicleOptions.length > 0 && (
-        <Card padded className="space-y-3 !p-4 border-emerald-500/30 bg-surface">
+        <Card padded className="space-y-3 !p-4 border-success/30 bg-surface">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
             <div>
               <h3 className="text-sm font-semibold text-text flex items-center gap-2">
                 <span>WheelsEye Live Market Trucks</span>
-                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-600 border border-emerald-500/20">
+                <span className="rounded-full bg-success/10 px-2 py-0.5 text-xs font-semibold text-success border border-success/20">
                   ⚡ Live Rates
                 </span>
               </h3>
@@ -109,7 +125,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
               </p>
             </div>
             {/* Trust Guarantee Strip */}
-            <div className="hidden lg:flex items-center gap-3 text-[11px] text-emerald-600 font-medium">
+            <div className="hidden lg:flex items-center gap-3 text-xs text-success font-medium">
               <span>✓ Verified Fleet</span>
               <span>✓ ₹10L Transit Insurance</span>
               <span>✓ Live GPS Included</span>
@@ -120,17 +136,17 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
           <div className="flex items-center gap-1.5 border-b border-border/60 pb-2 overflow-x-auto text-xs">
             {[
               { id: 'ALL', label: 'All Trucks', count: vehicleOptions.length },
-              { id: 'OPEN', label: 'Open Body', count: vehicleOptions.filter((v: any) => (v.bodyType || '').toUpperCase() === 'OPEN').length },
-              { id: 'CONTAINER', label: 'Container', count: vehicleOptions.filter((v: any) => (v.bodyType || '').toUpperCase() === 'CONTAINER').length },
-              { id: 'TRAILER', label: 'Trailer', count: vehicleOptions.filter((v: any) => (v.bodyType || '').toUpperCase() === 'TRAILER').length },
+              { id: 'OPEN', label: 'Open Body', count: vehicleOptions.filter((v) => (v.bodyType || '').toUpperCase() === 'OPEN').length },
+              { id: 'CONTAINER', label: 'Container', count: vehicleOptions.filter((v) => (v.bodyType || '').toUpperCase() === 'CONTAINER').length },
+              { id: 'TRAILER', label: 'Trailer', count: vehicleOptions.filter((v) => (v.bodyType || '').toUpperCase() === 'TRAILER').length },
             ].filter(tab => tab.id === 'ALL' || tab.count > 0).map(tab => (
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveBodyTab(tab.id as any)}
+                onClick={() => setActiveBodyTab(tab.id as 'ALL' | 'OPEN' | 'CONTAINER' | 'TRAILER')}
                 className={`rounded-full px-3 py-1 font-medium transition-all ${
                   activeBodyTab === tab.id
-                    ? 'bg-emerald-600 text-white shadow-sm'
+                    ? 'bg-success text-white shadow-raised'
                     : 'bg-surface-subtle text-muted hover:bg-surface hover:text-text border border-border/80'
                 }`}
               >
@@ -140,7 +156,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
           </div>
 
           <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 pt-1">
-            {visibleOptions.map((opt: any) => {
+            {visibleOptions.map((opt) => {
               const isSelected = draft.vehicle_class === opt.name || draft.budget_inr === opt.discountedPriceInr
               return (
                 <div
@@ -152,10 +168,10 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
                     vehicle_mode: 'manual',
                     transport_touched: true
                   })}
-                  className={`group relative cursor-pointer rounded-xl border p-3.5 transition-all text-left ${
+                  className={`group relative cursor-pointer rounded-card border p-3.5 transition-all text-left ${
                     isSelected
-                      ? 'border-emerald-600 bg-emerald-500/10 ring-2 ring-emerald-500/30 shadow-sm'
-                      : 'border-border bg-surface-subtle hover:border-emerald-500/50 hover:bg-surface'
+                      ? 'border-success bg-success/10 ring-2 ring-success/30 shadow-raised'
+                      : 'border-border bg-surface-subtle hover:border-success/50 hover:bg-surface'
                   }`}
                   role="button"
                   tabIndex={0}
@@ -164,7 +180,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="font-semibold text-text text-sm">{opt.name}</p>
-                      <div className="flex flex-wrap gap-1 mt-1 text-[11px] text-muted">
+                      <div className="flex flex-wrap gap-1 mt-1 text-xs text-muted">
                         <span className="rounded bg-surface px-1.5 py-0.5 border border-border/80">
                           {opt.tyre} Tyre
                         </span>
@@ -177,7 +193,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
                       </div>
                     </div>
                     {opt.discountPct > 0 && (
-                      <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-bold text-amber-700 dark:text-amber-400 shrink-0">
+                      <span className="rounded bg-warning/10 px-1.5 py-0.5 text-xs font-semibold text-warning shrink-0">
                         {opt.discountPct}% Off
                       </span>
                     )}
@@ -185,7 +201,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
 
                   <div className="mt-3 flex items-baseline justify-between border-t border-border/60 pt-2">
                     <div>
-                      <span className="text-base font-bold text-text tabular">
+                      <span className="text-base font-semibold text-text tabular">
                         {inr(opt.discountedPriceInr)}
                       </span>
                       {opt.actualPriceInr > opt.discountedPriceInr && (
@@ -194,13 +210,13 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
                         </span>
                       )}
                     </div>
-                    <span className={`text-xs font-semibold ${isSelected ? 'text-emerald-600' : 'text-muted group-hover:text-text'}`}>
+                    <span className={`text-xs font-semibold ${isSelected ? 'text-success' : 'text-muted group-hover:text-text'}`}>
                       {isSelected ? '✓ Selected' : 'Select'}
                     </span>
                   </div>
 
                   {opt.remark && (
-                    <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                    <p className="mt-1.5 text-xs text-warning">
                       ⚠️ {opt.remark}
                     </p>
                   )}
@@ -213,15 +229,15 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
 
       {/* WheelsEye PTL Benchmark */}
       {marketBenchmark?.ptl && (
-        <Card padded className="space-y-1.5 !p-4 border-emerald-500/30 bg-emerald-500/5">
+        <Card padded className="space-y-1.5 !p-4 border-success/30 bg-success/5">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text flex items-center gap-2">
               <span>WheelsEye PTL Lane Rate</span>
-              <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 border border-emerald-500/20">
+              <span className="rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success border border-success/20">
                 Pro-rata
               </span>
             </h3>
-            <span className="text-base font-bold text-text tabular">
+            <span className="text-base font-semibold text-text tabular">
               ~₹{marketBenchmark.ptl.derivedRatePerKgInr}/kg
             </span>
           </div>

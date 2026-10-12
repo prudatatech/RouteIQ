@@ -12,11 +12,11 @@ export default function FreightCard({ assist, loading }: { assist: AssistResult 
   const isMarket = !!(market && market.available)
 
   return (
-    <Card padded className={`space-y-1.5 !p-4 ${isMarket ? 'border-emerald-500/30 bg-emerald-500/5' : ''}`} aria-label="Recommended freight" data-testid="freight-card">
+    <Card padded className={`space-y-1.5 !p-4 ${isMarket ? 'border-success/30 bg-success/5' : ''}`} aria-label="Recommended freight" data-testid="freight-card">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-text">Recommended freight</h3>
         {isMarket && (
-          <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 border border-emerald-500/20">
+          <span className="rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-semibold text-success border border-success/20">
             ⚡ WheelsEye Live Rate
           </span>
         )}

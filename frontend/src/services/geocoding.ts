@@ -79,7 +79,7 @@ export async function suggestPlaces(
   try {
     const list = await wheelseyeAPI.autocomplete(query.trim())
     if (Array.isArray(list) && list.length > 0) {
-      return list.map((s: any) => {
+      return list.map((s: { placeId?: string; addressLineOne?: string; addressLineTwo?: string; addressLineThree?: string }) => {
         const full = [s.addressLineOne, s.addressLineTwo, s.addressLineThree].filter(Boolean).join(', ')
         return {
           id: s.placeId || full,

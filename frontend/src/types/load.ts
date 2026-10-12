@@ -293,7 +293,27 @@ export interface AssistResult {
     high: number
     distance_km: number
     label: string
-    market_benchmark?: any
+    market_benchmark?: {
+      provider: string
+      mode: 'ftl' | 'ptl'
+      available: boolean
+      lane: { origin: string; destination: string }
+      ftl?: {
+        recommendedVehicle: string
+        lowestPriceInr: number
+        highestPriceInr: number
+        averagePriceInr: number
+        vehicleOptions: Array<{
+          vid?: number; name: string; bodyType: string; tyre: number; lengthFt: number
+          actualPriceInr: number; discountedPriceInr: number; discountPct: number
+          capacityTon: number; remark?: string | null
+        }>
+      }
+      ptl?: {
+        derivedRatePerKgInr: number; estimatedMarketPriceInr: number
+        benchmarkTruck: string; benchmarkTruckPriceInr: number; benchmarkTruckTonnage: number
+      }
+    } | null
   } | null
   recommendations: Recommendation[]
 }

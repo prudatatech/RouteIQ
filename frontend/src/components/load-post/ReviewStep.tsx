@@ -127,7 +127,7 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
               Recommended freight: <span className="font-semibold text-text">{range}</span>{' '}
               <span className="text-muted">({Math.round(assist.estimate.distance_km).toLocaleString('en-IN')} km)</span>
               {assist.estimate.market_benchmark?.available && (
-                <span className="ml-2 inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-600 border border-emerald-500/20">
+                <span className="ml-2 inline-flex items-center rounded-full bg-success/10 px-2 py-0.5 text-xs font-semibold text-success border border-success/20">
                   ⚡ WheelsEye Live Rate
                 </span>
               )}
