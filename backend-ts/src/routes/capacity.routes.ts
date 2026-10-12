@@ -130,11 +130,14 @@ router.get('/nearby-vendors', requireAuth, requireRole(...STAFF_ROLES), async (r
     }
 
     const { supabase } = await import('../core/supabase');
-    
+
     // For simplicity, we just fetch all vendors and filter them in memory
     // In production, you'd use PostGIS or the calculate_distance RPC we have
-    const { data: vendors, error } = await supabase.from('vendor_profiles').select('id, company_name, city, latitude, longitude');
-    
+    // Only approved vendors: an unapproved one cannot actually bid, and this also stops every company's
+    // staff from browsing the name and city of every vendor on the platform, approved or not.
+    const { data: vendors, error } = await supabase.from('vendor_profiles')
+      .select('id, company_name, city, latitude, longitude').eq('kyc_status', 'approved');
+
     if (error) throw error;
     
     const toRad = (value: number) => (value * Math.PI) / 180;
