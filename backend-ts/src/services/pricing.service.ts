@@ -5,6 +5,8 @@ import { getDrivingDistance, DistanceSource } from './distance.service';
 import { getWeather, isConditions } from './weather.service';
 import { haversineKm, isValidPoint, LatLng, midpoint, ROAD_FACTOR } from './geo';
 import { DISPATCHABLE_STATUSES, isDispatchable } from '../core/vehicles';
+import { settings } from '../core/config';
+import { marketPricingProvider, MarketPricingResult } from './pricing/market-pricing.provider';
 
 /** Straight-line radius around the pickup used to count open loads and free vehicles. */
 export const DEMAND_RADIUS_KM = 100;
@@ -55,6 +57,7 @@ export interface QuoteResult {
   demand: { open_loads: number; available_vehicles: number; radius_km: number };
   history: { samples: number; median_per_km: number | null; band_km: [number, number] };
   weather: { checked: boolean; severe: boolean; description: string | null };
+  market_benchmark?: MarketPricingResult | null;
   generated_at: string;
 }
 
@@ -421,8 +424,44 @@ export const pricingService = {
       demand: { open_loads, available_vehicles, radius_km: DEMAND_RADIUS_KM },
       history: { samples: sorted.length, median_per_km: historyMedian !== null ? Math.round(historyMedian * 100) / 100 : null, band_km: [Math.round(km - band), Math.round(km + band)] },
       weather,
+      market_benchmark: null,
       generated_at: new Date().toISOString(),
     };
+
+    // 8. WheelsEye Market Benchmark (Zero-coupling: skipped if disabled or on any external error)
+    if (settings.WHEELSEYE_MARKET_BENCHMARK_ENABLED) {
+      try {
+        const benchmark = await marketPricingProvider.getMarketBenchmark({
+          pickup: input.pickup,
+          drop: input.drop,
+          weight_kg: input.weight_kg,
+          load_type: input.load_type,
+          vehicle_type: input.vehicle_type
+        });
+        if (benchmark && benchmark.available) {
+          result.market_benchmark = benchmark;
+          if (benchmark.mode === 'ftl' && benchmark.ftl) {
+            factors.push({
+              key: 'market_benchmark',
+              code: 'wheelseye_ftl',
+              label: 'WheelsEye Market Benchmark',
+              detail: `Live market rate for ${benchmark.ftl.recommendedVehicle} is ${inr(benchmark.ftl.lowestPriceInr)} (range ${inr(benchmark.ftl.lowestPriceInr)} - ${inr(benchmark.ftl.highestPriceInr)}).`,
+              amount_inr: 0
+            });
+          } else if (benchmark.mode === 'ptl' && benchmark.ptl) {
+            factors.push({
+              key: 'market_benchmark',
+              code: 'wheelseye_ptl',
+              label: 'WheelsEye Market Benchmark (PTL)',
+              detail: `Market pro-rata freight benchmark is ~${inr(benchmark.ptl.derivedRatePerKgInr)}/kg based on ${benchmark.ptl.benchmarkTruck} (${inr(benchmark.ptl.benchmarkTruckPriceInr)}).`,
+              amount_inr: 0
+            });
+          }
+        }
+      } catch (err: any) {
+        console.warn('[pricing] WheelsEye market benchmark skipped:', err.message);
+      }
+    }
 
     if (ctx.persist === false) return result;
 

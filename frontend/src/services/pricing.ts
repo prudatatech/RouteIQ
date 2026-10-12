@@ -28,6 +28,37 @@ export interface QuoteOk {
   demand: { open_loads: number; available_vehicles: number; radius_km: number }
   history: { samples: number; median_per_km: number | null; band_km: [number, number] }
   weather: { checked: boolean; severe: boolean; description: string | null }
+  market_benchmark?: {
+    provider: 'wheelseye'
+    mode: 'ftl' | 'ptl'
+    available: boolean
+    lane: { origin: string; destination: string }
+    ftl?: {
+      recommendedVehicle: string
+      lowestPriceInr: number
+      highestPriceInr: number
+      averagePriceInr: number
+      vehicleOptions: Array<{
+        vid?: number
+        name: string
+        bodyType: string
+        tyre: number
+        lengthFt: number
+        actualPriceInr: number
+        discountedPriceInr: number
+        discountPct: number
+        capacityTon: number
+        remark?: string | null
+      }>
+    }
+    ptl?: {
+      derivedRatePerKgInr: number
+      estimatedMarketPriceInr: number
+      benchmarkTruck: string
+      benchmarkTruckPriceInr: number
+      benchmarkTruckTonnage: number
+    }
+  } | null
 }
 
 export type QuoteResponse = QuoteOk | { status: 'unavailable'; reason: string; notes: string[] }

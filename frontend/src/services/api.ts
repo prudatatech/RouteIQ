@@ -1330,3 +1330,18 @@ export const telemetryWS = {
     }
   }
 }
+
+export const wheelseyeAPI = {
+  autocomplete: (query: string, addressType: string = 'CONSIGNEE') =>
+    api.get('/wheelseye/autocomplete', { params: { query, addressType } }).then(r => r.data?.suggestions || []),
+  resolve: (placeId: string, fullAddress?: string) =>
+    api.post('/wheelseye/resolve', { placeId, fullAddress }).then(r => r.data),
+  quote: (data: {
+    origin: { placeId: string; address?: string; loc?: { lat: number; lng: number }; pincode?: string; name?: string }
+    destination: { placeId: string; address?: string; loc?: { lat: number; lng: number }; pincode?: string; name?: string }
+    tonnage?: number
+    bodyType?: string
+  }) => api.post('/wheelseye/quote', data).then(r => r.data),
+  pricingRecommendation: (payload: Record<string, unknown>) =>
+    api.post('/wheelseye/pricing-recommendation', payload).then(r => r.data),
+}

@@ -51,6 +51,7 @@ import opsRoutes from './ops.routes';
 import loadDocumentsRoutes from './load-documents.routes';
 import companyLoadsRoutes from './company-loads.routes';
 import { adminOrgsRouter, orgRouter, orgsRouter, tplAffiliationsRouter } from './org.routes';
+import wheelseyeRoutes from './wheelseye.routes';
 
 const apiRouter = Router();
 
@@ -103,5 +104,6 @@ apiRouter.use('/company/loads', companyLoadsRoutes);
 apiRouter.use('/orgs', orgsRouter);
 apiRouter.use('/org', orgRouter);
 apiRouter.use('/admin/orgs', adminOrgsRouter);
+apiRouter.use('/wheelseye', wheelseyeRoutes);
 
 export default apiRouter;
