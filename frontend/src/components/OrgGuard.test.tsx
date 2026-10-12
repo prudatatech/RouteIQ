@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import type { Membership } from '@/utils/orgs'
+
+vi.mock('@/services/supabase', () => ({ supabase: { auth: { signOut: vi.fn() } } }))
+
 import { OrgGuard } from './OrgGuard'
 import { useOrgStore } from '@/store/orgStore'
 
