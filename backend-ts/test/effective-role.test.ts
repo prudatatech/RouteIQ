@@ -38,6 +38,8 @@ describe('appRoleFor', () => {
     expect(appRoleFor(m(ORG.companyA, 'driver'), 'vendor')).toBe('driver');
     expect(appRoleFor(m(ORG.vendorV, 'owner'), 'admin')).toBe('vendor');
     expect(appRoleFor(m(ORG.tplT, 'owner'), 'superadmin')).toBe('vendor');
+    // A 3PL partner's own driver needs the same carve-out a company's driver gets, or /cargo/custody refuses them
+    expect(appRoleFor(m(ORG.tplT, 'driver'), 'vendor')).toBe('driver');
   });
 
   it('falls back to users.role without a membership', () => {
