@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { selectActiveMembership, useOrgStore } from '@/store/orgStore'
 import { Link } from 'react-router-dom'
-import { canOpenPath, gateFor, isPlatformOnlyPath } from '@/utils/orgAccess'
+import { canOpenPath, gateFor, isCompanyOperationalPath, isPlatformActor, isPlatformOnlyPath } from '@/utils/orgAccess'
 import { LoadingState } from '@/components/ui'
 
 /**
@@ -19,6 +19,7 @@ export function OrgGuard({ children }: { children: ReactNode }) {
   if (gate === 'waiting' || gate === 'suspended') return <Navigate to="/waiting-for-approval" replace />
   if (loaded && !canOpenPath(pathname, active)) {
     if (isPlatformOnlyPath(pathname)) return <PlatformOnlyMessage />
+    if (isCompanyOperationalPath(pathname) && isPlatformActor(active)) return <CompanyOperationalMessage />
     return <Navigate to="/today" replace />
   }
   return <>{children}</>
@@ -34,6 +35,20 @@ function PlatformOnlyMessage() {
         and city of the vendors whose loads it can open.
       </p>
       <Link to="/today" className="text-brand underline">Back to Today</Link>
+    </div>
+  )
+}
+
+/** Shown in place of a company's day-to-day console to the platform owner, who runs no fleet of their own. */
+function CompanyOperationalMessage() {
+  return (
+    <div className="mx-auto flex min-h-[60vh] max-w-form flex-col items-start justify-center gap-3 px-4">
+      <h1 className="text-2xl font-semibold text-text">This page belongs to a logistic company</h1>
+      <p className="text-muted">
+        Dispatch, fleet and shipments are run by a logistic company, not the platform. As the platform you manage
+        organisations, verify vendors and approve 3PL partners.
+      </p>
+      <Link to="/platform/organisations" className="text-brand underline">Back to Organisations</Link>
     </div>
   )
 }

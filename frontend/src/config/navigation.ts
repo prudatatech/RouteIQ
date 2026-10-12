@@ -141,11 +141,20 @@ export const platformSection: NavSection = {
   ],
 }
 
+/**
+ * The platform owns no fleet or shipments, so while acting as the platform the menu drops every
+ * day-to-day logistics section (Today, Requests, Shipments, Dispatch, On the road, Fleet, Return trips,
+ * Money, Reports) and shows only its own governance work: Platform, its own staff and its own settings.
+ */
+const PLATFORM_SECTION_PATHS = new Set(['/admin/users', '/admin/settings'])
+
 /** Sections and links this role may see. A section left with no page of its own is dropped. */
 export function menuFor(role: string | null | undefined, actor: 'platform' | 'company' = 'company'): NavSection[] {
   if (!role) return []
   const allowed = (roles: StaffRole[]) => (roles as string[]).includes(role)
-  const sections = (actor === 'platform' ? [navSections[0], platformSection, ...navSections.slice(1)] : navSections)
+  const sections = actor === 'platform'
+    ? [platformSection, ...navSections.filter(s => PLATFORM_SECTION_PATHS.has(s.to))]
+    : navSections
   return sections
     .filter(s => allowed(s.roles))
     .map(s => ({ ...s, children: s.children.filter(c => allowed(c.roles)) }))

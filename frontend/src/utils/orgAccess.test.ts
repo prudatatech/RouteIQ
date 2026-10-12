@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { actorFor, canOpenPath, destinationForOrgs, gateFor, isPlatformActor, orgOptionLabel, waitingCopy } from './orgAccess'
+import {
+  actorFor, canOpenPath, destinationForOrgs, gateFor, isCompanyOperationalPath, isPlatformActor, orgOptionLabel, waitingCopy,
+} from './orgAccess'
 import { menuFor } from '@/config/navigation'
 import type { Membership, OrgKind, OrgRole } from './orgs'
 
@@ -41,17 +43,24 @@ describe('platform and company actors', () => {
     // a company opens its own partners' pages (the API decides what it may see)
     expect(canOpenPath('/3pl-partners/abc', m('logistic_company', 'active'))).toBe(true)
     expect(canOpenPath('/admin/kyc', m('platform', 'active'))).toBe(true)
-    expect(canOpenPath('/shipments', m('logistic_company', 'active'))).toBe(true)
-    expect(canOpenPath('/shipments', m('platform', 'active'))).toBe(true)
   })
-  it('puts the Platform section in the menu while acting as the platform, and not for a company', () => {
+  it('keeps day-to-day logistics pages for a company, never for the platform (it owns no fleet of its own)', () => {
+    for (const path of ['/today', '/requests', '/shipments', '/dispatch', '/fleet', '/fleet/v1', '/routes', '/live-map', '/return-trips', '/3pl-partners/abc', '/money', '/analytics', '/insights']) {
+      expect(isCompanyOperationalPath(path)).toBe(true)
+      expect(canOpenPath(path, m('logistic_company', 'active'))).toBe(true)
+      expect(canOpenPath(path, m('platform', 'active'))).toBe(false)
+    }
+    // a path outside the known operational list (platform's own settings, People) stays open to the platform
+    expect(isCompanyOperationalPath('/admin/settings')).toBe(false)
+    expect(canOpenPath('/admin/settings', m('platform', 'active'))).toBe(true)
+  })
+  it('puts the Platform section in the menu while acting as the platform, and drops day-to-day logistics sections', () => {
     const platform = menuFor('admin', actorFor(m('platform', 'active'))).map(s => s.label)
-    expect(platform).toContain('Platform')
-    expect(platform).toContain('Shipments')
-    expect(platform[0]).toBe('Today')
+    expect(platform).toEqual(['Platform', 'People', 'Settings'])
     const company = menuFor('admin', actorFor(m('logistic_company', 'active'))).map(s => s.label)
     expect(company).not.toContain('Platform')
     expect(company).toContain('Shipments')
+    expect(company[0]).toBe('Today')
   })
 })
 
