@@ -29,6 +29,8 @@ export interface DraftPlace {
   lng?: number | null;
   /** YYYY-MM-DD */
   date?: string | null;
+  place_id?: string | null;
+  address?: string | null;
 }
 
 export interface LoadDraft {
@@ -102,6 +104,7 @@ export interface Estimate {
   high: number;
   distance_km: number;
   label: string;
+  market_benchmark?: any;
 }
 
 export interface LoadAssessment {

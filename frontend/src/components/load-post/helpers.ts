@@ -8,10 +8,26 @@ import { checkGstin } from '@/utils/gstin'
 import { MANUAL_RATES, rateText, toNum } from './logic'
 
 /** The city, pin code and full address a chosen place gives. Anything the geocoder lacks is left as typed. */
-export function placeToFields(place: ResolvedPlace): { city?: string; pincode?: string; address: string } {
+export function placeToFields(place: ResolvedPlace): { city?: string; pincode?: string; address: string; placeId?: string } {
   const pin = place.parts?.pincode?.replace(/\D/g, '')
-  const city = place.parts?.city || place.parts?.district || place.address.split(',')[0]?.trim()
-  return { address: place.address, city: city || undefined, pincode: pin && pin.length === 6 ? pin : undefined }
+  // Find a meaningful city/district name, skipping pure numbers like "64"
+  let cityCandidate = place.parts?.city || place.parts?.district
+  if (!cityCandidate) {
+    const segments = place.address.split(',').map(s => s.trim()).filter(Boolean)
+    // Find the first segment that isn't just digits/door number
+    for (const seg of segments) {
+      if (seg.length > 2 && !/^\d+$/.test(seg)) {
+        cityCandidate = seg
+        break
+      }
+    }
+  }
+  return {
+    address: place.address,
+    city: cityCandidate || undefined,
+    pincode: pin && pin.length === 6 ? pin : undefined,
+    placeId: place.placeId,
+  }
 }
 
 export const emptyProfile = (): BusinessProfile => ({

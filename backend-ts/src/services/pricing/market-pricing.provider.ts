@@ -101,14 +101,32 @@ export class WheelseyeMarketProvider {
       let destPlaceId = input.drop.placeId;
 
       if (!originPlaceId) {
-        const originQuery = input.pickup.label ? input.pickup.label.split(',')[0].trim() : `${input.pickup.lat},${input.pickup.lng}`;
-        const suggestions = await wheelseyeService.autocomplete(originQuery);
+        let originQuery = input.pickup.label?.trim() || `${input.pickup.lat},${input.pickup.lng}`;
+        let suggestions = await wheelseyeService.autocomplete(originQuery);
+        if (suggestions.length === 0 && input.pickup.label) {
+          const parts = input.pickup.label.split(',').map(s => s.trim()).filter(Boolean);
+          for (const p of parts) {
+            if (p.length > 2 && !/^\d+$/.test(p)) {
+              suggestions = await wheelseyeService.autocomplete(p);
+              if (suggestions.length > 0) break;
+            }
+          }
+        }
         if (suggestions.length > 0) originPlaceId = suggestions[0].placeId;
       }
 
       if (!destPlaceId) {
-        const destQuery = input.drop.label ? input.drop.label.split(',')[0].trim() : `${input.drop.lat},${input.drop.lng}`;
-        const suggestions = await wheelseyeService.autocomplete(destQuery);
+        let destQuery = input.drop.label?.trim() || `${input.drop.lat},${input.drop.lng}`;
+        let suggestions = await wheelseyeService.autocomplete(destQuery);
+        if (suggestions.length === 0 && input.drop.label) {
+          const parts = input.drop.label.split(',').map(s => s.trim()).filter(Boolean);
+          for (const p of parts) {
+            if (p.length > 2 && !/^\d+$/.test(p)) {
+              suggestions = await wheelseyeService.autocomplete(p);
+              if (suggestions.length > 0) break;
+            }
+          }
+        }
         if (suggestions.length > 0) destPlaceId = suggestions[0].placeId;
       }
 

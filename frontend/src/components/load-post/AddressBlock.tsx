@@ -36,12 +36,13 @@ export default function AddressBlock({ side, draft, set, errors }: { side: Side;
 
   const pick = (p: ResolvedPlace | null) => {
     setPlace(p)
-    if (!p) { set({ [`${side}_lat`]: null, [`${side}_lng`]: null }); return }
+    if (!p) { set({ [`${side}_lat`]: null, [`${side}_lng`]: null, [`${side}_place_id`]: null }); return }
     const f = placeToFields(p)
     set({
       [`${side}_lat`]: p.lat,
       [`${side}_lng`]: p.lng,
       [`${side}_address`]: f.address,
+      [`${side}_place_id`]: f.placeId || null,
       ...(f.city ? { [`${side}_city`]: f.city } : {}),
       ...(f.pincode ? { [`${side}_pincode`]: f.pincode } : {}),
     })

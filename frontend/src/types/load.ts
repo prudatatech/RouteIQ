@@ -149,6 +149,9 @@ export interface LoadDraft {
   temp_choice: TempChoice
   /** Load-level handling only (do not stack, this side up, ODC). Fragile and hazmat come from the products. */
   special_handling: SpecialHandling[]
+  pickup_place_id?: string | null
+  delivery_place_id?: string | null
+  budget_inr?: number | null
 
   /** Set on a repost: the load this one copies. */
   reposted_from: string | null
@@ -188,6 +191,7 @@ export interface LoadPayload {
   pickup_slot: PickupSlot | null
   pickup_contact_name: string
   pickup_contact_phone: string
+  pickup_place_id?: string | null
 
   delivery_city: string
   delivery_address: string
@@ -195,6 +199,7 @@ export interface LoadPayload {
   delivery_state_code: string | null
   delivery_lat: number | null
   delivery_lng: number | null
+  delivery_place_id?: string | null
   /** Always null since the 2 Oct change: there is no preferred delivery date. */
   delivery_date: string | null
   delivery_contact_name: string | null
@@ -283,7 +288,13 @@ export interface AssistResult {
   hazmat_mixed: boolean
   perishable: boolean
   suggested: { load_type: LoadType; vehicle_class: string | null; capacity_t: number | null }
-  estimate: { low: number; high: number; distance_km: number; label: string } | null
+  estimate: {
+    low: number
+    high: number
+    distance_km: number
+    label: string
+    market_benchmark?: any
+  } | null
   recommendations: Recommendation[]
 }
 

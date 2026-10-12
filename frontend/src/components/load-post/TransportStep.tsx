@@ -25,6 +25,7 @@ export default function TransportStep({ draft, onChange, errors, vehicles, vehic
         draft={draft} onChange={onChange} errors={errors} vehicles={vehicles} vehiclesLoading={vehiclesLoading}
         suggestedVehicleKey={assist?.suggested.vehicle_class} assistLoading={assistLoading}
         weightKg={weightKg} capacity={capacity} notes={truckNotes}
+        marketBenchmark={assist?.estimate?.market_benchmark}
       />
       <HandlingCard draft={draft} onChange={onChange} />
       <FreightCard assist={assist} loading={assistLoading} />

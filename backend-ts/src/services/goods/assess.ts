@@ -27,6 +27,8 @@ const place = z.object({
   lat: z.number().min(-90).max(90).nullish(),
   lng: z.number().min(-180).max(180).nullish(),
   date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').nullish(),
+  place_id: text(200),
+  address: text(500),
 });
 const item = z.object({
   product_name: text(200),
@@ -54,6 +56,8 @@ export function toNestedDraft(body: any): unknown {
     lat: body[`${side}_lat`] ?? null,
     lng: body[`${side}_lng`] ?? null,
     date: body[`${side}_date`] ?? null,
+    place_id: body[`${side}_place_id`] ?? null,
+    address: body[`${side}_address`] ?? null,
   });
   return { ...body, pickup: place('pickup'), delivery: place('delivery') };
 }
@@ -99,10 +103,25 @@ export async function estimateFreight(draft: LoadDraft, weightKg: number, vehicl
   if (!(weightKg > 0) || a?.lat == null || a?.lng == null || b?.lat == null || b?.lng == null) return null;
   try {
     const out = await pricingService.quote(
-      { pickup: { lat: a.lat, lng: a.lng, label: a.city }, drop: { lat: b.lat, lng: b.lng, label: b.city }, weight_kg: weightKg, vehicle_type: vehicleClass, load_type: draft.load_type ?? null, date: a.date ?? null },
+      {
+        pickup: { lat: a.lat, lng: a.lng, label: a.address || a.city, placeId: a.place_id ?? undefined },
+        drop: { lat: b.lat, lng: b.lng, label: b.address || b.city, placeId: b.place_id ?? undefined },
+        weight_kg: weightKg,
+        vehicle_type: vehicleClass,
+        load_type: draft.load_type ?? null,
+        date: a.date ?? null
+      },
       { role: 'guest', source: 'api', persist: false },
     );
-    return out.status === 'ok' ? { low: out.low, high: out.high, distance_km: out.distance_km, label: ESTIMATE_LABEL } : null;
+    if (out.status !== 'ok') return null;
+    const isMarket = !!(out.market_benchmark && out.market_benchmark.available);
+    return {
+      low: out.low,
+      high: out.high,
+      distance_km: out.distance_km,
+      label: isMarket ? 'Live market rate (WheelsEye)' : ESTIMATE_LABEL,
+      market_benchmark: out.market_benchmark ?? null,
+    };
   } catch {
     return null;
   }

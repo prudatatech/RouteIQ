@@ -24,8 +24,8 @@ const DEFAULT_WEATHER_SURCHARGE_PCT = 5;
 const SETTING_KEY_RE = /^(rate_per_km(_[a-z0-9_]+)?|load_multiplier_[a-z0-9_]+|min_charge|per_kg_surcharge|fuel_price_per_litre|demand_adjustment_max_pct|price_range_pct|weather_surcharge_pct)$/;
 
 export interface QuoteInput {
-  pickup: LatLng & { label?: string | null };
-  drop: LatLng & { label?: string | null };
+  pickup: LatLng & { label?: string | null; placeId?: string };
+  drop: LatLng & { label?: string | null; placeId?: string };
   weight_kg: number;
   vehicle_type?: string | null;
   load_type?: string | null;
@@ -304,7 +304,7 @@ export const pricingService = {
       const add = extraWeight * cfg.per_kg_surcharge;
       subtotal += add;
       factors.push({ key: 'weight', code: 'weight', label: 'Overweight PTL', detail: `Extra ${extraWeight.toLocaleString('en-IN')} kg above the 5kg document slab at ${inr(cfg.per_kg_surcharge)} per kg ${signed(add)}.`, amount_inr: Math.round(add) });
-    } else if (!isParcel && cardRate !== null && cfg.per_kg_surcharge) {
+    } else if (!isParcel && cardRate !== null && cfg.per_kg_surcharge && input.weight_kg < 1000) {
       const add = input.weight_kg * cfg.per_kg_surcharge;
       subtotal += add;
       factors.push({ key: 'weight', code: 'weight', label: 'Weight', detail: `${input.weight_kg.toLocaleString('en-IN')} kg at ${inr(cfg.per_kg_surcharge)} per kg ${signed(add)}.`, amount_inr: Math.round(add) });
@@ -441,6 +441,10 @@ export const pricingService = {
         if (benchmark && benchmark.available) {
           result.market_benchmark = benchmark;
           if (benchmark.mode === 'ftl' && benchmark.ftl) {
+            result.suggested = benchmark.ftl.lowestPriceInr;
+            result.low = benchmark.ftl.lowestPriceInr;
+            result.high = benchmark.ftl.highestPriceInr;
+            result.per_km_suggested = km > 0 ? Math.round((result.suggested / km) * 100) / 100 : 0;
             factors.push({
               key: 'market_benchmark',
               code: 'wheelseye_ftl',
@@ -449,6 +453,10 @@ export const pricingService = {
               amount_inr: 0
             });
           } else if (benchmark.mode === 'ptl' && benchmark.ptl) {
+            result.suggested = benchmark.ptl.estimatedMarketPriceInr;
+            result.low = Math.round(result.suggested * 0.95);
+            result.high = Math.round(result.suggested * 1.05);
+            result.per_km_suggested = km > 0 ? Math.round((result.suggested / km) * 100) / 100 : 0;
             factors.push({
               key: 'market_benchmark',
               code: 'wheelseye_ptl',
