@@ -163,7 +163,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
                   key={opt.vid || opt.name}
                   onClick={() => onChange({
                     vehicle_class: opt.name,
-                    capacity_t: opt.capacityTon,
+                    capacity_t: String(opt.capacityTon),
                     budget_inr: opt.discountedPriceInr,
                     vehicle_mode: 'manual',
                     transport_touched: true

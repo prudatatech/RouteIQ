@@ -294,7 +294,7 @@ export interface AssistResult {
     distance_km: number
     label: string
     market_benchmark?: {
-      provider: string
+      provider: 'wheelseye'
       mode: 'ftl' | 'ptl'
       available: boolean
       lane: { origin: string; destination: string }
