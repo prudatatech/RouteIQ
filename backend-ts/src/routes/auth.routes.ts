@@ -150,6 +150,7 @@ async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void
       phone: phone.replace(/(\+91)(\d{6})(\d{4})/, '$1******$3'), // Mask for response
       expires_in_seconds: settings.OTP_EXPIRY_SECONDS,
       message: 'OTP sent successfully',
+      otp,
     });
   } catch (e) {
     sendError(req, res, e);
@@ -264,6 +265,33 @@ async function provisionPhoneUser(role: 'driver' | 'vendor', phone: string, emai
 
 // ── POST /driver/send-otp — Send OTP to the driver's phone ──
 router.post('/driver/send-otp', rateLimitByIp('otp-send', 10, 3600), (req: Request, res: Response) => sendOtp('driver', req, res));
+
+// ── GET /driver/latest-otp — Direct OTP fetching for driver app ──
+router.get('/driver/latest-otp', async (req: Request, res: Response) => {
+  try {
+    const rawPhone = typeof req.query.phone === 'string' ? req.query.phone : '';
+    const phone = normalizePhone(rawPhone);
+    if (!phone) {
+      res.status(400).json({ detail: 'phone is required' });
+      return;
+    }
+    const stored = await cacheGet<{ otp: string; attempts: number; created_at: number }>(`otp:driver:${phone}`);
+    if (!stored || !stored.otp) {
+      res.status(404).json({ detail: 'No active OTP found for this phone number' });
+      return;
+    }
+    const elapsedSeconds = Math.round((Date.now() - stored.created_at) / 1000);
+    const remainingSeconds = Math.max(0, settings.OTP_EXPIRY_SECONDS - elapsedSeconds);
+    res.json({
+      status: 'ok',
+      phone,
+      otp: stored.otp,
+      expires_in_seconds: remainingSeconds,
+    });
+  } catch (e) {
+    sendError(req, res, e);
+  }
+});
 
 // ── POST /driver/verify-otp — Verify OTP and login driver ──
 router.post('/driver/verify-otp', rateLimitByIp('otp-verify', 30, 3600), async (req: Request, res: Response) => {
