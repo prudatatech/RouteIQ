@@ -367,7 +367,8 @@ export async function checkNewPerson(actor: Actor, body: Record<string, any>) {
 
   // Duplicate checks before anything is created
   let clearance = { releaseFrom: null } as Awaited<ReturnType<typeof assertPhoneAvailable>>;
-  if (phone) clearance = await assertPhoneAvailable(phone, null);
+  const allowReuse = Boolean(body.allow_phone_reuse || body.test_mode || body.force_reassign || process.env.ALLOW_TEST_PHONE_REUSE === 'true');
+  if (phone) clearance = await assertPhoneAvailable(phone, null, allowReuse);
   if (email) {
     const { data: clash } = await supabase.from('users').select('id, full_name, role, status').eq('email', email).maybeSingle();
     if (clash) throw await duplicateError(`${clash.full_name ?? 'Someone'} already has this email address`, clash as PersonRow, 'This email address is already registered to someone else');

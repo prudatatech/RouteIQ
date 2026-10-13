@@ -104,6 +104,8 @@ export interface Estimate {
   high: number;
   distance_km: number;
   label: string;
+  suggested?: number;
+  basis?: any;
   market_benchmark?: any;
 }
 
