@@ -1331,6 +1331,35 @@ export const telemetryWS = {
   }
 }
 
+export interface WheelseyeConfig {
+  enabled: boolean
+  token: string
+  user_code: string
+  session_id: string
+  device_id: string
+  pricing_url: string
+  user_agent: string
+  updated_at?: string
+  updated_by?: string
+  last_tested_at?: string
+  last_test_status?: 'ok' | 'rate_limited' | 'unauthorized' | 'error'
+  last_test_message?: string
+  last_test_latency_ms?: number
+  last_test_result?: {
+    vehicles_count?: number
+    sample_rates?: Array<{ name: string; price: number; bodyType: string }>
+  }
+}
+
+export interface WheelseyeTestResult {
+  success: boolean
+  status: number
+  latencyMs: number
+  message: string
+  vehiclesCount?: number
+  sampleRates?: Array<{ name: string; price: number; bodyType: string }>
+}
+
 export const wheelseyeAPI = {
   autocomplete: (query: string, addressType: string = 'CONSIGNEE') =>
     publicClient.get('/wheelseye/autocomplete', { params: { query, addressType } }).then(r => r.data?.suggestions || []),
@@ -1344,4 +1373,12 @@ export const wheelseyeAPI = {
   }) => publicClient.post('/wheelseye/quote', data).then(r => r.data),
   pricingRecommendation: (payload: Record<string, unknown>) =>
     publicClient.post('/wheelseye/pricing-recommendation', payload).then(r => r.data),
+  getConfig: () => api.get<WheelseyeConfig>('/wheelseye/config').then(r => r.data),
+  saveConfig: (data: Partial<WheelseyeConfig> & { raw_headers?: string }) =>
+    api.put<WheelseyeConfig>('/wheelseye/config', data).then(r => r.data),
+  testConnection: (data?: Partial<WheelseyeConfig> & { raw_headers?: string }) =>
+    api.post<WheelseyeTestResult>('/wheelseye/test', data || {}).then(r => r.data),
+  parseHeaders: (raw: string) =>
+    api.post<{ extracted: Partial<WheelseyeConfig> }>('/wheelseye/parse-headers', { raw }).then(r => r.data.extracted),
 }
+

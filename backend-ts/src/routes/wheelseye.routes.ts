@@ -1,10 +1,95 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { optionalAuth } from '../core/auth';
+import { optionalAuth, requireAuth, requireRole } from '../core/auth';
 import { sendError } from '../core/errors';
-import { wheelseyeService } from '../services/wheelseye.service';
+import { wheelseyeService, parseRawHeaders, WheelseyeConfig } from '../services/wheelseye.service';
 
 const router = Router();
+
+/**
+ * GET /api/v1/wheelseye/config
+ * Retrieves active Rate API configuration and diagnostic status (admin & superadmin)
+ */
+router.get('/config', requireAuth, requireRole('admin', 'superadmin'), async (req: Request, res: Response) => {
+  try {
+    const config = await wheelseyeService.getConfig();
+    res.json(config);
+  } catch (error: any) {
+    sendError(req, res, error);
+  }
+});
+
+const UpdateConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  token: z.string().optional(),
+  user_code: z.string().optional(),
+  session_id: z.string().optional(),
+  device_id: z.string().optional(),
+  pricing_url: z.string().url().optional(),
+  user_agent: z.string().optional(),
+  raw_headers: z.string().optional()
+});
+
+/**
+ * PUT /api/v1/wheelseye/config
+ * Updates Rate API configuration (admin & superadmin)
+ */
+router.put('/config', requireAuth, requireRole('admin', 'superadmin'), async (req: Request, res: Response) => {
+  try {
+    const parsed = UpdateConfigSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ detail: parsed.error.issues.map(i => i.message).join('; ') });
+      return;
+    }
+
+    let updates: Partial<WheelseyeConfig> = { ...parsed.data };
+    if (parsed.data.raw_headers) {
+      const extracted = parseRawHeaders(parsed.data.raw_headers);
+      updates = { ...updates, ...extracted };
+      delete (updates as any).raw_headers;
+    }
+
+    const updated = await wheelseyeService.saveConfig(updates, req.user?.user_id);
+    res.json(updated);
+  } catch (error: any) {
+    sendError(req, res, error);
+  }
+});
+
+/**
+ * POST /api/v1/wheelseye/test
+ * Tests the live connection against WheelsEye Demand Engine using active or passed credentials
+ */
+router.post('/test', requireAuth, requireRole('admin', 'superadmin'), async (req: Request, res: Response) => {
+  try {
+    let override: Partial<WheelseyeConfig> | undefined;
+    if (req.body && typeof req.body === 'object') {
+      override = { ...req.body };
+      if (req.body.raw_headers) {
+        const extracted = parseRawHeaders(req.body.raw_headers);
+        override = { ...override, ...extracted };
+      }
+    }
+    const result = await wheelseyeService.testConfig(override);
+    res.json(result);
+  } catch (error: any) {
+    sendError(req, res, error);
+  }
+});
+
+/**
+ * POST /api/v1/wheelseye/parse-headers
+ * Helper to parse raw DevTools headers or cURL and return extracted credentials
+ */
+router.post('/parse-headers', requireAuth, requireRole('admin', 'superadmin'), async (req: Request, res: Response) => {
+  try {
+    const raw = String(req.body?.raw || '');
+    const extracted = parseRawHeaders(raw);
+    res.json({ extracted });
+  } catch (error: any) {
+    sendError(req, res, error);
+  }
+});
 
 /**
  * GET /api/v1/wheelseye/autocomplete?query=...&addressType=...
@@ -103,3 +188,4 @@ router.post('/quote', optionalAuth, async (req: Request, res: Response) => {
 });
 
 export default router;
+

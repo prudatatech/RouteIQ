@@ -16,7 +16,7 @@ import NotFoundPage from '@/pages/NotFoundPage'
 import VendorLayout from '@/components/ui/VendorLayout'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
-  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminAudit, money, invoicePage, adminSettings, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, vendorInvoices,
+  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminAudit, money, invoicePage, adminSettings, adminRateApi, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, vendorInvoices,
   ship, vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -42,6 +42,7 @@ const AuditLogPage = adminAudit.Component
 const MoneyPage = money.Component
 const InvoicePage = invoicePage.Component
 const SettingsPage = adminSettings.Component
+const RateApiPage = adminRateApi.Component
 const OrganisationPage = adminOrganisation.Component
 const PlatformOrganisationsPage = platformOrganisations.Component
 const RegisterCompanyPage = registerCompany.Component
@@ -408,6 +409,13 @@ export default function App() {
                 <SettingsPage />
               </PrivateRoute>
             } />
+            <Route path="admin/settings/rate-api" element={
+              <PrivateRoute allowedRoles={ADMINS}>
+                <RateApiPage />
+              </PrivateRoute>
+            } />
+            <Route path="settings/rate-api" element={<MovedTo to="/admin/settings/rate-api" />} />
+            <Route path="platform/rate-api" element={<MovedTo to="/admin/settings/rate-api" />} />
             <Route path="admin/organisation" element={
               <PrivateRoute allowedRoles={ADMINS}>
                 <OrganisationPage />

@@ -123,15 +123,7 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
         {handling.length > 0 && <p className="flex flex-wrap items-center gap-2 text-sm text-muted">Handling: <Chips items={handling} /></p>}
         {range && assist?.estimate ? (
           <div className="space-y-1 text-sm text-text" data-testid="review-pricing">
-            <p>
-              Recommended freight: <span className="font-semibold text-text">{range}</span>{' '}
-              <span className="text-muted">({Math.round(assist.estimate.distance_km).toLocaleString('en-IN')} km)</span>
-              {assist.estimate.market_benchmark?.available && (
-                <span className="ml-2 inline-flex items-center rounded-full bg-success/10 px-2 py-0.5 text-xs font-semibold text-success border border-success/20">
-                  ⚡ WheelsEye Live Rate
-                </span>
-              )}
-            </p>
+
             <p className="text-xs text-muted">
               {assist.estimate.market_benchmark?.available
                 ? 'Trucks can be assigned instantly in this verified market range.'

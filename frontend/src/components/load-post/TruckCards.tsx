@@ -115,7 +115,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
             <div>
               <h3 className="text-sm font-semibold text-text flex items-center gap-2">
-                <span>WheelsEye Live Market Trucks</span>
+                <span> Live Market Trucks</span>
                 <span className="rounded-full bg-success/10 px-2 py-0.5 text-xs font-semibold text-success border border-success/20">
                   ⚡ Live Rates
                 </span>
@@ -144,11 +144,10 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveBodyTab(tab.id as 'ALL' | 'OPEN' | 'CONTAINER' | 'TRAILER')}
-                className={`rounded-full px-3 py-1 font-medium transition-all ${
-                  activeBodyTab === tab.id
-                    ? 'bg-success text-white shadow-raised'
-                    : 'bg-surface-subtle text-muted hover:bg-surface hover:text-text border border-border/80'
-                }`}
+                className={`rounded-full px-3 py-1 font-medium transition-all ${activeBodyTab === tab.id
+                  ? 'bg-success text-white shadow-raised'
+                  : 'bg-surface-subtle text-muted hover:bg-surface hover:text-text border border-border/80'
+                  }`}
               >
                 {tab.label} ({tab.count})
               </button>
@@ -168,11 +167,10 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
                     vehicle_mode: 'manual',
                     transport_touched: true
                   })}
-                  className={`group relative cursor-pointer rounded-card border p-3.5 transition-all text-left ${
-                    isSelected
-                      ? 'border-success bg-success/10 ring-2 ring-success/30 shadow-raised'
-                      : 'border-border bg-surface-subtle hover:border-success/50 hover:bg-surface'
-                  }`}
+                  className={`group relative cursor-pointer rounded-card border p-3.5 transition-all text-left ${isSelected
+                    ? 'border-success bg-success/10 ring-2 ring-success/30 shadow-raised'
+                    : 'border-border bg-surface-subtle hover:border-success/50 hover:bg-surface'
+                    }`}
                   role="button"
                   tabIndex={0}
                   aria-pressed={isSelected}
@@ -232,7 +230,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
         <Card padded className="space-y-1.5 !p-4 border-success/30 bg-success/5">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text flex items-center gap-2">
-              <span>WheelsEye PTL Lane Rate</span>
+              <span>PTL Lane Rate</span>
               <span className="rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success border border-success/20">
                 Pro-rata
               </span>
