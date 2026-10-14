@@ -37,6 +37,38 @@ export interface WheelseyePricePayload {
 
 const DEFAULT_WHEELSEYE_TOKEN = '0825b253-6131-4dc8-8da7-0636c4f55007';
 
+export function getWheelseyeHeaders(token?: string) {
+  const activeToken = token || process.env.WHEELSEYE_TOKEN || DEFAULT_WHEELSEYE_TOKEN;
+  return {
+    'accept': 'application/json',
+    'content-type': 'application/json',
+    'device-id': '663a7765-28a1-43ff-b323-6fdd9571ba32',
+    'locale': 'en',
+    'origin': 'https://wheelseye.com',
+    'referer': 'https://wheelseye.com/',
+    'sec-ch-ua': '"Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"macOS"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-site',
+    'service': 'Consigner',
+    'session-id': '0aa52302-380d-462f-a955-93dc0bb8ae56',
+    'token': activeToken,
+    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36',
+    'user_code': 'WE9216873',
+    'x-app-code': '1',
+    'x-app-platform': 'CONSIGNER_WEB',
+    'x-app-version': '2.4.3',
+    'x-device-id': '663a7765-28a1-43ff-b323-6fdd9571ba32',
+    'x-os-version': '',
+    'x-requested-with': 'XMLHttpRequest',
+    'x-utm-campaign': '',
+    'x-utm-medium': 'organic',
+    'x-utm-source': 'organic'
+  };
+}
+
 export const wheelseyeService = {
   /**
    * Search for locations via WheelsEye place autocomplete
@@ -46,17 +78,7 @@ export const wheelseyeService = {
     const url = `https://consigner.wheelseye.com/consigner/v2/location/place/autocomplete?query=${encodeURIComponent(query)}&addressType=${encodeURIComponent(addressType)}`;
 
     const response = await axios.get(url, {
-      headers: {
-        'accept': 'application/json',
-        'token': token,
-        'user_code': 'WE9216873',
-        'session-id': '0aa52302-380d-462f-a955-93dc0bb8ae56',
-        'device-id': '663a7765-28a1-43ff-b323-6fdd9571ba32',
-        'service': 'Consigner',
-        'x-app-platform': 'CONSIGNER_WEB',
-        'x-app-version': '2.4.3',
-        'x-app-code': '1'
-      },
+      headers: getWheelseyeHeaders(token),
       timeout: 10000
     });
 
@@ -192,18 +214,7 @@ export const wheelseyeService = {
     const token = process.env.WHEELSEYE_TOKEN || DEFAULT_WHEELSEYE_TOKEN;
 
     const response = await axios.post(targetUrl, payload, {
-      headers: {
-        'content-type': 'application/json',
-        'accept': 'application/json',
-        'token': token,
-        'user_code': 'WE9216873',
-        'session-id': '0aa52302-380d-462f-a955-93dc0bb8ae56',
-        'device-id': '663a7765-28a1-43ff-b323-6fdd9571ba32',
-        'service': 'Consigner',
-        'x-app-platform': 'CONSIGNER_WEB',
-        'x-app-version': '2.4.3',
-        'x-app-code': '1'
-      },
+      headers: getWheelseyeHeaders(token),
       timeout: 15000
     });
 
