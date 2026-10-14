@@ -56,7 +56,7 @@ export const settings = {
   MAPBOX_ACCESS_TOKEN: env('MAPBOX_ACCESS_TOKEN'),
 
   // WheelsEye Freight Market Benchmark
-  WHEELSEYE_TOKEN: env('WHEELSEYE_TOKEN', '0825b253-6131-4dc8-8da7-0636c4f55007'),
+  WHEELSEYE_TOKEN: env('WHEELSEYE_TOKEN', 'ae4f3562-8c95-4057-9839-57176177e49b'),
   WHEELSEYE_MARKET_BENCHMARK_ENABLED: envBool('WHEELSEYE_MARKET_BENCHMARK_ENABLED', true),
 
   // IFSC branch lookup (Razorpay's free public API, no key)

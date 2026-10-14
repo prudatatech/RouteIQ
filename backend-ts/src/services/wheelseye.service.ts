@@ -35,32 +35,32 @@ export interface WheelseyePricePayload {
   bodyType: string;
 }
 
-const DEFAULT_WHEELSEYE_TOKEN = '0825b253-6131-4dc8-8da7-0636c4f55007';
+const DEFAULT_WHEELSEYE_TOKEN = 'ae4f3562-8c95-4057-9839-57176177e49b';
 
 export function getWheelseyeHeaders(token?: string) {
   const activeToken = token || process.env.WHEELSEYE_TOKEN || DEFAULT_WHEELSEYE_TOKEN;
   return {
     'accept': 'application/json',
     'content-type': 'application/json',
-    'device-id': '663a7765-28a1-43ff-b323-6fdd9571ba32',
+    'device-id': '33fa2d55-6154-48f3-83a0-24e122254332',
     'locale': 'en',
     'origin': 'https://wheelseye.com',
     'referer': 'https://wheelseye.com/',
-    'sec-ch-ua': '"Google Chrome";v="155", "Chromium";v="155", "Not(A:Brand";v="24"',
-    'sec-ch-ua-mobile': '?0',
-    'sec-ch-ua-platform': '"macOS"',
+    'sec-ch-ua': '"Chromium";v="154", "Google Chrome";v="154", "Not A(Brand";v="99"',
+    'sec-ch-ua-mobile': '?1',
+    'sec-ch-ua-platform': '"Android"',
     'sec-fetch-dest': 'empty',
     'sec-fetch-mode': 'cors',
     'sec-fetch-site': 'same-site',
     'service': 'Consigner',
-    'session-id': '0aa52302-380d-462f-a955-93dc0bb8ae56',
+    'session-id': 'cb3c5bae-f4bb-4b15-80b4-f5fc5f95aa81',
     'token': activeToken,
-    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36',
-    'user_code': 'WE9216873',
+    'user-agent': 'Mozilla/5.0 (Linux; Android 16; Pixel 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36',
+    'user_code': 'WE9228053',
     'x-app-code': '1',
     'x-app-platform': 'CONSIGNER_WEB',
     'x-app-version': '2.4.3',
-    'x-device-id': '663a7765-28a1-43ff-b323-6fdd9571ba32',
+    'x-device-id': '33fa2d55-6154-48f3-83a0-24e122254332',
     'x-os-version': '',
     'x-requested-with': 'XMLHttpRequest',
     'x-utm-campaign': '',

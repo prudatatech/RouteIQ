@@ -115,7 +115,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
             <div>
               <h3 className="text-sm font-semibold text-text flex items-center gap-2">
-                <span>Live Market Trucks</span>
+                <span>WheelsEye Live Market Trucks</span>
                 <span className="rounded-full bg-success/10 px-2 py-0.5 text-xs font-semibold text-success border border-success/20">
                   ⚡ Live Rates
                 </span>
@@ -232,7 +232,7 @@ export default function TruckCards({ draft, onChange, errors, vehicles, vehicles
         <Card padded className="space-y-1.5 !p-4 border-success/30 bg-success/5">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text flex items-center gap-2">
-              <span>PTL Lane Rate</span>
+              <span>WheelsEye PTL Lane Rate</span>
               <span className="rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success border border-success/20">
                 Pro-rata
               </span>

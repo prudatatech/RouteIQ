@@ -119,7 +119,7 @@ export async function estimateFreight(draft: LoadDraft, weightKg: number, vehicl
       low: out.low,
       high: out.high,
       distance_km: out.distance_km,
-      label: isMarket ? 'Live market rate' : ESTIMATE_LABEL,
+      label: isMarket ? 'Live market rate (WheelsEye)' : ESTIMATE_LABEL,
       market_benchmark: out.market_benchmark ?? null,
     };
   } catch {
