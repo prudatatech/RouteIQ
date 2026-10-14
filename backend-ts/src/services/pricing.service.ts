@@ -506,7 +506,7 @@ export const pricingService = {
             factors.push({
               key: 'market_benchmark',
               code: 'wheelseye_ftl',
-              label: 'WheelsEye Market Benchmark',
+              label: 'Market Benchmark',
               detail: `Live market rate for ${benchmark.ftl.recommendedVehicle} is ${inr(benchmark.ftl.lowestPriceInr)} (range ${inr(benchmark.ftl.lowestPriceInr)} - ${inr(benchmark.ftl.highestPriceInr)}).`,
               amount_inr: 0
             });
@@ -518,7 +518,7 @@ export const pricingService = {
             factors.push({
               key: 'market_benchmark',
               code: 'wheelseye_ptl',
-              label: 'WheelsEye Market Benchmark (PTL)',
+              label: 'Market Benchmark (PTL)',
               detail: `Market pro-rata freight benchmark is ~${inr(benchmark.ptl.derivedRatePerKgInr)}/kg based on ${benchmark.ptl.benchmarkTruck} (${inr(benchmark.ptl.benchmarkTruckPriceInr)}).`,
               amount_inr: 0
             });
