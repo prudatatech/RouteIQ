@@ -13,6 +13,7 @@ import { EMAIL_PATTERN, assertApplicationFields, assertPartnerSettings } from '.
 import { formatRate, type RateUnit } from '../utils/corridor-match';
 import { isUuid } from '../core/validate';
 import { findAuthUserByEmail } from '../core/auth-users';
+import { invalidateRoleCache } from '../core/auth';
 
 const OTP_TTL_SECONDS = 300;
 const OTP_MAX_ATTEMPTS = 5;
@@ -281,7 +282,7 @@ export const tplService = {
               <p style="margin: 5px 0;">Email / ID: ${email}</p>
               <p style="margin: 5px 0;">Password: ${tempPassword}</p>
             </div>
-            <a href="${settings.WEB_APP_URL}/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(tempPassword)}" style="display: inline-block; background-color: #000; color: #FFD300; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Login to your Dashboard</a>
+            <a href="${settings.WEB_APP_URL}/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(tempPassword)}&next=${encodeURIComponent(`/3pl-portal/${partnerId}`)}" style="display: inline-block; background-color: #000; color: #FFD300; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Login to your Dashboard</a>
             <p style="margin-top: 30px; font-size: 12px; color: #888;">If you signed in with Google, you can continue using Google Auth or use these fallback credentials.</p>
           </div>
         </div>
@@ -547,11 +548,16 @@ export const tplService = {
     );
     try {
       if (updatedPartner.user_id) {
-        await supabase.from('users').update({ role: 'vendor' }).eq('id', updatedPartner.user_id);
+        await supabase.from('users').upsert({
+          id: updatedPartner.user_id,
+          role: 'vendor',
+          is_active: true,
+        }, { onConflict: 'id' });
         if (isUuid(updatedPartner.user_id)) {
           await supabase.auth.admin.updateUserById(updatedPartner.user_id, {
             app_metadata: { role: 'vendor' },
           });
+          invalidateRoleCache(updatedPartner.user_id);
         }
       } else if (updatedPartner.email) {
         const normalizedEmail = updatedPartner.email.trim().toLowerCase();
@@ -576,6 +582,7 @@ export const tplService = {
           await supabase.auth.admin.updateUserById(targetId, {
             app_metadata: { role: 'vendor' },
           });
+          invalidateRoleCache(targetId);
         }
       }
     } catch (e) {
@@ -668,7 +675,9 @@ export const tplService = {
 
     if (data?.id) {
       try {
-        await supabase.from('users').upsert({ id: userId, role: 'vendor' }, { onConflict: 'id' });
+        await supabase.from('users').upsert({ id: userId, role: 'vendor', is_active: true }, { onConflict: 'id' });
+        await supabase.auth.admin.updateUserById(userId, { app_metadata: { role: 'vendor' } });
+        invalidateRoleCache(userId);
       } catch {
         // non-blocking role ensure
       }

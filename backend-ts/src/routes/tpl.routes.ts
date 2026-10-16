@@ -8,9 +8,9 @@
 import { withWarnings } from '../services/people-common';
 import { Router, Request, Response, NextFunction } from 'express';
 import { tplService } from '../services/tpl.service';
-import { optionalAuth, requireAuth, requireRole } from '../core/auth';
+import { optionalAuth, requireAuth, requireRole, invalidateRoleCache } from '../core/auth';
 import { HttpError, sendError } from '../core/errors';
-import { uuidParam } from '../core/validate';
+import { uuidParam, isUuid } from '../core/validate';
 import { consumeRateLimit, rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
 import { settings } from '../core/config';
 import { attachOrgContext, currentOrgContext } from '../core/org-context';
@@ -113,10 +113,16 @@ router.post('/check-partner', rateLimitByIp('tpl-check', 30, 60), optionalAuth, 
         .ilike('email', email)
         .maybeSingle();
       if (data?.id) {
-        // Link user_id if not yet set
-        if (userId && data.user_id !== userId) {
-          await supabase
-            .from('tpl_partners').update({ user_id: userId }).eq('id', data.id);
+        if (userId) {
+          if (data.user_id !== userId) {
+            await supabase
+              .from('tpl_partners').update({ user_id: userId }).eq('id', data.id);
+          }
+          await supabase.from('users').upsert({ id: userId, email, role: 'vendor', is_active: true }, { onConflict: 'id' });
+          if (isUuid(userId)) {
+            await supabase.auth.admin.updateUserById(userId, { app_metadata: { role: 'vendor' } });
+            invalidateRoleCache(userId);
+          }
         }
         res.json({ id: data.id, status: data.status });
         return;

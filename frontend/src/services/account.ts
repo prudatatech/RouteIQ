@@ -23,9 +23,24 @@ export async function loadAccount(userId: string): Promise<Account> {
   const failed = user.error || vendor.error || partner.error
   if (failed) throw failed
 
-  const userRole: string | null = user.data?.role ?? null
+  let userRole: string | null = user.data?.role ?? null
   const hasVendorProfile = !!vendor.data
-  const tplPartnerId: string | null = partner.data?.id ?? null
+  let tplPartnerId: string | null = partner.data?.id ?? null
+
+  if (!tplPartnerId) {
+    try {
+      const { tplAPI } = await import('./api')
+      const session = (await supabase.auth.getSession?.())?.data?.session
+      const checkRes = await tplAPI.checkPartner({ user_id: userId, email: session?.user?.email })
+      if (checkRes?.id) {
+        tplPartnerId = checkRes.id
+        userRole = 'vendor'
+      }
+    } catch {
+      // Backend check is best-effort fallback
+    }
+  }
+
   const isStaff = userRole === 'admin' || userRole === 'superadmin' || userRole === 'manager'
   const role = !isStaff && (hasVendorProfile || tplPartnerId) ? 'vendor' : userRole
   return { role, hasVendorProfile, tplPartnerId }
