@@ -110,4 +110,13 @@ describe('PrivateRoute areas', () => {
     at('/today')
     expect(screen.getByText('today')).toBeTruthy()
   })
+
+  it('opens the portal for a 3PL account with an unrelated driver seat elsewhere', () => {
+    // A stray org_members row (e.g. from an earlier, unrelated signup) must not override the account's
+    // own vendor/3PL role: the "driver" seat is not in an active organisation the person acts for here.
+    const driverSeat: Membership = { org: { id: 'o-driver', kind: 'logistic_company', name: 'Other Co', status: 'active' }, role: 'driver', app_role: 'driver' }
+    signIn('vendor', { tplPartnerId: 'p1', memberships: [driverSeat] })
+    at('/3pl-portal/p1/orders')
+    expect(screen.getByText('partner portal')).toBeTruthy()
+  })
 })
