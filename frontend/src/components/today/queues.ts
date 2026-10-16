@@ -1,7 +1,7 @@
 import type { TodayResponse } from '@/services/api'
 
 export type QueueId =
-  | 'sos' | 'problems' | 'requests' | 'needsVehicle' | 'tripsToSend' | 'unpriced' | 'paymentReports'
+  | 'sos' | 'problems' | 'requests' | 'needsVehicle' | 'vendorLoadsNeedVehicle' | 'tripsToSend' | 'unpriced' | 'paymentReports'
   | 'vehicleRequests' | 'documents' | 'kyc' | 'bids' | 'driverActions'
 
 export type QueueTone = 'danger' | 'warning' | 'info'
@@ -47,12 +47,16 @@ export function buildQueues(data: TodayResponse): Queue[] {
       to: '/requests', cta: 'Review requests',
     },
     {
-      id: 'needsVehicle', title: 'Shipments needing a vehicle', count: q.needs_vehicle.count, tone: 'warning',
-      hint: [
-        q.needs_vehicle.shipments > 0 && plural(q.needs_vehicle.shipments, 'shipment', 'shipments'),
-        q.needs_vehicle.vendor_loads > 0 && plural(q.needs_vehicle.vendor_loads, 'vendor load', 'vendor loads'),
-      ].filter(Boolean).join(' · ') || 'Everything has a vehicle',
+      // Dispatch's "Needs a vehicle" tab lists shipments only; a vendor load needing one is a separate
+      // queue below, opening where it is actually assigned (components/dispatch/logic.ts, RequestsPage).
+      id: 'needsVehicle', title: 'Shipments needing a vehicle', count: q.needs_vehicle.shipments ?? q.needs_vehicle.count, tone: 'warning',
+      hint: 'Awaiting assignment to a vehicle.',
       to: '/dispatch?tab=needs-vehicle', cta: 'Assign vehicles',
+    },
+    {
+      id: 'vendorLoadsNeedVehicle', title: 'Vendor loads needing a vehicle', count: q.needs_vehicle.vendor_loads ?? 0, tone: 'warning',
+      hint: 'Accepted at a price; assign a vehicle or hand it to a 3PL partner.',
+      to: '/requests?tab=accepted&source=vendor', cta: 'Open accepted loads',
     },
     {
       id: 'tripsToSend', title: 'Trips planned but not sent', count: q.trips_to_send.count, tone: 'warning',

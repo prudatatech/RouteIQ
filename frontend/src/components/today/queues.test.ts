@@ -25,7 +25,7 @@ const base: TodayResponse = {
 describe('the work queues', () => {
   it('run most urgent first', () => {
     expect(buildQueues(base).map(q => q.id)).toEqual([
-      'sos', 'problems', 'requests', 'needsVehicle', 'tripsToSend', 'unpriced', 'paymentReports', 'vehicleRequests', 'documents', 'kyc', 'bids', 'driverActions',
+      'sos', 'problems', 'requests', 'needsVehicle', 'vendorLoadsNeedVehicle', 'tripsToSend', 'unpriced', 'paymentReports', 'vehicleRequests', 'documents', 'kyc', 'bids', 'driverActions',
     ])
   })
 
@@ -35,6 +35,7 @@ describe('the work queues', () => {
     expect(to.problems).toBe('/cargo?overdue=1')
     expect(to.requests).toBe('/requests')
     expect(to.needsVehicle).toBe('/dispatch?tab=needs-vehicle')
+    expect(to.vendorLoadsNeedVehicle).toBe('/requests?tab=accepted&source=vendor')
     expect(to.tripsToSend).toBe('/routes?status=pending')
     expect(to.bids).toBe('/bids?tab=decide')
     expect(to.paymentReports).toBe('/money?tab=invoices&reports=open')
@@ -65,7 +66,7 @@ describe('the work queues', () => {
 
   it('separate what is waiting from what is clear', () => {
     const { waiting, clear } = splitQueues(buildQueues(base))
-    expect(waiting.map(q => q.id)).toEqual(['sos', 'problems', 'requests', 'needsVehicle', 'unpriced', 'paymentReports', 'vehicleRequests', 'kyc', 'driverActions'])
+    expect(waiting.map(q => q.id)).toEqual(['sos', 'problems', 'requests', 'needsVehicle', 'vendorLoadsNeedVehicle', 'unpriced', 'paymentReports', 'vehicleRequests', 'kyc', 'driverActions'])
     expect(clear.map(q => q.id)).toEqual(['tripsToSend', 'documents', 'bids'])
   })
 })

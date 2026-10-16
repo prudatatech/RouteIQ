@@ -202,7 +202,7 @@ export interface QueueCounts {
   sos?: { count: number }
   problems?: { count: number; overdue: number }
   requests?: { count: number; bookings: number; vendor_loads: number }
-  needs_vehicle?: { count: number }
+  needs_vehicle?: { count: number; shipments?: number; vendor_loads?: number }
   trips_to_send?: { count: number }
   vehicle_requests?: { count: number }
   pending_vehicles?: { count: number }
@@ -218,7 +218,11 @@ export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners:
   const n = (q?: { count: number }) => q?.count ?? 0
   const sos = n(queues?.sos)
   const problems = n(queues?.problems)
-  const needsVehicle = n(queues?.needs_vehicle)
+  // Dispatch's "Needs a vehicle" tab lists shipments only (components/dispatch/logic.ts); a vendor load
+  // that is accepted and needs one is actioned from the Requests page instead, so each badge counts only
+  // what its own page shows, not the combined total GET /ops/today keeps for Today's queue card.
+  const needsVehicleShipments = queues?.needs_vehicle?.shipments ?? 0
+  const needsVehicleVendorLoads = queues?.needs_vehicle?.vendor_loads ?? 0
   const tripsToSend = n(queues?.trips_to_send)
   const vehicleRequests = n(queues?.vehicle_requests)
   const pendingVehicles = n(queues?.pending_vehicles)
@@ -229,9 +233,9 @@ export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners:
     today: sos + (queues?.problems?.overdue ?? 0),
     requests: n(queues?.requests),
     bookings: queues?.requests?.bookings ?? 0,
-    vendorLoads: queues?.requests?.vendor_loads ?? 0,
-    dispatch: needsVehicle + tripsToSend,
-    needsVehicle,
+    vendorLoads: (queues?.requests?.vendor_loads ?? 0) + needsVehicleVendorLoads,
+    dispatch: needsVehicleShipments + tripsToSend,
+    needsVehicle: needsVehicleShipments,
     tripsToSend,
     onTheRoad: sos + problems,
     problems,

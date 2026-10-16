@@ -111,7 +111,7 @@ describe('menu badge counts', () => {
     sos: { count: 2 },
     problems: { count: 3, overdue: 1 },
     requests: { count: 5, bookings: 4, vendor_loads: 1 },
-    needs_vehicle: { count: 6 },
+    needs_vehicle: { count: 6, shipments: 4, vendor_loads: 2 },
     trips_to_send: { count: 2 },
     vehicle_requests: { count: 1 },
     documents: { count: 7 },
@@ -122,9 +122,11 @@ describe('menu badge counts', () => {
   }
 
   it('turns the Today queues into counts for sections and links', () => {
+    // needs_vehicle splits 6 as 4 shipments (Dispatch's own tab) + 2 vendor loads (shown on Requests
+    // instead, so they count toward vendorLoads there, not toward Dispatch's needsVehicle/dispatch).
     expect(navBadgeCounts(queues, 4)).toEqual({
-      today: 3, requests: 5, bookings: 4, vendorLoads: 1,
-      dispatch: 8, needsVehicle: 6, tripsToSend: 2,
+      today: 3, requests: 5, bookings: 4, vendorLoads: 3,
+      dispatch: 6, needsVehicle: 4, tripsToSend: 2,
       onTheRoad: 5, problems: 3, sos: 2,
       fleet: 1, vehicleRequests: 1,
       people: 10, documents: 7, kyc: 3,
