@@ -52,16 +52,11 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     setLoading(true);
     setError('');
     try {
-      const result = (await api.sendOTP(cleaned)) as { phone?: string; dev_otp?: string };
+      const result = await api.sendOTP(cleaned);
       setMaskedPhone(result.phone || `+91******${cleaned.slice(-4)}`);
       setCountdown(RESEND_SECONDS);
       setStep('otp');
-      if (result.dev_otp && result.dev_otp.length === OTP_LENGTH) {
-        setOtp(result.dev_otp.split(''));
-      } else {
-        setOtp(emptyOtp());
-      }
-
+      setOtp(emptyOtp());
       setTimeout(() => otpRefs.current[0]?.focus(), 300);
     } catch (e: any) {
       setError(e.message || t('send_otp_failed'));

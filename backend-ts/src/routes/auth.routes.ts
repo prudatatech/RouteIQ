@@ -153,7 +153,6 @@ async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void
       phone: phone.replace(/(\+91)(\d{6})(\d{4})/, '$1******$3'), // Mask for response
       expires_in_seconds: settings.OTP_EXPIRY_SECONDS,
       message: 'OTP sent successfully',
-      dev_otp: otp,
     });
   } catch (e) {
     sendError(req, res, e);
