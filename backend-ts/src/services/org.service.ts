@@ -12,12 +12,21 @@ import { invalidateOrgContext, type OrgKind, type OrgRole, type OrgStatus } from
 import { notificationService } from './notification.service';
 import { auditService, type AuditActor } from './audit.service';
 import { normalizePhone } from '../utils/phone';
-import type { MemberInvite, MemberUpdate, OrgCreate, OrgUpdate } from '../schemas/org';
+import { settings } from '../core/config';
+import type { MemberInvite, MemberUpdate, OrgCreate, OrgDocumentsInput, OrgUpdate } from '../schemas/org';
+import { assertOwnOrgDocumentPaths, ORG_DOC_LABELS, REQUIRED_ORG_DOC_KEYS } from '../schemas/org';
 import { PROFILE_INVOICING_KEYS, saveCompanyProfile } from './company.service';
 import { assertAffiliated, legacyPartnerIdOf, readRules, type AffiliationRules } from './tpl-affiliation';
 
-const ORG_COLUMNS = 'id, kind, name, legal_name, gstin, pan, state, city, address, pincode, phone, email, status, profile, approved_by, approved_at, created_by, created_at, updated_at';
+const ORG_COLUMNS = 'id, kind, name, legal_name, gstin, pan, state, city, address, pincode, phone, email, status, profile, approved_by, approved_at, created_by, created_at, updated_at, kyc_documents, kyc_document_issues, kyc_submitted_at';
 const MEMBER_ROLES_WHO_MANAGE: OrgRole[] = ['owner', 'admin'];
+
+/** Formats a KYC document may be uploaded in, and the extension each is stored under (vendor.service.ts keeps its own copy). */
+const KYC_UPLOAD_CONTENT_TYPES: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+};
 
 export interface OrgRow {
   id: string;
@@ -111,6 +120,138 @@ export async function createOrg(actor: AuditActor, input: OrgCreate): Promise<Or
   invalidateOrgContext(actor.user_id);
   await audit(actor, 'org.created', { org_id: org.id, kind: input.kind, name: input.name });
   return org as OrgRow;
+}
+
+// ── Logistic-company KYC documents (mirrors vendor_profiles KYC, vendor.service.ts) ──
+
+interface OrgKycData { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] }
+
+async function getOrgForKyc(id: string): Promise<OrgRow & { kyc_documents: OrgKycData | null; kyc_document_issues: Record<string, string> | null; kyc_submitted_at: string | null }> {
+  const org = await getOrg(id);
+  if (org.kind !== 'logistic_company') throw new HttpError(400, 'Only a logistic company has KYC documents');
+  return org as OrgRow & { kyc_documents: OrgKycData | null; kyc_document_issues: Record<string, string> | null; kyc_submitted_at: string | null };
+}
+
+/** Signed upload URL for one KYC document, at a path inside the company's own folder. */
+export async function createOrgKycUploadUrl(orgId: string, input: { key: unknown; contentType: unknown; size: unknown }) {
+  const { key, contentType, size } = input;
+  if (typeof key !== 'string' || !/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(key)) {
+    throw new HttpError(400, 'Choose which document this is before uploading');
+  }
+  const extension = typeof contentType === 'string' ? KYC_UPLOAD_CONTENT_TYPES[contentType.toLowerCase()] : undefined;
+  if (!extension) throw new HttpError(415, 'Upload a PDF, JPG or PNG file');
+  const bytes = Number(size);
+  if (!Number.isInteger(bytes) || bytes <= 0) throw new HttpError(400, 'File size is required');
+  if (bytes > settings.TPL_UPLOAD_MAX_BYTES) {
+    throw new HttpError(413, `File must be at most ${Math.floor(settings.TPL_UPLOAD_MAX_BYTES / 1024 / 1024 * 10) / 10} MB`);
+  }
+  const path = `${orgId}/${key}_${crypto.randomUUID()}.${extension}`;
+  const { data, error } = await supabase.storage.from(settings.KYC_DOCUMENTS_BUCKET).createSignedUploadUrl(path);
+  if (error || !data) throw new Error(`Failed to create upload URL: ${error?.message}`);
+  return { path: data.path, token: data.token, signed_url: data.signedUrl };
+}
+
+/**
+ * Save the company's uploaded KYC documents before (or instead of) a full submit. Re-uploading a
+ * flagged document clears its own flag immediately, without needing a full resubmit.
+ */
+export async function saveOrgDocuments(orgId: string, input: OrgDocumentsInput): Promise<OrgRow> {
+  const problem = assertOwnOrgDocumentPaths(orgId, input.docUrls, input.otherDocs);
+  if (problem) throw new HttpError(400, problem);
+
+  const org = await getOrgForKyc(orgId);
+  const current = org.kyc_documents ?? {};
+  const previousUrls = current.docUrls ?? {};
+  const kycDocuments: OrgKycData = {
+    docUrls: input.docUrls !== undefined ? input.docUrls : current.docUrls,
+    otherDocs: input.otherDocs ?? current.otherDocs ?? [],
+  };
+  const patch: Record<string, unknown> = { kyc_documents: kycDocuments, updated_at: new Date().toISOString() };
+
+  const existingIssues = org.kyc_document_issues;
+  if (existingIssues && input.docUrls) {
+    const changedKeys = Object.keys(input.docUrls).filter(k => input.docUrls![k] !== previousUrls[k]);
+    if (changedKeys.some(k => existingIssues[k])) {
+      const remaining = { ...existingIssues };
+      for (const k of changedKeys) delete remaining[k];
+      patch.kyc_document_issues = Object.keys(remaining).length > 0 ? remaining : null;
+    }
+  }
+
+  const { data, error } = await supabase.from('organizations').update(patch).eq('id', orgId).select(ORG_COLUMNS).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new HttpError(404, 'Organisation not found');
+  return data as OrgRow;
+}
+
+/**
+ * Submit the company's KYC for review: every required document, GSTIN and PAN must be present.
+ * A rejected company resubmitting goes back to 'pending' instead of having to register again.
+ */
+export async function submitOrgKyc(actor: AuditActor, orgId: string): Promise<OrgRow> {
+  const org = await getOrgForKyc(orgId);
+  if (org.status !== 'pending' && org.status !== 'rejected') {
+    throw new HttpError(409, 'This company is not waiting to submit KYC');
+  }
+  if (!org.gstin || !org.pan) throw new HttpError(400, 'Add the company GSTIN and PAN before submitting');
+  const profile = (org.profile ?? {}) as Record<string, unknown>;
+  if (!profile.bank_account_no || !profile.bank_ifsc) throw new HttpError(400, 'Add the company bank account and IFSC before submitting');
+  const docUrls = org.kyc_documents?.docUrls ?? {};
+  const missing = REQUIRED_ORG_DOC_KEYS.filter(key => !docUrls[key]);
+  if (missing.length > 0) {
+    throw new HttpError(400, `Upload the following before submitting: ${missing.map(k => ORG_DOC_LABELS[k]).join(', ')}`);
+  }
+
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = { kyc_submitted_at: now, kyc_document_issues: null, updated_at: now };
+  const wasRejected = org.status === 'rejected';
+  if (wasRejected) {
+    patch.status = 'pending';
+    patch.profile = { ...profile, reject_reason: null };
+  }
+  const { data, error } = await supabase.from('organizations').update(patch).eq('id', orgId).eq('status', org.status).select(ORG_COLUMNS).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new HttpError(409, 'This company changed while you were submitting. Refresh and try again');
+
+  invalidateOrgContext();
+  await audit(actor, 'org.kyc_submitted', { org_id: orgId, name: org.name, resubmitted: wasRejected });
+  try {
+    await notificationService.notifySuperAdmins(
+      'Company KYC submitted',
+      `${org.name} submitted its documents and needs a review.`,
+      'org_kyc_submitted',
+      { org_id: orgId },
+    );
+  } catch (e) {
+    console.error('[org] KYC submission notification failed:', e);
+  }
+  return data as OrgRow;
+}
+
+/**
+ * The platform flags one or more specific documents, with a reason, instead of rejecting the whole
+ * application. The company is unlocked to fix just those documents and resubmit.
+ */
+export async function flagOrgDocumentIssues(actor: AuditActor, orgId: string, issues: Record<string, string>): Promise<OrgRow> {
+  const org = await getOrgForKyc(orgId);
+  if (org.status !== 'pending' || !org.kyc_submitted_at) {
+    throw new HttpError(409, 'Documents can be flagged only while the company KYC is waiting for review');
+  }
+  const unknown = Object.keys(issues).filter(key => !(key in ORG_DOC_LABELS));
+  if (unknown.length > 0) throw new HttpError(400, `Unknown document: ${unknown.join(', ')}`);
+
+  const merged = { ...(org.kyc_document_issues ?? {}), ...issues };
+  const { data, error } = await supabase.from('organizations')
+    .update({ kyc_document_issues: merged, kyc_submitted_at: null, updated_at: new Date().toISOString() })
+    .eq('id', orgId).eq('status', 'pending').select(ORG_COLUMNS).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new HttpError(409, 'Documents can be flagged only while the company KYC is waiting for review');
+
+  invalidateOrgContext();
+  const list = Object.entries(issues).map(([key, reason]) => `${ORG_DOC_LABELS[key] ?? key}: ${reason}`).join('; ');
+  await notifyOrg(orgId, 'A document needs fixing', `We need you to fix the following before we can review your company: ${list}`, 'org_kyc_document_flagged', { org_id: orgId });
+  await audit(actor, 'org.kyc_document_flagged', { org_id: orgId, name: org.name, issues });
+  return data as OrgRow;
 }
 
 // ── Members ────────────────────────────────────────────────
@@ -230,6 +371,9 @@ export async function decideOrg(actor: AuditActor, id: string, decision: Decisio
   if (org.kind === 'platform') throw new HttpError(400, 'The platform organisation cannot be approved, rejected or suspended');
   if (!FROM_STATUSES[decision].includes(org.status)) {
     throw new HttpError(409, `A ${org.status} organisation cannot be ${decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'suspended'}`);
+  }
+  if (decision === 'approve' && org.kind === 'logistic_company' && org.status === 'pending' && !org.kyc_submitted_at) {
+    throw new HttpError(409, 'This company has not submitted its KYC documents yet');
   }
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = { status: TO_STATUS[decision] };

@@ -176,11 +176,19 @@ export interface VehicleRequest {
 export const orgAPI = {
   mine: () => api.get('/orgs/mine').then(r => (Array.isArray(r.data) ? r.data : []) as Membership[]),
   get: () => api.get('/org').then(r => r.data as OrgProfile),
-  update: (data: Partial<OrgProfileInput>) => api.patch('/org', data).then(r => r.data as OrgProfile),
+  update: (data: Partial<OrgProfileInput> & { profile?: Record<string, unknown> }) => api.patch('/org', data).then(r => r.data as OrgProfile),
   members: () => api.get('/org/members').then(r => (Array.isArray(r.data) ? r.data : []) as OrgMember[]),
   addMember: (data: { email?: string; phone?: string; role: OrgRole }) => api.post('/org/members', data).then(r => r.data as OrgMember),
   updateMember: (userId: string, data: { role?: OrgRole; status?: 'active' | 'removed' }) =>
     api.patch(`/org/members/${userId}`, data).then(r => r.data as OrgMember),
+  /** Signed upload URL for one KYC document of the active (logistic company) organisation. */
+  kycUploadUrl: (data: { key: string; content_type: string; size: number }): Promise<{ path: string; token: string; signed_url: string }> =>
+    api.post('/org/kyc/documents/upload-url', data).then(r => r.data),
+  /** Saves uploaded document paths on the organisation ahead of the final submit; clears a document's flag the moment it is re-uploaded. */
+  saveKycDocuments: (data: { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] }) =>
+    api.put('/org/kyc/documents', data).then(r => r.data as OrgRow),
+  /** Submits the organisation's KYC for review once every required document, GSTIN, PAN and bank detail is present. */
+  submitKyc: () => api.post('/org/kyc/submit').then(r => r.data as OrgRow),
 }
 
 export const orgRegisterAPI = {
@@ -199,6 +207,9 @@ export const adminOrgsAPI = {
     api.get('/admin/orgs', { params }).then(r => r.data as OrgPage),
   decide: (id: string, decision: 'approve' | 'reject' | 'suspend', reason?: string) =>
     api.put(`/admin/orgs/${id}/${decision}`, reason ? { reason } : {}).then(r => r.data as OrgRow),
+  /** Flags specific documents on a logistic company's KYC, each with its own reason, instead of rejecting the whole application. */
+  flagDocuments: (id: string, issues: Record<string, string>) =>
+    api.put(`/admin/orgs/${id}/flag-documents`, { issues }).then(r => r.data as OrgRow),
 }
 
 export const vehicleRequestsAPI = {

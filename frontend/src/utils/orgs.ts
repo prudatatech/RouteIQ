@@ -65,6 +65,10 @@ export interface OrgProfile extends Partial<OrgProfileInput> {
   id: string
   kind: OrgKind
   status: string
+  profile?: Record<string, unknown> | null
+  kyc_documents?: { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] } | null
+  kyc_document_issues?: Record<string, string> | null
+  kyc_submitted_at?: string | null
 }
 
 export interface OrgMember {
@@ -114,6 +118,10 @@ export interface OrgRow {
   approved_at?: string | null
   created_at?: string | null
   updated_at?: string | null
+  /** A logistic company's KYC documents: { docUrls: { <docKey>: path }, otherDocs: [{ name, path }] }. */
+  kyc_documents?: { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] } | null
+  kyc_document_issues?: Record<string, string> | null
+  kyc_submitted_at?: string | null
 }
 
 export interface OrgPage {

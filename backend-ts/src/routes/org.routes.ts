@@ -14,7 +14,8 @@ import { rateLimitByUser } from '../core/rate-limit';
 import { uuidParam } from '../core/validate';
 import { appRoleFor, type OrgRole } from '../core/org-context';
 import {
-  AdminOrgDecisionSchema, AdminOrgFilterSchema, AffiliationRequestSchema, MemberInviteSchema, MemberUpdateSchema, OrgCreateSchema, OrgUpdateSchema,
+  AdminOrgDecisionSchema, AdminOrgFilterSchema, AffiliationRequestSchema, FlagOrgDocumentsSchema, MemberInviteSchema, MemberUpdateSchema,
+  OrgCreateSchema, OrgDocumentsSchema, OrgUpdateSchema,
 } from '../schemas/org';
 import * as orgs from '../services/org.service';
 import { AffiliationRulesSchema, resolveTplOrg } from '../services/tpl-affiliation';
@@ -111,6 +112,20 @@ orgRouter.post('/members', inOrg(...OWNER_OR_ADMIN), handle(async (req, res) => 
 orgRouter.patch('/members/:userId', inOrg(...OWNER_OR_ADMIN), handle(async (req, res) => {
   const userId = uuidParam(req.params.userId, 'Member not found');
   res.json(await orgs.updateMember(actorOf(req), req.orgRole!, req.org!.id, userId, parse(MemberUpdateSchema, req.body)));
+}));
+
+// ── /org/kyc (logistic company only) ────────────────────────
+orgRouter.post('/kyc/documents/upload-url', ofKind('logistic_company', ...OWNER_OR_ADMIN), rateLimitByUser('org-kyc-upload', 60, 60 * 60), handle(async (req, res) => {
+  const { key, content_type, size } = req.body ?? {};
+  res.json(await orgs.createOrgKycUploadUrl(req.org!.id, { key, contentType: content_type, size }));
+}));
+
+orgRouter.put('/kyc/documents', ofKind('logistic_company', ...OWNER_OR_ADMIN), handle(async (req, res) => {
+  res.json(await orgs.saveOrgDocuments(req.org!.id, parse(OrgDocumentsSchema, req.body)));
+}));
+
+orgRouter.post('/kyc/submit', ofKind('logistic_company', ...OWNER_OR_ADMIN), handle(async (req, res) => {
+  res.json(await orgs.submitOrgKyc(actorOf(req), req.org!.id));
 }));
 
 orgRouter.get('/tpl-affiliations', ofKind('logistic_company', ...OWNER_OR_ADMIN), handle(async (req, res) => {
@@ -214,6 +229,12 @@ for (const decision of ['approve', 'reject', 'suspend'] as const) {
     res.json(await orgs.decideOrg(actorOf(req), id, decision, reason));
   }));
 }
+
+adminOrgsRouter.put('/:id/flag-documents', handle(async (req, res) => {
+  const id = uuidParam(req.params.id, 'Organisation not found');
+  const { issues } = parse(FlagOrgDocumentsSchema, req.body);
+  res.json(await orgs.flagOrgDocumentIssues(actorOf(req), id, issues));
+}));
 
 // ── /tpl/affiliations ──────────────────────────────────────
 export const tplAffiliationsRouter = Router();

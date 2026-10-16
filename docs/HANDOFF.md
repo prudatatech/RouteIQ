@@ -62,6 +62,17 @@ registry `margixacr7m52h4t5it6og`.
 - Freight GST is the company's GTA option (`rcm_5` default, `fcm_5`, `fcm_18`), never the goods' HSN rate.
   Same-day pickup allowed with a warning. (`docs/gst-rates.md`)
 - Vendor KYC review and 3PL approval are platform-only. A company sees its own partners without bank/PAN/documents.
+- Onboarding now supports flagging one specific document instead of rejecting the whole application, on every
+  flow: vehicle registration (`vehicles.document_issues`, `VehicleRequestsPage.tsx`), vendor KYC
+  (`vendor_profiles.kyc_document_issues`, `VendorReviewPage.tsx` "Flag documents"), and logistic-company
+  registration (`organizations.kyc_documents`/`kyc_document_issues`/`kyc_submitted_at`, self-service at
+  `/company/kyc`, staff review in `OrganisationsPage.tsx`'s drawer). A logistic company now also needs GSTIN, PAN,
+  bank details and five documents (GST registration, PAN, company registration/MSME cert, cancelled cheque,
+  address proof) before the platform can approve it (`decideOrg` refuses approval of a pending company that has
+  not called `/org/kyc/submit`); a rejected company resubmits on the same record instead of registering again.
+  Activating a driver or staff member likewise asks for confirmation first if a required document is still
+  missing (`people.service.ts` `changeStatus`, `confirm_missing_documents`). `FlagDocumentsModal.tsx` and
+  `DocUploadField.tsx` are shared across all of these instead of duplicated per flow.
 - One sign-in page `/login` for every account kind; each goes to its own area. The platform owner lands on
   `/platform/organisations`.
 - Vendor review is a full page `/admin/kyc/:id`: approve, reject, ask for more details (status `info_requested`;

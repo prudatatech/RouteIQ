@@ -21,10 +21,9 @@ export default function WaitingForApprovalPage() {
   const memberships = useOrgStore(s => s.memberships)
   const active = useOrgStore(selectActiveMembership)
   const clearAuth = useAuthStore(s => s.clearAuth)
-  // The reason lives in the organisation's profile; the server may refuse the read for a blocked organisation, then none is shown
-  const needsReason = !!active && active.org.status !== 'pending'
+  // The reason lives in the organisation's profile; a pending logistic company's KYC progress does too.
   const profile = useQuery({
-    queryKey: ['org', active?.org.id], queryFn: () => orgAPI.get(), enabled: needsReason, retry: false,
+    queryKey: ['org', active?.org.id], queryFn: () => orgAPI.get(), enabled: !!active, retry: false,
   })
 
   const signOut = async () => {
@@ -39,9 +38,12 @@ export default function WaitingForApprovalPage() {
   if (gateFor(true, active) === 'open') return <Navigate to="/today" replace />
 
   const status = active.org.status as OrgStatus
-  const reason = decisionReason({ status, profile: (profile.data as { profile?: Record<string, unknown> } | undefined)?.profile })
+  const reason = decisionReason({ status, profile: profile.data?.profile })
   const copy = waitingCopy(status, reason)
   const Icon = status === 'pending' ? Clock : XCircle
+  const isCompany = active.org.kind === 'logistic_company'
+  const submitted = !!profile.data?.kyc_submitted_at
+  const issueCount = Object.keys(profile.data?.kyc_document_issues ?? {}).length
 
   return (
     <div className="flex min-h-screen flex-col bg-bg text-text">
@@ -69,7 +71,28 @@ export default function WaitingForApprovalPage() {
                   <span className="font-medium">Reason:</span> {copy.reason}
                 </p>
               )}
-              {status === 'pending' && (
+              {status === 'pending' && isCompany && !submitted && (
+                <>
+                  <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
+                    <li>Submit your GSTIN, PAN, bank details and documents.</li>
+                    <li>We check them and notify you once your company is approved.</li>
+                    <li>Then this page opens your company dashboard.</li>
+                  </ol>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Link to="/company/kyc" className={buttonClasses({ variant: 'primary' })}>
+                      {issueCount > 0 ? `Fix ${issueCount} flagged document${issueCount > 1 ? 's' : ''}` : 'Complete your company KYC'}
+                    </Link>
+                  </div>
+                </>
+              )}
+              {status === 'pending' && isCompany && submitted && (
+                <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
+                  <li>Your documents are with the MargixIndia team.</li>
+                  <li>You get a notification once your company is approved.</li>
+                  <li>Then this page opens your company dashboard.</li>
+                </ol>
+              )}
+              {status === 'pending' && !isCompany && (
                 <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
                   <li>We check your GSTIN, PAN and company details.</li>
                   <li>You get a notification when your company is approved.</li>
@@ -78,8 +101,9 @@ export default function WaitingForApprovalPage() {
               )}
               {status === 'rejected' && (
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {/* The API cannot reopen a rejected company, so correcting means a new registration */}
-                  <Link to="/register-company" className={buttonClasses({ variant: 'primary' })}>Register again with corrected details</Link>
+                  {isCompany
+                    ? <Link to="/company/kyc" className={buttonClasses({ variant: 'primary' })}>Fix your details and resubmit</Link>
+                    : <Link to="/register-company" className={buttonClasses({ variant: 'primary' })}>Register again with corrected details</Link>}
                 </div>
               )}
               {status !== 'pending' && <p className="text-sm text-muted">Need to talk to someone? Contact MargixIndia support and mention the company name above.</p>}

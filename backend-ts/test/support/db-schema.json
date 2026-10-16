@@ -360,7 +360,10 @@
     "approved_at",
     "created_by",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "kyc_documents",
+    "kyc_document_issues",
+    "kyc_submitted_at"
   ],
   "parcels": [
     "id",

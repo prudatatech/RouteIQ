@@ -22,6 +22,15 @@ export const ORG_STATUS_LABELS: Record<OrgStatus, string> = {
   pending: 'Waiting for approval', active: 'Active', suspended: 'Suspended', rejected: 'Rejected',
 }
 
+/** The documents a logistic company's KYC asks for (backend-ts/src/schemas/org.ts ORG_DOC_LABELS - keep in sync). */
+export const ORG_KYC_DOCUMENTS: { key: string; label: string; hint?: string }[] = [
+  { key: 'gstRegistration', label: 'GST registration' },
+  { key: 'panScan', label: 'PAN card' },
+  { key: 'companyRegistration', label: 'Company registration / incorporation certificate', hint: 'Or your MSME certificate' },
+  { key: 'cancelledCheque', label: 'Cancelled cheque', hint: 'For the bank account above' },
+  { key: 'addressProof', label: 'Registered address proof', hint: 'Utility bill or lease, less than 3 months old' },
+]
+
 export const PAGE_SIZE = 25
 
 export function listParams(kind: OrgKind, status: StatusFilter, page: number, limit = PAGE_SIZE) {

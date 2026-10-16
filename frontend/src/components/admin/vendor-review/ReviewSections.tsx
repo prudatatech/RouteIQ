@@ -5,7 +5,7 @@ import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { formatDateTime } from '@/utils/display'
 import { auditActionLabel } from '@/utils/auditLabels'
 import type { InfoRequest, KycFormView, VendorReview } from './types'
-import type { useDocumentViewer } from './useDocumentViewer'
+import type { useDocumentViewer } from '@/components/admin/useDocumentViewer'
 
 const given = (v: string | null | undefined) => (v && v.trim() ? v : 'Not given')
 const mono = (v: string | null | undefined) => (v && v.trim() ? <span className="font-mono break-all">{v}</span> : 'Not given')

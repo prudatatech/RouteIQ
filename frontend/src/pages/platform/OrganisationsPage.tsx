@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
+import { FlagTriangleRight } from 'lucide-react'
 import { adminOrgsAPI } from '@/services/api'
 import {
   Button, DataTable, Drawer, EmptyState, ExportCsvButton, Page, PageHeader, Select, StatusPill, TabPanel, Tabs, useConfirm, useTabParam,
@@ -9,10 +10,12 @@ import {
 import { errorMessage, formatDate } from '@/utils/display'
 import { selectActiveMembership, useOrgStore } from '@/store/orgStore'
 import { isPlatformActor } from '@/utils/orgAccess'
+import { useDocumentViewer } from '@/components/admin/useDocumentViewer'
+import { FlagDocumentsModal } from '@/components/admin/FlagDocumentsModal'
 import type { OrgKind, OrgRow } from '@/utils/orgs'
 import {
-  decisionReason, decisionsFor, listParams, ORG_CSV_COLUMNS, ORG_STATUS_LABELS, orgCsvRows, pageRange, pendingFirst, PAGE_SIZE,
-  PLATFORM_ORG_TABS, STATUS_FILTERS, type Decision, type StatusFilter,
+  decisionReason, decisionsFor, listParams, ORG_CSV_COLUMNS, ORG_KYC_DOCUMENTS, ORG_STATUS_LABELS, orgCsvRows, pageRange, pendingFirst,
+  PAGE_SIZE, PLATFORM_ORG_TABS, STATUS_FILTERS, type Decision, type StatusFilter,
 } from '@/utils/platformOrgs'
 
 const TAB_IDS = PLATFORM_ORG_TABS.map(t => t.id)
@@ -27,14 +30,68 @@ function Detail({ label, value }: { label: string; value?: string | null }) {
   )
 }
 
-function OrgDrawer({ org, onClose, onDecide, deciding }: {
+/** A logistic company's uploaded KYC documents, each flaggable with its own reason. Platform only. */
+function OrgDocumentsSection({ org, onFlag, viewer }: {
+  org: OrgRow
+  onFlag: () => void
+  viewer: ReturnType<typeof useDocumentViewer>
+}) {
+  const docUrls = org.kyc_documents?.docUrls ?? {}
+  const issues = org.kyc_document_issues ?? {}
+  const canFlag = org.status === 'pending' && !!org.kyc_submitted_at
+  const hasAnyDoc = Object.keys(docUrls).length > 0
+  return (
+    <section aria-label="Documents">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Documents</h3>
+        {canFlag && <Button variant="ghost" size="sm" icon={<FlagTriangleRight size={14} />} onClick={onFlag}>Flag documents</Button>}
+      </div>
+      {org.status === 'pending' && (
+        <p className="mb-2 text-xs text-muted">
+          {org.kyc_submitted_at ? 'Submitted for review.' : hasAnyDoc ? 'Waiting for the company to fix and resubmit.' : 'The company has not submitted its KYC documents yet.'}
+        </p>
+      )}
+      {!hasAnyDoc ? (
+        <p className="text-sm text-muted">No documents uploaded yet.</p>
+      ) : (
+        <ul className="divide-y divide-border rounded-control border border-border">
+          {ORG_KYC_DOCUMENTS.map(d => {
+            const path = docUrls[d.key]
+            const issue = issues[d.key]
+            return (
+              <li key={d.key} className={`px-3 py-2 ${issue ? 'bg-warning/5' : ''}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm">{d.label}</span>
+                  {issue && <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>}
+                </div>
+                {path ? (
+                  <button type="button" onClick={() => viewer.open(d.label, path, d.key)} disabled={viewer.opening === d.key} className="mt-1 text-xs font-medium text-brand hover:underline">
+                    {viewer.opening === d.key ? 'Opening…' : 'View'}
+                  </button>
+                ) : (
+                  <span className="mt-1 block text-xs text-muted">Not uploaded</span>
+                )}
+                {issue && <p className="mt-1 text-sm text-warning">{issue}</p>}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function OrgDrawer({ org, onClose, onDecide, deciding, onFlag, viewer }: {
   org: OrgRow | null
   onClose: () => void
   onDecide: (org: OrgRow, decision: Decision) => void
   deciding: boolean
+  onFlag: () => void
+  viewer: ReturnType<typeof useDocumentViewer>
 }) {
   const reason = org ? decisionReason(org) : null
-  const actions = org ? decisionsFor(org.status, org.kind) : []
+  const notSubmitted = org?.kind === 'logistic_company' && org.status === 'pending' && !org.kyc_submitted_at
+  const actions = org ? decisionsFor(org.status, org.kind).filter(a => !(notSubmitted && a.decision === 'approve')) : []
   return (
     <Drawer
       open={!!org}
@@ -67,6 +124,7 @@ function OrgDrawer({ org, onClose, onDecide, deciding }: {
               <div className="sm:col-span-2"><Detail label="Address" value={org.address} /></div>
             </dl>
           </section>
+          {org.kind === 'logistic_company' && <OrgDocumentsSection org={org} onFlag={onFlag} viewer={viewer} />}
           <section aria-label="History">
             <h3 className="mb-2 text-sm font-semibold">History</h3>
             <ul className="space-y-2 text-sm">
@@ -93,6 +151,8 @@ export default function PlatformOrganisationsPage() {
   const [status, setStatus] = useState<StatusFilter>('pending')
   const [page, setPage] = useState(0)
   const [openId, setOpenId] = useState<string | null>(null)
+  const [flagOpen, setFlagOpen] = useState(false)
+  const viewer = useDocumentViewer()
 
   const list = useQuery({
     queryKey: ['platform-orgs', kind, status, page],
@@ -113,6 +173,16 @@ export default function PlatformOrganisationsPage() {
       setOpenId(null)
     },
     onError: err => toast.error(errorMessage(err, 'We could not save this decision. Try again.')),
+  })
+
+  const flagDocuments = useMutation({
+    mutationFn: (v: { id: string; issues: Record<string, string> }) => adminOrgsAPI.flagDocuments(v.id, v.issues),
+    onSuccess: () => {
+      toast.success('The company has been told which documents to fix.')
+      void queryClient.invalidateQueries({ queryKey: ['platform-orgs'] })
+      setFlagOpen(false)
+    },
+    onError: err => toast.error(errorMessage(err, 'We could not flag these documents. Try again.')),
   })
 
   const onDecide = async (org: OrgRow, decision: Decision) => {
@@ -207,7 +277,17 @@ export default function PlatformOrganisationsPage() {
           </div>
         )}
       </TabPanel>
-      <OrgDrawer org={open} onClose={() => setOpenId(null)} onDecide={onDecide} deciding={decide.isPending} />
+      <OrgDrawer org={open} onClose={() => setOpenId(null)} onDecide={onDecide} deciding={decide.isPending} onFlag={() => setFlagOpen(true)} viewer={viewer} />
+      {flagOpen && open && (
+        <FlagDocumentsModal
+          open entityName={open.name} documents={ORG_KYC_DOCUMENTS.filter(d => open.kyc_documents?.docUrls?.[d.key])}
+          noneUploadedLabel="This company has not uploaded any documents yet."
+          busy={flagDocuments.isPending}
+          onClose={() => setFlagOpen(false)}
+          onSubmit={issues => flagDocuments.mutate({ id: open.id, issues })}
+        />
+      )}
+      {viewer.modal}
     </Page>
   )
 }

@@ -1,10 +1,16 @@
 import { useState } from 'react'
 import { Button, Checkbox, Modal, Textarea } from '@/components/ui'
 
-/** Only the vendor's own named documents can be flagged (not a "more details" answer filed as an extra document). */
-export function FlagDocumentsModal({ open, vendorName, documents, busy, onClose, onSubmit }: {
+/**
+ * Flags specific named documents (not a "more details" answer filed as an extra document) with a
+ * reason each, instead of rejecting the whole application. Shared by vendor KYC review and logistic
+ * company KYC review.
+ */
+export function FlagDocumentsModal({ open, entityName, noneUploadedLabel = 'No named documents have been uploaded yet.', documents, busy, onClose, onSubmit }: {
   open: boolean
-  vendorName: string
+  entityName: string
+  /** Shown when `documents` is empty. */
+  noneUploadedLabel?: string
   documents: { key: string; label: string }[]
   busy: boolean
   onClose: () => void
@@ -39,20 +45,20 @@ export function FlagDocumentsModal({ open, vendorName, documents, busy, onClose,
       open={open}
       onClose={close}
       size="md"
-      title={`Flag documents for ${vendorName}`}
-      description="Check each document that needs fixing and say why. The application stays with you for review - everything else the vendor already got right is kept."
+      title={`Flag documents for ${entityName}`}
+      description="Check each document that needs fixing and say why. The application stays for review - everything else already on it is kept."
       onSubmit={submit}
       footer={(
         <>
           <Button type="button" variant="secondary" onClick={close} disabled={busy}>Cancel</Button>
-          <Button type="submit" loading={busy}>Send to vendor</Button>
+          <Button type="submit" loading={busy}>Send</Button>
         </>
       )}
     >
       <div className="space-y-3">
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}
         {documents.length === 0 ? (
-          <p className="text-sm text-muted">This vendor has not uploaded any named documents yet.</p>
+          <p className="text-sm text-muted">{noneUploadedLabel}</p>
         ) : (
           documents.map(d => {
             const checked = d.key in reasons

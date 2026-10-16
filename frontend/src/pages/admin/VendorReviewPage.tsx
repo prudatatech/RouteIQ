@@ -6,9 +6,9 @@ import {
 } from '@/components/ui'
 import { isNotFoundError } from '@/utils/display'
 import { useReviewActions, useVendorReview } from '@/components/admin/vendor-review/useVendorReview'
-import { useDocumentViewer } from '@/components/admin/vendor-review/useDocumentViewer'
+import { useDocumentViewer } from '@/components/admin/useDocumentViewer'
 import { AskMoreDetailsModal } from '@/components/admin/vendor-review/AskMoreDetailsModal'
-import { FlagDocumentsModal } from '@/components/admin/vendor-review/FlagDocumentsModal'
+import { FlagDocumentsModal } from '@/components/admin/FlagDocumentsModal'
 import {
   AccountSection, ActivitySection, BusinessSection, DocumentsSection, HistorySection, KycFormSection, RequestsSection,
   StatusAlert, SummarySection,
@@ -123,7 +123,11 @@ function ReviewView({ id, data }: { id: string; data: VendorReview }) {
         <AskMoreDetailsModal open vendorName={name} busy={askInfo.isPending} onClose={() => setAskOpen(false)} onSubmit={d => askInfo.mutate(d)} />
       )}
       {flagOpen && (
-        <FlagDocumentsModal open vendorName={name} documents={namedDocuments} busy={flagDocuments.isPending} onClose={() => setFlagOpen(false)} onSubmit={issues => flagDocuments.mutate(issues)} />
+        <FlagDocumentsModal
+          open entityName={name} documents={namedDocuments} busy={flagDocuments.isPending}
+          noneUploadedLabel="This vendor has not uploaded any named documents yet."
+          onClose={() => setFlagOpen(false)} onSubmit={issues => flagDocuments.mutate(issues)}
+        />
       )}
       {viewer.modal}
     </Page>

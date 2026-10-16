@@ -188,7 +188,7 @@ const PENDING = 'a0000000-0000-4000-8000-0000000000aa';
 
 beforeEach(() => {
   const world = orgWorld();
-  world.organizations.push({ id: PENDING, kind: 'logistic_company', name: 'Gamma Carriers', status: 'pending', profile: {}, created_at: '2026-10-02T00:00:00Z' });
+  world.organizations.push({ id: PENDING, kind: 'logistic_company', name: 'Gamma Carriers', status: 'pending', profile: {}, kyc_submitted_at: '2026-10-02T06:00:00Z', created_at: '2026-10-02T00:00:00Z' });
   world.organizations.push({ id: 'a0000000-0000-4000-8000-0000000000ab', kind: 'vendor', name: 'Delta Traders', status: 'pending', profile: {}, created_at: '2026-10-03T00:00:00Z' });
   supabaseMock.reset(world);
 });
@@ -230,6 +230,15 @@ describe('approving, rejecting and suspending', () => {
     const row = supabaseMock.rows('organizations').find(o => o.id === PENDING)!;
     expect(row).toMatchObject({ status: 'active', approved_by: uid('super-1') });
     expect(typeof row.approved_at).toBe('string');
+  });
+
+  it('refuses to approve a logistic company that has not submitted its KYC documents', async () => {
+    const world = orgWorld();
+    world.organizations.push({ id: PENDING, kind: 'logistic_company', name: 'Gamma Carriers', status: 'pending', profile: {}, created_at: '2026-10-02T00:00:00Z' });
+    supabaseMock.reset(world);
+    const res = await decide('approve', PENDING);
+    expect(res.status).toBe(409);
+    expect(status(PENDING)).toBe('pending');
   });
 
   it('rejects a pending one with a reason kept in its profile', async () => {

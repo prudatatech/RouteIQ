@@ -65,3 +65,56 @@ export const AdminOrgDecisionSchema = z.object({
 export const AffiliationRequestSchema = z.object({
   company_id: z.string().uuid('company_id is not valid'),
 }).strict();
+
+// ── Logistic-company KYC documents (mirrors vendor KYC, schemas/vendor.ts) ──
+
+/** How the documents a logistic company uploads are named in the review. */
+export const ORG_DOC_LABELS: Record<string, string> = {
+  gstRegistration: 'GST registration',
+  panScan: 'PAN card',
+  companyRegistration: 'Company registration / incorporation certificate',
+  cancelledCheque: 'Cancelled cheque',
+  addressProof: 'Registered address proof',
+};
+export const REQUIRED_ORG_DOC_KEYS = Object.keys(ORG_DOC_LABELS);
+
+const ORG_DOC_KEY = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+export const MAX_OTHER_ORG_DOCS = 10;
+
+const OtherOrgDocSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  path: z.string().min(1).max(300),
+});
+
+/** Storage paths of KYC files: <org id>/<file>, no folder tricks. */
+export function isOwnOrgDocPath(orgId: string, path: unknown): path is string {
+  return typeof path === 'string'
+    && path.length <= 300
+    && path.startsWith(`${orgId}/`)
+    && !path.includes('..')
+    && !path.slice(orgId.length + 1).includes('/');
+}
+
+export const OrgDocumentsSchema = z.object({
+  docUrls: z.record(z.string(), z.string().min(1).max(300)).optional(),
+  otherDocs: z.array(OtherOrgDocSchema).max(MAX_OTHER_ORG_DOCS, `Attach at most ${MAX_OTHER_ORG_DOCS} other documents`).optional(),
+}).refine(v => v.docUrls !== undefined || v.otherDocs !== undefined, 'Nothing to save');
+export type OrgDocumentsInput = z.infer<typeof OrgDocumentsSchema>;
+
+/** Checks every document path lives in the company's own folder. Throws a 400 via the caller. */
+export function assertOwnOrgDocumentPaths(orgId: string, docUrls?: Record<string, string>, otherDocs?: { name: string; path: string }[]): string | null {
+  for (const [key, path] of Object.entries(docUrls ?? {})) {
+    if (!ORG_DOC_KEY.test(key)) return `Invalid document name: ${key}`;
+    if (!isOwnOrgDocPath(orgId, path)) return 'Documents must be your own uploads';
+  }
+  for (const doc of otherDocs ?? []) {
+    if (!isOwnOrgDocPath(orgId, doc.path)) return 'Documents must be your own uploads';
+  }
+  return null;
+}
+
+export const FlagOrgDocumentsSchema = z.object({
+  issues: z.record(z.string(), z.string().trim().min(3, 'Say what is wrong with each document (at least 3 characters)').max(300, 'Reason is too long (at most 300 characters)'))
+    .refine(issues => Object.keys(issues).length > 0, 'Flag at least one document'),
+});
+export type FlagOrgDocumentsInput = z.infer<typeof FlagOrgDocumentsSchema>;

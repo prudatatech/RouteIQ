@@ -47,6 +47,7 @@ export const adminOrganisation = page(() => import('@/pages/admin/OrganisationPa
 export const platformOrganisations = page(() => import('@/pages/platform/OrganisationsPage'))
 export const registerCompany = page(() => import('@/pages/RegisterCompanyPage'))
 export const waitingForApproval = page(() => import('@/pages/WaitingForApprovalPage'))
+export const companyKyc = page(() => import('@/pages/CompanyKycPage'))
 export const adminSettings = page(() => import('@/pages/admin/SettingsPage'))
 export const adminRateApi = page(() => import('@/pages/admin/RateApiPage'))
 

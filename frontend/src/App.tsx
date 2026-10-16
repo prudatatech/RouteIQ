@@ -14,7 +14,7 @@ import LandingPage from '@/pages/LandingPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
-  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminAudit, money, invoicePage, adminSettings, adminRateApi, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, vendorInvoices,
+  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminAudit, money, invoicePage, adminSettings, adminRateApi, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, companyKyc, vendorInvoices,
   vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -49,6 +49,7 @@ const OrganisationPage = adminOrganisation.Component
 const PlatformOrganisationsPage = platformOrganisations.Component
 const RegisterCompanyPage = registerCompany.Component
 const WaitingForApprovalPage = waitingForApproval.Component
+const CompanyKycPage = companyKyc.Component
 const VendorInvoicesPage = vendorInvoices.Component
 const ReturnTripsPage = returnTrips.Component
 const ShipmentsPage = shipments.Component
@@ -212,6 +213,7 @@ export default function App() {
           {/* A logistics company registers (after signing up or in) and waits for the platform to approve it */}
           <Route path="/register-company" element={<LazyRoute><PrivateRoute><RegisterCompanyPage /></PrivateRoute></LazyRoute>} />
           <Route path="/waiting-for-approval" element={<LazyRoute><PrivateRoute><WaitingForApprovalPage /></PrivateRoute></LazyRoute>} />
+          <Route path="/company/kyc" element={<LazyRoute><PrivateRoute><CompanyKycPage /></PrivateRoute></LazyRoute>} />
           <Route path="/track" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
           <Route path="/track/:trackingId" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
           {/* Public mobile GPS tracking page — no auth needed */}

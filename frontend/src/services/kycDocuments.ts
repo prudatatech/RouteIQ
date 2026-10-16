@@ -1,5 +1,5 @@
 import { supabase } from '@/services/supabase'
-import { peopleAPI, vendorAPI } from '@/services/api'
+import { orgAPI, peopleAPI, vendorAPI } from '@/services/api'
 import { errorMessage } from '@/utils/display'
 
 const PUBLIC_URL_MARKER = '/storage/v1/object/public/kyc_documents/'
@@ -13,6 +13,25 @@ export async function uploadKycDocument(key: string, file: File): Promise<string
   let upload: { path: string; token: string }
   try {
     upload = await vendorAPI.kycUploadUrl({ key, content_type: file.type, size: file.size })
+  } catch (err) {
+    throw new Error(errorMessage(err, 'We could not start the upload. Try again.'))
+  }
+  const { error } = await supabase.storage
+    .from('kyc_documents')
+    .uploadToSignedUrl(upload.path, upload.token, file, { contentType: file.type })
+  if (error) throw new Error('We could not upload the document. Try again.')
+  return upload.path
+}
+
+/**
+ * Uploads a logistic company's KYC document through a signed upload URL from the
+ * backend, which picks the path in the company's own folder. Returns the storage
+ * path to save with saveKycDocuments.
+ */
+export async function uploadOrgKycDocument(key: string, file: File): Promise<string> {
+  let upload: { path: string; token: string }
+  try {
+    upload = await orgAPI.kycUploadUrl({ key, content_type: file.type, size: file.size })
   } catch (err) {
     throw new Error(errorMessage(err, 'We could not start the upload. Try again.'))
   }

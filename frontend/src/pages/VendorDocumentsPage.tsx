@@ -11,7 +11,8 @@ import { getKycDocumentUrl, uploadKycDocument } from '@/services/kycDocuments'
 import AddressPicker from '@/components/map/AddressPicker'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import type { IfscDetails } from '@/services/api'
-import { Alert, Button, Card, Checkbox, ErrorState, FileButton, IfscField, BankBranchFields, Input, Page, PageHeader, Select, Spinner, StatusPill, useConfirm } from '@/components/ui'
+import { Alert, Button, Card, Checkbox, ErrorState, FileButton, IfscField, BankBranchFields, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
+import { DocUploadField } from '@/components/kyc/DocUploadField'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { gstinError } from '@/utils/gstin'
@@ -723,41 +724,6 @@ function Stepper({ current, onSelect }: { current: number; onSelect: (i: number)
         </li>
       ))}
     </ol>
-  )
-}
-
-function DocUploadField({ label, hint, path, issue, busy, onUpload, onRemove, onView }: {
-  label: string
-  hint?: string
-  path?: string
-  /** Set when a reviewer flagged this specific document; re-uploading clears it. */
-  issue?: string
-  busy?: boolean
-  onUpload: (file: File) => void
-  onRemove: () => void
-  onView: () => void
-}) {
-  return (
-    <div className={`rounded-card border p-4 ${issue ? 'border-warning bg-warning/5' : 'border-border'}`}>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-text">{label}</p>
-        {issue && <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>}
-      </div>
-      {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
-      {issue && <p className="mt-1 text-xs text-warning">{issue}</p>}
-      <div className="mt-3 flex items-center gap-2">
-        {path ? (
-          <>
-            <Button type="button" variant="secondary" size="sm" onClick={onView}>View</Button>
-            <Button type="button" variant="ghost" size="sm" onClick={onRemove}>Remove</Button>
-          </>
-        ) : (
-          <FileButton variant="link" icon={<Upload size={14} />} accept=".pdf,.jpg,.jpeg,.png" disabled={busy} onFile={onUpload}>
-            {busy ? 'Uploading…' : 'Upload'}
-          </FileButton>
-        )}
-      </div>
-    </div>
   )
 }
 
