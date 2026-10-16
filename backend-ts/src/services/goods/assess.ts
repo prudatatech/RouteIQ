@@ -27,6 +27,8 @@ const place = z.object({
   lat: z.number().min(-90).max(90).nullish(),
   lng: z.number().min(-180).max(180).nullish(),
   date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').nullish(),
+  place_id: text(200),
+  address: text(500),
 });
 const item = z.object({
   product_name: text(200),
@@ -54,6 +56,8 @@ export function toNestedDraft(body: any): unknown {
     lat: body[`${side}_lat`] ?? null,
     lng: body[`${side}_lng`] ?? null,
     date: body[`${side}_date`] ?? null,
+    place_id: body[`${side}_place_id`] ?? null,
+    address: body[`${side}_address`] ?? null,
   });
   return { ...body, pickup: place('pickup'), delivery: place('delivery') };
 }

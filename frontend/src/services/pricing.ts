@@ -29,6 +29,7 @@ export interface QuoteOk {
   factors: QuoteFactor[]
   notes: string[]
   basis?: FreightEstimate['basis']
+  market_benchmark?: FreightEstimate['market_benchmark']
 }
 
 export type QuoteResponse = QuoteOk | { status: 'unavailable'; reason: string; notes: string[] }

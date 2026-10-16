@@ -5,12 +5,16 @@ import type { DistanceSource } from './distance.service';
 import { marketFreightService, resolveFreightVehicle } from './goods/freight';
 import type { Estimate } from './goods/types';
 import { isValidPoint, LatLng } from './geo';
+import { settings } from '../core/config';
+import { marketPricingProvider, MarketPricingResult } from './pricing/market-pricing.provider';
+
+const inr = (n: number) => `₹${Math.round(Math.abs(n)).toLocaleString('en-IN')}`;
 
 const SETTING_KEY_RE = /^(rate_per_km(_[a-z0-9_]+)?|load_multiplier_[a-z0-9_]+|min_charge|per_kg_surcharge|fuel_price_per_litre|demand_adjustment_max_pct|price_range_pct|weather_surcharge_pct)$/;
 
 export interface QuoteInput {
-  pickup: LatLng & { label?: string | null };
-  drop: LatLng & { label?: string | null };
+  pickup: LatLng & { label?: string | null; placeId?: string };
+  drop: LatLng & { label?: string | null; placeId?: string };
   weight_kg: number;
   vehicle_type?: string | null;
   load_type?: string | null;
@@ -42,6 +46,7 @@ export interface QuoteResult {
   factors: QuoteFactor[];
   notes: string[];
   basis?: Estimate['basis'];
+  market_benchmark?: MarketPricingResult | null;
   generated_at: string;
 }
 
@@ -139,6 +144,49 @@ export const pricingService = {
         detail: `${basis.vehicle_name}: ${decimal(km)} km × ₹${decimal(basis.min_per_km)}–₹${decimal(basis.max_per_km)} per km. Midpoint ₹${decimal(basis.midpoint_per_km)} per km.`, amount_inr: estimate.suggested }],
       notes, generated_at: new Date().toISOString(),
     };
+
+    // 8. WheelsEye Market Benchmark (Zero-coupling: skipped if disabled, in tests, or on any external error)
+    if (settings.WHEELSEYE_MARKET_BENCHMARK_ENABLED && settings.APP_ENV !== 'test') {
+      try {
+        const benchmark = await marketPricingProvider.getMarketBenchmark({
+          pickup: input.pickup,
+          drop: input.drop,
+          weight_kg: input.weight_kg,
+          load_type: input.load_type,
+          vehicle_type: input.vehicle_type
+        });
+        if (benchmark && benchmark.available) {
+          result.market_benchmark = benchmark;
+          if (benchmark.mode === 'ftl' && benchmark.ftl) {
+            result.suggested = benchmark.ftl.lowestPriceInr;
+            result.low = benchmark.ftl.lowestPriceInr;
+            result.high = benchmark.ftl.highestPriceInr;
+            result.per_km_suggested = km > 0 ? Math.round((result.suggested / km) * 100) / 100 : 0;
+            result.factors.push({
+              key: 'market_benchmark',
+              code: 'wheelseye_ftl',
+              label: 'WheelsEye Market Benchmark',
+              detail: `Live market rate for ${benchmark.ftl.recommendedVehicle} is ${inr(benchmark.ftl.lowestPriceInr)} (range ${inr(benchmark.ftl.lowestPriceInr)} - ${inr(benchmark.ftl.highestPriceInr)}).`,
+              amount_inr: 0
+            });
+          } else if (benchmark.mode === 'ptl' && benchmark.ptl) {
+            result.suggested = benchmark.ptl.estimatedMarketPriceInr;
+            result.low = Math.round(result.suggested * 0.95);
+            result.high = Math.round(result.suggested * 1.05);
+            result.per_km_suggested = km > 0 ? Math.round((result.suggested / km) * 100) / 100 : 0;
+            result.factors.push({
+              key: 'market_benchmark',
+              code: 'wheelseye_ptl',
+              label: 'WheelsEye Market Benchmark (PTL)',
+              detail: `Market pro-rata freight benchmark is ~${inr(benchmark.ptl.derivedRatePerKgInr)}/kg based on ${benchmark.ptl.benchmarkTruck} (${inr(benchmark.ptl.benchmarkTruckPriceInr)}).`,
+              amount_inr: 0
+            });
+          }
+        }
+      } catch (err: any) {
+        console.warn('[pricing] WheelsEye market benchmark skipped:', err.message);
+      }
+    }
 
     if (ctx.persist === false) return result;
 

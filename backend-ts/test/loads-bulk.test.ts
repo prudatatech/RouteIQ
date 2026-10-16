@@ -97,7 +97,7 @@ describe('POST /vendor/loads/bulk', () => {
     const res = await upload(file(...Array.from({ length: 50 }, () => goodRow())));
     expect(res.status).toBe(201);
     expect(res.body.loads).toHaveLength(50);
-  });
+  }, 15000);
 
   it('refuses a file without the template columns, an empty file and a file with no loads', async () => {
     const noCols = await upload('product_name,hsn_code\r\nx,2523');

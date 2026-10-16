@@ -29,7 +29,10 @@ export const useOrgStore = create<OrgState>()((set, get) => ({
     writeStoredOrgId(id)
     set({ activeOrgId: id })
   },
-  reset: () => set({ memberships: [], activeOrgId: null, loaded: true }),
+  reset: () => {
+    writeStoredOrgId(null)
+    set({ memberships: [], activeOrgId: null, loaded: true })
+  },
 }))
 
 /** The active membership (org and the user's role in it), or null. */

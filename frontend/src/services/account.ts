@@ -18,15 +18,15 @@ const pendingAccounts = new Map<string, Promise<Account>>()
 
 /** Session restoration and auth events can arrive together. Share only the in-flight
  * lookup; later requests still read fresh roles and profile state from the database. */
-export function loadAccount(userId: string): Promise<Account> {
+export function loadAccount(userId: string, email?: string): Promise<Account> {
   const pending = pendingAccounts.get(userId)
   if (pending) return pending
-  const request = readAccount(userId).finally(() => pendingAccounts.delete(userId))
+  const request = readAccount(userId, email).finally(() => pendingAccounts.delete(userId))
   pendingAccounts.set(userId, request)
   return request
 }
 
-async function readAccount(userId: string): Promise<Account> {
+async function readAccount(userId: string, email?: string): Promise<Account> {
   const [user, vendor, partner] = await Promise.all([
     supabase.from('users').select('role').eq('id', userId).maybeSingle(),
     supabase.from('vendor_profiles').select('id').eq('id', userId).maybeSingle(),
@@ -35,9 +35,28 @@ async function readAccount(userId: string): Promise<Account> {
   const failed = user.error || vendor.error || partner.error
   if (failed) throw failed
 
-  const userRole: string | null = user.data?.role ?? null
+  let userRole: string | null = user.data?.role ?? null
   const hasVendorProfile = !!vendor.data
-  const tplPartnerId: string | null = partner.data?.id ?? null
+  let tplPartnerId: string | null = partner.data?.id ?? null
+
+  if (!tplPartnerId) {
+    try {
+      const { tplAPI } = await import('./api')
+      let userEmail = email
+      if (!userEmail) {
+        const session = (await supabase.auth.getSession?.())?.data?.session
+        userEmail = session?.user?.email
+      }
+      const checkRes = await tplAPI.checkPartner({ user_id: userId, email: userEmail })
+      if (checkRes?.id) {
+        tplPartnerId = checkRes.id
+        userRole = 'vendor'
+      }
+    } catch {
+      // Backend check is best-effort fallback
+    }
+  }
+
   const isStaff = userRole === 'admin' || userRole === 'superadmin' || userRole === 'manager'
   const role = !isStaff && (hasVendorProfile || tplPartnerId) ? 'vendor' : userRole
   return { role, hasVendorProfile, tplPartnerId }

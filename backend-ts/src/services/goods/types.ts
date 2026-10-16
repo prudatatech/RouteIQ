@@ -29,6 +29,8 @@ export interface DraftPlace {
   lng?: number | null;
   /** YYYY-MM-DD */
   date?: string | null;
+  place_id?: string | null;
+  address?: string | null;
 }
 
 export interface LoadDraft {
@@ -118,6 +120,8 @@ export interface Estimate {
     load_type: LoadType | null;
     rates: Array<{ key: string; name: string; payload: string; min_per_km: number; max_per_km: number }>;
   };
+  /** The WheelsEye live market benchmark, when the feature flag is on and it answered; see pricing.service.ts. */
+  market_benchmark?: any;
 }
 
 export interface LoadAssessment {

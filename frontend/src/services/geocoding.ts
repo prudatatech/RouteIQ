@@ -7,11 +7,15 @@ const ARCGIS_GEOCODER = 'https://geocode.arcgis.com/arcgis/rest/services/World/G
 /** Address parts the geocoder returns, used to fill city/state/PIN fields. */
 const ADDRESS_FIELDS = 'Place_addr,Neighborhood,City,Subregion,District,Region,Postal'
 
+import { wheelseyeAPI } from './api'
+
 export interface PlaceSuggestion {
   id: string
   text: string
   place_name: string
   magicKey: string
+  placeId?: string
+  source?: string
 }
 
 export interface AddressParts {
@@ -28,6 +32,7 @@ export interface ResolvedPlace {
   lng: number
   /** Present when the geocoder returned address details. */
   parts?: AddressParts
+  placeId?: string
 }
 
 interface ArcgisAttributes {
@@ -60,8 +65,8 @@ async function getJson(url: string, signal?: AbortSignal) {
 }
 
 /**
- * Up to six suggestions for a partial address; empty for queries under 3 characters.
- * `near` ranks places close to that point first (for example the user's location).
+ * Suggestions for a partial address (India).
+ * Queries WheelsEye location intelligence (Google Places) first, falling back to ArcGIS.
  */
 export async function suggestPlaces(
   query: string,
@@ -69,6 +74,28 @@ export async function suggestPlaces(
   near?: { lat: number; lng: number } | null,
 ): Promise<PlaceSuggestion[]> {
   if (!query || query.trim().length < 3) return []
+
+  // 1. Primary: WheelsEye location autocomplete (Google Places backed)
+  try {
+    const list = await wheelseyeAPI.autocomplete(query.trim())
+    if (Array.isArray(list) && list.length > 0) {
+      return list.map((s: { placeId?: string; addressLineOne?: string; addressLineTwo?: string; addressLineThree?: string }) => {
+        const full = [s.addressLineOne, s.addressLineTwo, s.addressLineThree].filter(Boolean).join(', ')
+        return {
+          id: s.placeId || full,
+          text: s.addressLineOne || full.split(',')[0],
+          place_name: full,
+          magicKey: s.placeId || '',
+          placeId: s.placeId,
+          source: 'wheelseye',
+        }
+      })
+    }
+  } catch {
+    // Fall back to ArcGIS
+  }
+
+  // 2. Fallback: ArcGIS World Geocoding
   const bias = near ? `&location=${near.lng},${near.lat}` : ''
   const data = await getJson(
     `${ARCGIS_GEOCODER}/suggest?text=${encodeURIComponent(query.trim())}&countryCode=IND&maxSuggestions=6${bias}&f=json`,
@@ -84,6 +111,32 @@ export async function suggestPlaces(
 
 /** Coordinates and address parts for a chosen suggestion, or null when the geocoder has no match. */
 export async function resolvePlace(suggestion: PlaceSuggestion): Promise<ResolvedPlace | null> {
+  // 1. Resolve WheelsEye suggestion if placeId is present
+  if (suggestion.placeId) {
+    try {
+      const res = await wheelseyeAPI.resolve(suggestion.placeId, suggestion.place_name)
+      if (res && typeof res.lat === 'number' && typeof res.lng === 'number') {
+        const parts: AddressParts = {
+          locality: res.buildingName || null,
+          city: res.buildingName || null,
+          district: null,
+          state: null,
+          pincode: res.pincode || null,
+        }
+        return {
+          address: res.addressLineOne || suggestion.place_name,
+          lat: res.lat,
+          lng: res.lng,
+          parts,
+          placeId: suggestion.placeId,
+        }
+      }
+    } catch {
+      // Fall back to ArcGIS
+    }
+  }
+
+  // 2. Fallback: ArcGIS Candidate Lookup
   const lookup = async (params: string) => {
     const data = await getJson(`${ARCGIS_GEOCODER}/findAddressCandidates?${params}&outFields=${ADDRESS_FIELDS}&countryCode=IND&f=json`)
     return data.candidates?.[0] as { location?: { x: number; y: number }; attributes?: ArcgisAttributes } | undefined
@@ -97,6 +150,7 @@ export async function resolvePlace(suggestion: PlaceSuggestion): Promise<Resolve
     lat: candidate.location.y,
     lng: candidate.location.x,
     parts: toParts(candidate.attributes),
+    placeId: suggestion.placeId,
   }
 }
 

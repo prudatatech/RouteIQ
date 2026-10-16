@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
 import { testApp } from './support/test-app';
@@ -164,11 +164,11 @@ describe('staff decisions on partners', () => {
   });
 
   describe('approval email', () => {
-    let send: ReturnType<typeof vi.spyOn<typeof emailService, 'send'>>;
+    let send: MockInstance;
     beforeEach(() => { send = vi.spyOn(emailService, 'send').mockResolvedValue(true); });
 
     it('emails a newly approved partner a link to set up their account', async () => {
-      reset('pending');
+      reset('pending', { user_id: null });
       expect((await act(`approve/${PID}`)).status).toBe(200);
       expect(send).toHaveBeenCalledTimes(1);
       const [to, subject, html] = send.mock.calls[0];
@@ -176,6 +176,12 @@ describe('staff decisions on partners', () => {
       expect(subject).toMatch(/approved/);
       expect(html).toContain('/3pl/onboard/setup?email=ops%40acme.in');
       expect(html).toContain('Acme 3PL');
+    });
+
+    it('does not email quick-onboarded partners who already have credentials', async () => {
+      reset('pending');  // default fixture has user_id: 'partner-user'
+      expect((await act(`approve/${PID}`)).status).toBe(200);
+      expect(send).not.toHaveBeenCalled();
     });
 
     it('sends nothing for approved profile changes, or when the partner cannot be approved', async () => {
@@ -188,7 +194,7 @@ describe('staff decisions on partners', () => {
 
     it('still approves when the email does not go out', async () => {
       send.mockResolvedValueOnce(false);
-      reset('pending');
+      reset('pending', { user_id: null });
       expect((await act(`approve/${PID}`)).status).toBe(200);
       expect(supabaseMock.rows('tpl_partners')[0].status).toBe('active');
     });

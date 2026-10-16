@@ -262,7 +262,7 @@ export interface PhoneClearance { releaseFrom: { holder: PersonRow; leftOn: stri
  * A number held by someone who left more than 90 days ago is allowed; the
  * caller then releases it from the old record with `releasePhone`.
  */
-export async function assertPhoneAvailable(phone: string, exceptUserId: string | null): Promise<PhoneClearance> {
+export async function assertPhoneAvailable(phone: string, exceptUserId: string | null, allowImmediateRelease = false): Promise<PhoneClearance> {
   const today = todayKey();
   const { data: holders, error } = await supabase.from('users').select('id, email, full_name, role, phone, is_active, status, last_login, created_at, updated_at').eq('phone', phone);
   if (error) throw new Error(`Failed to check phone: ${error.message}`);
@@ -271,11 +271,23 @@ export async function assertPhoneAvailable(phone: string, exceptUserId: string |
   for (const holder of (holders ?? []) as PersonRow[]) {
     if (holder.id === exceptUserId) continue;
     // A number another company's person holds is taken, and says no more than that: never who they are, never theirs to release
-    if (inCompany && !inCompany.has(holder.id)) throw new HttpError(409, 'This phone number is already registered to another account');
-    if (holder.status !== 'inactive') throw await duplicateError(`This phone number already belongs to ${holder.full_name ?? 'another person'}`, holder, 'This phone number is already registered to someone else');
+    if (inCompany && !inCompany.has(holder.id)) {
+      if (!allowImmediateRelease) throw new HttpError(409, 'This phone number is already registered to another account');
+    }
+    if (holder.status !== 'inactive') {
+      if (allowImmediateRelease) {
+        releaseFrom = { holder, leftOn: today };
+        continue;
+      }
+      throw await duplicateError(`This phone number already belongs to ${holder.full_name ?? 'another person'}`, holder, 'This phone number is already registered to someone else');
+    }
     const left = await leftOn(holder);
     const until = addDays(left, RECYCLE_BLOCK_DAYS);
     if (until > today) {
+      if (allowImmediateRelease) {
+        releaseFrom = { holder, leftOn: left };
+        continue;
+      }
       throw await duplicateError(`This number belonged to ${holder.full_name ?? 'someone'}, who left on ${left}. It can be reused after ${until}`, holder, `This number was used by someone else recently. It can be reused after ${until}`);
     }
     releaseFrom = { holder, leftOn: left };
@@ -287,7 +299,7 @@ export async function assertPhoneAvailable(phone: string, exceptUserId: string |
     if (row.user_id === exceptUserId || !row.to_at || row.user_id === releaseFrom?.holder.id) continue;
     const stopped = new Date(row.to_at).toISOString().slice(0, 10);
     const until = addDays(stopped, RECYCLE_BLOCK_DAYS);
-    if (until > today) throw new HttpError(409, `This number was used by another person until ${stopped}. It can be reused after ${until}`);
+    if (until > today && !allowImmediateRelease) throw new HttpError(409, `This number was used by another person until ${stopped}. It can be reused after ${until}`);
   }
   return { releaseFrom };
 }

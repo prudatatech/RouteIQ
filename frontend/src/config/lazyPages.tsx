@@ -48,6 +48,7 @@ export const platformOrganisations = page(() => import('@/pages/platform/Organis
 export const registerCompany = page(() => import('@/pages/RegisterCompanyPage'))
 export const waitingForApproval = page(() => import('@/pages/WaitingForApprovalPage'))
 export const adminSettings = page(() => import('@/pages/admin/SettingsPage'))
+export const adminRateApi = page(() => import('@/pages/admin/RateApiPage'))
 
 // Behind VendorLayout
 export const vendorLoads = page(() => import('@/pages/VendorLoadsPage'))
@@ -95,6 +96,7 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/admin/kyc': adminKyc.preload,
   '/admin/audit': adminAudit.preload,
   '/admin/settings': adminSettings.preload,
+  '/admin/settings/rate-api': adminRateApi.preload,
   '/admin/organisation': adminOrganisation.preload,
   '/platform/organisations': platformOrganisations.preload,
   '/track': customerTracking.preload,

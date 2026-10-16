@@ -39,8 +39,9 @@ export function curatedHsnRows(): Map<string, Partial<HsnRow>> {
   const sql = fs.readFileSync(path.join(ROOT, 'supabase/migrations/20261003010000_goods_master.sql'), 'utf8');
   const body = sql.slice(sql.indexOf('INSERT INTO public.hsn_codes'));
   const out = new Map<string, Partial<HsnRow>>();
-  for (const line of body.split('\n')) {
-    const m = line.match(/^\s*\((.*)\),?$/);
+  for (const rawLine of body.split('\n')) {
+    const line = rawLine.trim();
+    const m = line.match(/^\((.*)\),?$/);
     if (!m) continue;
     const f = sqlFields(m[1]);
     if (f.length < 13 || !/^'\d+'$/.test(f[0])) continue;

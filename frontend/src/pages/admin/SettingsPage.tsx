@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
+import { Zap } from 'lucide-react'
 import { dispatchAPI, financeAPI } from '@/services/api'
 import { Button, Card, CardBody, CardHeader, DetailList, ErrorState, Input, Page, PageHeader, Skeleton } from '@/components/ui'
 import { errorMessage, formatRupees } from '@/utils/display'
@@ -178,6 +180,31 @@ export default function SettingsPage() {
                   items={[{ label: 'Rate per km', value: settings.data?.rate_per_km != null ? formatRupees(settings.data.rate_per_km) : 'Not set' }]}
                 />
               )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Rate API (WheelsEye)"
+              description="Live external market rate engine & token management."
+              actions={
+                <Link to="/admin/settings/rate-api">
+                  <Button variant="secondary" size="sm" icon={<Zap size={14} className="text-brand" />}>
+                    Rate API Page
+                  </Button>
+                </Link>
+              }
+            />
+            <CardBody>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm">
+                <div className="space-y-1">
+                  <div className="font-medium text-text">Live Market Benchmark Credentials</div>
+                  <div className="text-xs text-muted">Update expiring session tokens, resolve HTTP 429 rate limit issues, and test live lane pricing.</div>
+                </div>
+                <Link to="/admin/settings/rate-api" className="shrink-0">
+                  <Button variant="secondary" size="sm">Configure</Button>
+                </Link>
+              </div>
             </CardBody>
           </Card>
         </div>

@@ -55,6 +55,19 @@ export const settings = {
   TOMTOM_API_KEY: env('TOMTOM_API_KEY'),
   MAPBOX_ACCESS_TOKEN: env('MAPBOX_ACCESS_TOKEN'),
 
+  // WheelsEye Freight Market Benchmark
+  // No committed default: a real WheelsEye session (token, user_code, session-id, device-id together),
+  // set only via infra secrets or the Rate API settings page (system_settings), never hardcoded in
+  // source. Off by default — unofficial, reverse-engineered endpoint, not a documented partner API;
+  // enable deliberately per stage. The settings page is the mechanism meant for refreshing an expired
+  // session without a redeploy; these env vars are just the floor under it so the feature isn't
+  // completely dead until someone opens that page for the first time.
+  WHEELSEYE_TOKEN: env('WHEELSEYE_TOKEN'),
+  WHEELSEYE_USER_CODE: env('WHEELSEYE_USER_CODE'),
+  WHEELSEYE_SESSION_ID: env('WHEELSEYE_SESSION_ID'),
+  WHEELSEYE_DEVICE_ID: env('WHEELSEYE_DEVICE_ID'),
+  WHEELSEYE_MARKET_BENCHMARK_ENABLED: envBool('WHEELSEYE_MARKET_BENCHMARK_ENABLED', false),
+
   // IFSC branch lookup (Razorpay's free public API, no key)
   IFSC_LOOKUP_BASE_URL: env('IFSC_LOOKUP_BASE_URL', 'https://ifsc.razorpay.com'),
 

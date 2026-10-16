@@ -126,15 +126,18 @@ export default function TplOnboardingPage() {
       return () => { isMounted = false; authListener.subscription.unsubscribe() }
     }
 
-    // First visit (not an OAuth return): sign out any stale session so the
-    // user always authenticates fresh with Google for 3PL onboarding.
-    const startFreshOAuth = async () => {
-      await supabase.auth.signOut().catch(() => {})
+    // First visit (not an OAuth return): check if user already has an active session
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
       if (!isMounted) return
-      setSession(null)
-      setUserLoading(false)
-    }
-    startFreshOAuth()
+      if (currentSession?.user) {
+        setSession(currentSession)
+        checkExistingPartner(currentSession)
+      } else {
+        setUserLoading(false)
+      }
+    }).catch(() => {
+      if (isMounted) setUserLoading(false)
+    })
 
     return () => { isMounted = false }
   }, [navigate])

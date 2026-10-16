@@ -123,10 +123,14 @@ export default function ReviewStep({ draft, assist, assistLoading, vehicles, onE
         </dl>
         {handling.length > 0 && <p className="flex flex-wrap items-center gap-2 text-sm text-muted">Handling: <Chips items={handling} /></p>}
         {range && assist?.estimate ? (
-          <p className="text-sm text-text" data-testid="review-pricing">
-            Recommended freight: <span className="font-semibold">{range}</span> <span className="text-muted">({Math.round(assist.estimate.distance_km).toLocaleString('en-IN')} km)</span>.
-            Logistic companies can book your load at any price in this range.
-          </p>
+          <div className="space-y-1 text-sm text-text" data-testid="review-pricing">
+
+            <p className="text-xs text-muted">
+              {assist.estimate.market_benchmark?.available
+                ? 'Trucks can be assigned instantly in this verified market range.'
+                : 'Logistic companies can book your load at any price in this range.'}
+            </p>
+          </div>
         ) : (
           <p className="text-sm text-muted" data-testid="review-pricing">We will share the range once a logistic company reviews the trip.</p>
         )}

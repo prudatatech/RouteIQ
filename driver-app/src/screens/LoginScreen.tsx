@@ -52,7 +52,7 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     setLoading(true);
     setError('');
     try {
-      const result = await api.sendOTP(cleaned);
+      const result = (await api.sendOTP(cleaned)) as { phone?: string };
       setMaskedPhone(result.phone || `+91******${cleaned.slice(-4)}`);
       setCountdown(RESEND_SECONDS);
       setStep('otp');
@@ -337,5 +337,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   otpInputFilled: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
-  resend: { alignItems: 'center', minHeight: size.control, justifyContent: 'center' },
+  resend: { alignItems: 'center', minHeight: size.control, justifyContent: 'center', gap: space[2] },
 });

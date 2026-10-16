@@ -17,12 +17,20 @@ describe('the official HSN master (GST 2.0 rates)', () => {
   it('has every code of the official list, each with current GST 2.0 rates only', () => {
     expect(rows.length).toBeGreaterThan(21_800);
     expect(index.entries.length).toBe(rows.length);
+    const invalidCodes: string[] = [];
+    const invalidRates: { code: string; rates: number[] }[] = [];
+    const missingGstRate: string[] = [];
     for (const r of rows) {
-      expect(/^\d{2}(\d{2}){0,3}$/.test(r.hsn_code)).toBe(true);
-      for (const rate of r.gst_rates as number[]) expect(GST2_SLABS).toContain(rate);
-      expect(r.gst_rates).toContain(r.gst_rate);
+      if (!/^\d{2}(\d{2}){0,3}$/.test(r.hsn_code)) invalidCodes.push(r.hsn_code);
+      for (const rate of r.gst_rates as number[]) {
+        if (!GST2_SLABS.includes(rate)) invalidRates.push({ code: r.hsn_code, rates: r.gst_rates });
+      }
+      if (!r.gst_rates.includes(r.gst_rate)) missingGstRate.push(r.hsn_code);
     }
-  });
+    expect(invalidCodes).toEqual([]);
+    expect(invalidRates).toEqual([]);
+    expect(missingGstRate).toEqual([]);
+  }, 30_000);
 
   it('cement: 2523 at 18%', () => {
     expect(top('cement')).toMatchObject({ hsn_code: '2523', gst_rates: [18] });

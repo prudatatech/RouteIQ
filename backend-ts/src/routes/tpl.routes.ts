@@ -8,15 +8,16 @@
 import { withWarnings } from '../services/people-common';
 import { Router, Request, Response, NextFunction } from 'express';
 import { tplService } from '../services/tpl.service';
-import { optionalAuth, requireAuth, requireRole } from '../core/auth';
+import { optionalAuth, requireAuth, requireRole, invalidateRoleCache } from '../core/auth';
 import { HttpError, sendError } from '../core/errors';
-import { uuidParam } from '../core/validate';
+import { uuidParam, isUuid } from '../core/validate';
 import { consumeRateLimit, rateLimitByIp, rateLimitByUser } from '../core/rate-limit';
 import { settings } from '../core/config';
 import { attachOrgContext, currentOrgContext } from '../core/org-context';
 import { isStaff } from '../core/ownership';
 import { partnerRowIdsOf, withoutPrivateDetails } from '../services/tpl-affiliation';
 import { supabase } from '../core/supabase';
+import { findAuthUserByEmail } from '../core/auth-users';
 
 const router = Router();
 
@@ -109,14 +110,27 @@ router.post('/check-partner', rateLimitByIp('tpl-check', 30, 60), optionalAuth, 
     if (email) {
       const { data } = await supabase
         .from('tpl_partners')
-        .select('id, status, user_id')
+        .select('id, status, user_id, company_name')
         .ilike('email', email)
         .maybeSingle();
       if (data?.id) {
-        // Link user_id if not yet set
-        if (userId && data.user_id !== userId) {
-          await supabase
-            .from('tpl_partners').update({ user_id: userId }).eq('id', data.id);
+        const targetUserId = userId || (await findAuthUserByEmail(email))?.id;
+        if (targetUserId) {
+          if (data.user_id !== targetUserId) {
+            await supabase
+              .from('tpl_partners').update({ user_id: targetUserId }).eq('id', data.id);
+          }
+          await supabase.from('users').upsert({
+            id: targetUserId,
+            email,
+            full_name: (data as any)?.company_name || (email ? email.split('@')[0] : '3PL Partner'),
+            role: 'vendor',
+            is_active: true,
+          }, { onConflict: 'id' });
+          if (isUuid(targetUserId)) {
+            await supabase.auth.admin.updateUserById(targetUserId, { app_metadata: { role: 'vendor' } });
+            invalidateRoleCache(targetUserId);
+          }
         }
         res.json({ id: data.id, status: data.status });
         return;
@@ -129,7 +143,7 @@ router.post('/check-partner', rateLimitByIp('tpl-check', 30, 60), optionalAuth, 
 });
 
 // POST /api/v1/tpl/onboard
-router.post('/onboard', rateLimitByIp('tpl-onboard', 5, 60 * 60), async (req, res) => {
+router.post('/onboard', rateLimitByIp('tpl-onboard', 20, 60 * 60), async (req, res) => {
   try {
     const { partner, warnings } = await tplService.onboard(req.body);
     res.json({ success: true, data: { id: partner.id, custom_id: partner.custom_id, status: partner.status }, ...withWarnings({}, warnings) });

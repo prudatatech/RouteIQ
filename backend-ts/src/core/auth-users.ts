@@ -10,12 +10,13 @@ import { supabase } from './supabase';
  * Pages through in large batches (bounded) until the email is found.
  */
 export async function findAuthUserByEmail(email: string): Promise<{ id: string } | null> {
+  const normalized = email.toLowerCase().trim();
   const perPage = 1000;
   const maxPages = 50; // up to 50,000 users
   for (let page = 1; page <= maxPages; page++) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
     if (error || !data?.users?.length) break;
-    const match = data.users.find((u: any) => u.email === email);
+    const match = data.users.find((u: any) => u.email?.toLowerCase().trim() === normalized);
     if (match) return { id: match.id };
     if (data.users.length < perPage) break; // last page
   }

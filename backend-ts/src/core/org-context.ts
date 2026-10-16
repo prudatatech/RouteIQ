@@ -176,7 +176,19 @@ export async function attachOrgContext(req: Request, userId: string, role: strin
   let ctx = none;
   if (role !== 'customer' && (await orgsConfigured())) {
     const memberships = await loadMemberships(userId);
-    const active = pickActive(memberships, requestedOrg(req));
+    let active: Membership | null = null;
+    const requested = requestedOrg(req);
+    try {
+      active = pickActive(memberships, requested);
+    } catch (err) {
+      const url = (req.originalUrl || req.url || '').split('?')[0];
+      const isMineEndpoint = url.includes('/orgs/mine');
+      if (isMineEndpoint && err instanceof HttpError && err.status === 403) {
+        active = pickActive(memberships);
+      } else {
+        throw err;
+      }
+    }
     ctx = { appRole: appRoleFor(active, role), configured: true, org: active?.org ?? null, role: active?.role ?? null, memberships, isPlatformAdmin: isPlatformAdminOf(memberships) };
   }
   req.org = ctx.org;

@@ -149,6 +149,9 @@ export interface LoadDraft {
   temp_choice: TempChoice
   /** Load-level handling only (do not stack, this side up, ODC). Fragile and hazmat come from the products. */
   special_handling: SpecialHandling[]
+  pickup_place_id?: string | null
+  delivery_place_id?: string | null
+  budget_inr?: number | null
 
   /** Set on a repost: the load this one copies. */
   reposted_from: string | null
@@ -188,6 +191,7 @@ export interface LoadPayload {
   pickup_slot: PickupSlot | null
   pickup_contact_name: string
   pickup_contact_phone: string
+  pickup_place_id?: string | null
 
   delivery_city: string
   delivery_address: string
@@ -195,6 +199,7 @@ export interface LoadPayload {
   delivery_state_code: string | null
   delivery_lat: number | null
   delivery_lng: number | null
+  delivery_place_id?: string | null
   /** Always null since the 2 Oct change: there is no preferred delivery date. */
   delivery_date: string | null
   delivery_contact_name: string | null
@@ -297,6 +302,27 @@ export interface FreightEstimate {
     load_type: LoadType | null
     rates: Array<{ key: string; name: string; payload: string; min_per_km: number; max_per_km: number }>
   }
+  market_benchmark?: {
+    provider: 'wheelseye'
+    mode: 'ftl' | 'ptl'
+    available: boolean
+    lane: { origin: string; destination: string }
+    ftl?: {
+      recommendedVehicle: string
+      lowestPriceInr: number
+      highestPriceInr: number
+      averagePriceInr: number
+      vehicleOptions: Array<{
+        vid?: number; name: string; bodyType: string; tyre: number; lengthFt: number
+        actualPriceInr: number; discountedPriceInr: number; discountPct: number
+        capacityTon: number; remark?: string | null
+      }>
+    }
+    ptl?: {
+      derivedRatePerKgInr: number; estimatedMarketPriceInr: number
+      benchmarkTruck: string; benchmarkTruckPriceInr: number; benchmarkTruckTonnage: number
+    }
+  } | null
 }
 
 export interface AssistResult {
