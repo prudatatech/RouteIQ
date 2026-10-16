@@ -143,6 +143,8 @@ export type VehicleRegistrationState = 'none' | 'pending' | 'approved' | 'reject
 
 export type VehiclePhotoSlot = 'front' | 'side' | 'back' | 'interior' | 'cargo';
 
+export type VehicleDocumentSlot = 'rc' | 'insurance' | 'fitness' | 'permit' | 'puc';
+
 export type VehicleKind = 'truck' | 'van' | 'bike' | 'car';
 
 /** The vehicle a driver registered; only the fields the app shows or sends back. */
@@ -153,11 +155,26 @@ export interface RegisteredVehicle {
   capacity_kg: number | null;
   vehicle_model?: string | null;
   rc_number?: string | null;
+  rc_expiry?: string | null;
+  rc_document_url?: string | null;
   insurance_number?: string | null;
+  insurance_expiry?: string | null;
+  insurance_document_url?: string | null;
+  fitness_certificate_number?: string | null;
+  fitness_expiry?: string | null;
+  fitness_document_url?: string | null;
+  permit_number?: string | null;
+  permit_expiry?: string | null;
+  permit_document_url?: string | null;
+  puc_number?: string | null;
+  puc_expiry?: string | null;
+  puc_document_url?: string | null;
   status: string;
   submitted_at?: string | null;
   reviewed_at?: string | null;
   rejection_reason?: string | null;
+  /** { <slot>: reason }, set by staff while they wait on just those documents (not a full rejection). */
+  document_issues?: Partial<Record<VehicleDocumentSlot, string>> | null;
 }
 
 /** A stored photo; `url` is a short-lived signed link. */
@@ -180,7 +197,15 @@ export interface VehicleRegistrationInput {
   capacity_kg: number;
   vehicle_model?: string;
   rc_number?: string;
+  rc_expiry?: string;
   insurance_number?: string;
+  insurance_expiry?: string;
+  fitness_certificate_number?: string;
+  fitness_expiry?: string;
+  permit_number?: string;
+  permit_expiry?: string;
+  puc_number?: string;
+  puc_expiry?: string;
 }
 
 /** A text message between the driver and dispatch. */
@@ -427,6 +452,19 @@ class ApiClient {
   /** Records an uploaded file as the vehicle's photo for that slot, replacing the old one. */
   async saveVehiclePhoto(vehicleId: string, slot: VehiclePhotoSlot, filePath: string): Promise<VehiclePhotoInfo> {
     return this.request('PUT', `/vehicles/${encodeURIComponent(vehicleId)}/photos/${slot}`, { file_path: filePath });
+  }
+
+  /** A signed URL to upload one vehicle document (PDF, JPG or PNG, up to 10 MB). */
+  async getVehicleDocumentUploadUrl(
+    vehicleId: string,
+    data: { slot: VehicleDocumentSlot; content_type: string; size: number },
+  ): Promise<{ path: string; signed_url: string; token: string }> {
+    return this.request('POST', `/vehicles/${encodeURIComponent(vehicleId)}/documents/upload-url`, data);
+  }
+
+  /** Records an uploaded file as the vehicle's document for that slot; clears any flagged issue on it. */
+  async saveVehicleDocument(vehicleId: string, slot: VehicleDocumentSlot, filePath: string): Promise<{ slot: string; url: string | null; issue_cleared: boolean }> {
+    return this.request('PUT', `/vehicles/${encodeURIComponent(vehicleId)}/documents/${slot}`, { file_path: filePath });
   }
 
   /** The driver's own pay: totals by state, this trip, week and month, trips with their amounts, and payouts. */

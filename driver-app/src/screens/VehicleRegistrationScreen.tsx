@@ -8,12 +8,22 @@
 import React, { useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api, type RegisteredVehicle, type VehicleKind, type VehiclePhotoInfo, type VehiclePhotoSlot } from '../services/api';
+import { api, type RegisteredVehicle, type VehicleDocumentSlot, type VehicleKind, type VehiclePhotoInfo, type VehiclePhotoSlot } from '../services/api';
 import { chooseVehiclePhoto, uploadStagedPhotos } from '../services/vehiclePhotos';
+import { chooseVehicleDocument, uploadStagedDocuments } from '../services/vehicleDocuments';
 import { useTranslation } from '../hooks/useTranslation';
 import PhotoSlots from '../components/vehicle/PhotoSlots';
+import DocumentSlots from '../components/vehicle/DocumentSlots';
 import { Button, Card, Chip, ErrorBanner, ScreenHeader, Text, TextField } from '../components/ui';
 import { colors, space } from '../theme';
+
+const DOCUMENT_URL_FIELD: Record<VehicleDocumentSlot, keyof RegisteredVehicle> = {
+  rc: 'rc_document_url',
+  insurance: 'insurance_document_url',
+  fitness: 'fitness_document_url',
+  permit: 'permit_document_url',
+  puc: 'puc_document_url',
+};
 
 const KINDS: { id: VehicleKind; labelKey: string }[] = [
   { id: 'truck', labelKey: 'vehicle_kind_truck' },
@@ -47,7 +57,11 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
   const [model, setModel] = useState(initial?.vehicle_model ?? '');
   const [rc, setRc] = useState(initial?.rc_number ?? '');
   const [insurance, setInsurance] = useState(initial?.insurance_number ?? '');
+  const [fitness, setFitness] = useState(initial?.fitness_certificate_number ?? '');
+  const [permit, setPermit] = useState(initial?.permit_number ?? '');
+  const [puc, setPuc] = useState(initial?.puc_number ?? '');
   const [staged, setStaged] = useState<Partial<Record<VehiclePhotoSlot, string>>>({});
+  const [stagedDocs, setStagedDocs] = useState<Partial<Record<VehicleDocumentSlot, string>>>({});
   const [errors, setErrors] = useState<{ plate?: string; capacity?: string }>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -56,9 +70,24 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
   const modelRef = useRef<TextInput>(null);
   const rcRef = useRef<TextInput>(null);
   const insuranceRef = useRef<TextInput>(null);
+  const fitnessRef = useRef<TextInput>(null);
+  const permitRef = useRef<TextInput>(null);
+  const pucRef = useRef<TextInput>(null);
 
   const existing: Partial<Record<VehiclePhotoSlot, string | null>> = {};
   for (const p of photos) existing[p.slot] = p.url;
+
+  const existingDocs: Partial<Record<VehicleDocumentSlot, string | null>> = {};
+  for (const slot of ['rc', 'insurance', 'fitness', 'permit', 'puc'] as VehicleDocumentSlot[]) {
+    existingDocs[slot] = (initial?.[DOCUMENT_URL_FIELD[slot]] as string | null | undefined) ?? null;
+  }
+  const documentIssues = initial?.document_issues ?? undefined;
+  const hasDocumentIssues = !!documentIssues && Object.keys(documentIssues).length > 0;
+
+  const addDocument = async (slot: VehicleDocumentSlot) => {
+    const uri = await chooseVehicleDocument(t);
+    if (uri) setStagedDocs((s) => ({ ...s, [slot]: uri }));
+  };
 
   const addPhoto = async (slot: VehiclePhotoSlot) => {
     const uri = await chooseVehiclePhoto(t);
@@ -88,10 +117,17 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
         ...(model.trim() ? { vehicle_model: model.trim() } : {}),
         ...(rc.trim() ? { rc_number: rc.trim().toUpperCase() } : {}),
         ...(insurance.trim() ? { insurance_number: insurance.trim().toUpperCase() } : {}),
+        ...(fitness.trim() ? { fitness_certificate_number: fitness.trim().toUpperCase() } : {}),
+        ...(permit.trim() ? { permit_number: permit.trim().toUpperCase() } : {}),
+        ...(puc.trim() ? { puc_number: puc.trim().toUpperCase() } : {}),
       });
       if (Object.keys(staged).length > 0) {
         const failed = await uploadStagedPhotos(vehicle.id, staged);
         if (failed.length > 0) Alert.alert(t('vehicle_reg_title'), t('vehicle_photo_some_failed'));
+      }
+      if (Object.keys(stagedDocs).length > 0) {
+        const failed = await uploadStagedDocuments(vehicle.id, stagedDocs);
+        if (failed.length > 0) Alert.alert(t('vehicle_reg_title'), t('vehicle_document_some_failed'));
       }
       onDone();
     } catch (e: any) {
@@ -191,9 +227,67 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
               autoCorrect={false}
               maxLength={50}
               editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => fitnessRef.current?.focus()}
+            />
+            <TextField
+              ref={fitnessRef}
+              label={t('vehicle_fitness_number')}
+              hint={t('vehicle_optional')}
+              value={fitness}
+              onChangeText={(v) => setFitness(v.toUpperCase())}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={50}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => permitRef.current?.focus()}
+            />
+            <TextField
+              ref={permitRef}
+              label={t('vehicle_permit_number')}
+              hint={t('vehicle_optional')}
+              value={permit}
+              onChangeText={(v) => setPermit(v.toUpperCase())}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={50}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => pucRef.current?.focus()}
+            />
+            <TextField
+              ref={pucRef}
+              label={t('vehicle_puc_number')}
+              hint={t('vehicle_optional')}
+              value={puc}
+              onChangeText={(v) => setPuc(v.toUpperCase())}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={50}
+              editable={!busy}
               returnKeyType="done"
               onSubmitEditing={submit}
             />
+          </Card>
+
+          {hasDocumentIssues ? (
+            <ErrorBanner message={t('vehicle_document_issue_banner')} />
+          ) : null}
+
+          <Card style={styles.card}>
+            <View style={styles.field}>
+              <Text variant="title" accessibilityRole="header">
+                {t('vehicle_documents_title')}
+              </Text>
+              <Text variant="bodySmall" color="textMuted">
+                {t('vehicle_documents_hint')}
+              </Text>
+            </View>
+            <DocumentSlots items={{ ...existingDocs, ...stagedDocs }} issues={documentIssues} onAdd={addDocument} />
           </Card>
 
           <Card style={styles.card}>
