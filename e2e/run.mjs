@@ -789,13 +789,8 @@ async function vendorAndPermissions() {
     const adminB = await authUser('adminB', 'e2e-adminb@example.test', 'admin', 'Bela Admin', '+919900000008');
     await rest('users', { method: 'PATCH', query: `id=eq.${adminB}`, body: { role: 'admin', phone: '+919900000008' } });
     // The sign-up triggers put every new staff user in company A: move this one to company B
-    console.log('[debug] companyA', net.companyA, 'companyB', net.companyB, 'adminB', adminB);
-    console.log('[debug] orgs(logistic_company)', JSON.stringify(await rows('organizations', 'kind=eq.logistic_company&select=id,name,status,created_at')));
-    console.log('[debug] seats before delete', JSON.stringify(await rows('org_members', `user_id=eq.${adminB}`)));
     await rest('org_members', { method: 'DELETE', query: `org_id=eq.${net.companyA}&user_id=eq.${adminB}` });
-    console.log('[debug] seats after delete', JSON.stringify(await rows('org_members', `user_id=eq.${adminB}`)));
     await rest('org_members', { method: 'POST', body: { org_id: net.companyB, user_id: adminB, role: 'owner', status: 'active' } });
-    console.log('[debug] seats after insert companyB', JSON.stringify(await rows('org_members', `user_id=eq.${adminB}`)));
     await signIn('adminB', 'e2e-adminb@example.test');
     // P: a vendor-role sign-in linked to an active tpl_partners row. The row's trigger makes the organisation, its
     // owner seat and the affiliation to the default company (A).
