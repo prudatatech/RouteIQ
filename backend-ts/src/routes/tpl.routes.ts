@@ -143,7 +143,7 @@ router.post('/check-partner', rateLimitByIp('tpl-check', 30, 60), optionalAuth, 
 });
 
 // POST /api/v1/tpl/onboard
-router.post('/onboard', rateLimitByIp('tpl-onboard', 5, 60 * 60), async (req, res) => {
+router.post('/onboard', rateLimitByIp('tpl-onboard', 20, 60 * 60), async (req, res) => {
   try {
     const { partner, warnings } = await tplService.onboard(req.body);
     res.json({ success: true, data: { id: partner.id, custom_id: partner.custom_id, status: partner.status }, ...withWarnings({}, warnings) });

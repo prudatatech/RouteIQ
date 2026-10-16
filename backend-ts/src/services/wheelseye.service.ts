@@ -71,9 +71,9 @@ const SETTINGS_KEY = 'wheelseye_config';
 // through the Rate API settings page, stored in system_settings; with nothing configured yet, calls
 // fail cleanly instead of silently authenticating as a credential sitting in source control.
 const DEFAULT_WHEELSEYE_TOKEN = '';
-const DEFAULT_USER_CODE = '';
-const DEFAULT_SESSION_ID = '';
-const DEFAULT_DEVICE_ID = '';
+const DEFAULT_USER_CODE = settings.WHEELSEYE_USER_CODE;
+const DEFAULT_SESSION_ID = settings.WHEELSEYE_SESSION_ID;
+const DEFAULT_DEVICE_ID = settings.WHEELSEYE_DEVICE_ID;
 const DEFAULT_PRICING_URL = 'https://consigner.wheelseye.com/consigner/v5/demand/vehicle-list';
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Linux; Android 16; Pixel 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36';
 

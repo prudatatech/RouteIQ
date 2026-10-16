@@ -42,7 +42,7 @@ async function main() {
     pan: 'AAPFU0939F', gst: '27AAPFU0939F1ZV', msmeStatus: 'Micro', bankAccount: '50100123456789', bankIfsc: 'HDFC0000123',
     slaCommitment: '12 Hours', taxTreatment: '5% GTA (No ITC) - Reverse Charge', ...extra,
   })
-  // onboarding is limited to 5 per hour per address, failures included: field checks run through the edit route
+  // onboarding is limited to 20 per hour per address, failures included: field checks run through the edit route
   // (same validators) on a real pending application further down; here only the GSTIN-vs-PAN rule is tried on submit
   if (!process.env.SEED) st('rejected at submit: GSTIN of another PAN', await api(null, 'POST', '/tpl/onboard', { ...good('bad'), email: `bad-${tag()}@margix.test`, custom_id: undefined, gst: '27AABCU9603R1ZX' }), 400)
 
@@ -104,7 +104,7 @@ async function main() {
     const seed = async a => (await db('POST', 'tpl_partners', { body: { custom_id: a.custom_id, company_name: a.companyName, email: a.email, phone: '9876543211', pan_number: a.pan, gstin: a.gst, status: 'pending', sla_commitment: '12 Hours' } })).body[0]
     P2 = await seed(app2); P3 = await seed(app3)
     await db('POST', 'tpl_corridors', { body: { partner_id: P2.id, corridor_name: 'Delhi to Jaipur', rate_amount: 9, rate_unit: 'per_km', proposed_rate: '9 per km', priority: '1' } })
-    console.log('   (SEED mode: P2 and P3 inserted directly because onboarding is limited to 5 per hour per address)')
+    console.log('   (SEED mode: P2 and P3 inserted directly because onboarding is limited to 20 per hour per address)')
   } else {
     st('duplicate e-mail 409', await api(null, 'POST', '/tpl/onboard', { ...app2, email: app1.email, custom_id: 'tpl_dupmail' + T.slice(0, 5) }), 409)
     P2 = (await api(null, 'POST', '/tpl/onboard', app2)).body?.data
