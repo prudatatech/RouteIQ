@@ -672,12 +672,27 @@ export async function changeStatus(actor: Actor, id: string, body: Record<string
   if (subject.status === 'inactive' && status !== 'onboarding') throw new HttpError(409, 'Someone who left comes back through onboarding. Set the status to onboarding first');
   if (status === 'onboarding' && subject.status !== 'inactive') throw new HttpError(409, 'Only someone who left can go back to onboarding');
 
+  const today = todayKey();
+
+  // Required documents (driving licence, identity proof, PAN, photo for a driver) are shown on the
+  // Documents tab the whole time they are onboarding, but nothing stopped making them active with none
+  // on file. One deliberate override, the same shape as confirm_release below, so staff who genuinely
+  // need to activate first (a document is in the post) are never stuck, but never do it by accident.
+  if (status === 'active' && body.confirm_missing_documents !== true) {
+    const live = (await liveDocumentsByUser([id])).get(id) ?? [];
+    const missing = missingGroups(subject.role, live, today, { noPan: !!profileRow?.no_pan_reason });
+    if (missing.length > 0) {
+      throw new HttpError(409, `${subject.full_name ?? 'This person'} is missing ${missing.map(g => g.label).join(', ')}. Confirm to activate anyway`, {
+        code: 'confirm_missing_documents', requires_confirmation: true, missing: missing.map(g => ({ key: g.key, label: g.label })),
+      });
+    }
+  }
+
   const ends = status === 'suspended' || status === 'inactive';
   let reason: string | null = null;
   if (ends) reason = parseRejectionReason(body.reason);
   else if (body.reason !== undefined && body.reason !== null && body.reason !== '') reason = parseOptionalText(body.reason, 'Reason', 500) ?? null;
 
-  const today = todayKey();
   const profilePatch: Record<string, any> = { suspended_until: null, leave_from: null, leave_until: null };
   if (status === 'suspended' && body.suspended_until) {
     if (typeof body.suspended_until !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.suspended_until) || body.suspended_until <= today) {

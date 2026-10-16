@@ -289,8 +289,11 @@ export const peopleAPI = {
   }) => api.post('/people', data).then(r => r.data as { id?: string; user?: { id: string } }),
   get: (id: string) => api.get(`/people/${id}`).then(r => r.data as PersonDetail),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/people/${id}`, data).then(r => r.data),
-  setStatus: (id: string, status: string, reason?: string, dates?: { leave_from?: string; leave_until?: string; suspended_until?: string }) =>
-    api.post(`/people/${id}/status`, { status, reason, ...dates }).then(r => r.data),
+  setStatus: (
+    id: string, status: string, reason?: string,
+    dates?: { leave_from?: string; leave_until?: string; suspended_until?: string },
+    confirm?: { confirm_release?: boolean; confirm_missing_documents?: boolean },
+  ) => api.post(`/people/${id}/status`, { status, reason, ...dates, ...confirm }).then(r => r.data),
   /** Sends (or resends) the sign-in invite. The server allows one every 10 minutes. */
   resendInvite: (id: string) => api.post(`/people/${id}/invite`).then(r => r.data),
   /** Superadmin, inactive people only. Clears personal data and keeps the record id. */

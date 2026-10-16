@@ -141,6 +141,32 @@ describe('status', () => {
     expect(supabaseMock.rows('users').find(u => u.id === DRV)!.is_active).toBe(true);
   });
 
+  it('asks before activating someone whose required documents are missing', async () => {
+    supabaseMock.reset(fixtures({ users: fixtures().users.map(u => (u.id === DRV ? { ...u, status: 'onboarding' } : u)) }));
+    const res = await request(app).post(`/api/v1/people/${DRV}/status`).set(admin).send({ status: 'active' });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('confirm_missing_documents');
+    expect(res.body.missing.map((m: any) => m.key).sort()).toEqual(['driving_licence', 'identity', 'photo', 'tax']);
+
+    const ok = await request(app).post(`/api/v1/people/${DRV}/status`).set(admin).send({ status: 'active', confirm_missing_documents: true });
+    expect(ok.status).toBe(200);
+    expect(supabaseMock.rows('users').find(u => u.id === DRV)).toMatchObject({ status: 'active', is_active: true });
+  });
+
+  it('does not ask once the required documents are verified', async () => {
+    supabaseMock.reset(fixtures({
+      users: fixtures().users.map(u => (u.id === DRV ? { ...u, status: 'onboarding' } : u)),
+      user_documents: [
+        { id: id(30), user_id: DRV, doc_type: 'driving_licence', status: 'verified', archived_at: null },
+        { id: id(31), user_id: DRV, doc_type: 'aadhaar', status: 'verified', archived_at: null },
+        { id: id(32), user_id: DRV, doc_type: 'pan', status: 'verified', archived_at: null },
+        { id: id(33), user_id: DRV, doc_type: 'photo', status: 'verified', archived_at: null },
+      ],
+    }));
+    const res = await request(app).post(`/api/v1/people/${DRV}/status`).set(admin).send({ status: 'active' });
+    expect(res.status).toBe(200);
+  });
+
   it('refuses while the driver is on an active route, and asks before releasing a vehicle', async () => {
     supabaseMock.reset(fixtures({
       vehicles: [{ id: VEH, plate_number: 'KA01AB1234', driver_id: DRV, status: 'available' }],
