@@ -26,10 +26,13 @@ describe('the staff menu', () => {
     }
   })
 
-  it('shows a company admin the return trips and its own 3PL partners, but not KYC review (the platform decides that), nor the audit log', () => {
+  it('shows a company admin return trips but not 3PL partners (the platform reviews those), KYC review, or the audit log', () => {
     const links = menuFor('admin').flatMap(s => s.children.map(c => c.to))
     expect(links).not.toContain('/admin/kyc')
-    expect(links).toEqual(expect.arrayContaining(['/return-trips', '/return-trips?tab=bids', '/return-trips?tab=pool', '/return-trips?tab=partners']))
+    expect(links).toEqual(expect.arrayContaining(['/return-trips', '/return-trips?tab=bids', '/return-trips?tab=pool']))
+    // ReturnTripsPage only renders the partners tab for a superadmin; a company admin must not see
+    // the link (or its badge) with nothing behind it.
+    expect(links).not.toContain('/return-trips?tab=partners')
     expect(links).not.toContain('/admin/audit')
     expect(menuFor('superadmin').flatMap(s => s.children.map(c => c.to))).toEqual(expect.arrayContaining(['/return-trips?tab=partners', '/admin/audit']))
   })

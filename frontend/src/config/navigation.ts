@@ -101,7 +101,9 @@ export const navSections: NavSection[] = [
       { to: '/return-trips', label: 'Open return trips', roles: admins },
       { to: '/return-trips?tab=bids', label: 'Bids to decide', roles: admins, badge: 'bids' },
       { to: '/return-trips?tab=pool', label: 'Combine loads', roles: admins },
-      { to: '/return-trips?tab=partners', label: '3PL partners', roles: admins, badge: 'pendingPartners' },
+      // 3PL applications are the platform's to review (ReturnTripsPage only renders this tab for a
+      // superadmin); a company admin would otherwise see the link and its badge with nothing behind it.
+      { to: '/return-trips?tab=partners', label: '3PL partners', roles: superadmin, badge: 'pendingPartners' },
     ],
   },
   {

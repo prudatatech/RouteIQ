@@ -40,12 +40,10 @@ describe('platform and company actors', () => {
     expect(canOpenPath('/platform/organisations', m('logistic_company', 'active'))).toBe(false)
     expect(canOpenPath('/platform/organisations', null)).toBe(false)
     expect(canOpenPath('/admin/kyc', m('logistic_company', 'active'))).toBe(false)
-    // a company opens its own partners' pages (the API decides what it may see)
-    expect(canOpenPath('/3pl-partners/abc', m('logistic_company', 'active'))).toBe(true)
     expect(canOpenPath('/admin/kyc', m('platform', 'active'))).toBe(true)
   })
   it('keeps day-to-day logistics pages for a company, never for the platform (it owns no fleet of its own)', () => {
-    for (const path of ['/today', '/requests', '/shipments', '/dispatch', '/fleet', '/fleet/v1', '/routes', '/live-map', '/return-trips', '/3pl-partners/abc', '/money', '/analytics', '/insights']) {
+    for (const path of ['/today', '/requests', '/shipments', '/dispatch', '/fleet', '/fleet/v1', '/routes', '/live-map', '/return-trips', '/money', '/analytics', '/insights']) {
       expect(isCompanyOperationalPath(path)).toBe(true)
       expect(canOpenPath(path, m('logistic_company', 'active'))).toBe(true)
       expect(canOpenPath(path, m('platform', 'active'))).toBe(false)
@@ -53,6 +51,16 @@ describe('platform and company actors', () => {
     // a path outside the known operational list (platform's own settings, People) stays open to the platform
     expect(isCompanyOperationalPath('/admin/settings')).toBe(false)
     expect(canOpenPath('/admin/settings', m('platform', 'active'))).toBe(true)
+  })
+  it('opens 3PL partner pages to a company (its own) and to the platform (reviews and approves every application)', () => {
+    // the per-partner detail page, where approving, rejecting and pausing happens
+    expect(canOpenPath('/3pl-partners/abc', m('logistic_company', 'active'))).toBe(true)
+    expect(canOpenPath('/3pl-partners/abc', m('platform', 'active'))).toBe(true)
+    // the "3PL partners" tab on /return-trips, which ReturnTripsPage only offers to a superadmin
+    expect(canOpenPath('/return-trips', m('platform', 'active'), '?tab=partners')).toBe(true)
+    // the page's other tabs (a company's own return trips and bids) stay off-limits to the platform
+    expect(canOpenPath('/return-trips', m('platform', 'active'))).toBe(false)
+    expect(canOpenPath('/return-trips', m('platform', 'active'), '?tab=open')).toBe(false)
   })
   it('puts the Platform section in the menu while acting as the platform, and drops day-to-day logistics sections', () => {
     const platform = menuFor('admin', actorFor(m('platform', 'active'))).map(s => s.label)
