@@ -14,6 +14,7 @@ DECLARE
   v_encrypted_pw text;
   v_partner_id uuid;
   v_has_identity_col boolean;
+  v_full_name text;
 BEGIN
   IF v_norm_email IS NULL OR v_norm_email = '' THEN
     RETURN jsonb_build_object('success', false, 'error', 'Email is required');
@@ -117,12 +118,20 @@ BEGIN
   END IF;
 
   -- 3. Upsert public.users with role = 'vendor'
-  INSERT INTO public.users (id, email, role, is_active)
-  VALUES (v_user_id, v_norm_email, 'vendor', true)
+  SELECT COALESCE(
+    (SELECT company_name FROM public.tpl_partners WHERE lower(email) = v_norm_email LIMIT 1),
+    (SELECT raw_user_meta_data->>'full_name' FROM auth.users WHERE id = v_user_id),
+    split_part(v_norm_email, '@', 1),
+    '3PL Partner'
+  ) INTO v_full_name;
+
+  INSERT INTO public.users (id, email, full_name, role, is_active)
+  VALUES (v_user_id, v_norm_email, COALESCE(v_full_name, '3PL Partner'), 'vendor', true)
   ON CONFLICT (id) DO UPDATE
   SET role = 'vendor',
       is_active = true,
-      email = EXCLUDED.email;
+      email = EXCLUDED.email,
+      full_name = COALESCE(public.users.full_name, EXCLUDED.full_name, '3PL Partner');
 
   -- 4. Link tpl_partners to this user
   SELECT id INTO v_partner_id FROM public.tpl_partners WHERE lower(email) = v_norm_email LIMIT 1;

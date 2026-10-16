@@ -110,7 +110,7 @@ router.post('/check-partner', rateLimitByIp('tpl-check', 30, 60), optionalAuth, 
     if (email) {
       const { data } = await supabase
         .from('tpl_partners')
-        .select('id, status, user_id')
+        .select('id, status, user_id, company_name')
         .ilike('email', email)
         .maybeSingle();
       if (data?.id) {
@@ -120,7 +120,13 @@ router.post('/check-partner', rateLimitByIp('tpl-check', 30, 60), optionalAuth, 
             await supabase
               .from('tpl_partners').update({ user_id: targetUserId }).eq('id', data.id);
           }
-          await supabase.from('users').upsert({ id: targetUserId, email, role: 'vendor', is_active: true }, { onConflict: 'id' });
+          await supabase.from('users').upsert({
+            id: targetUserId,
+            email,
+            full_name: (data as any)?.company_name || (email ? email.split('@')[0] : '3PL Partner'),
+            role: 'vendor',
+            is_active: true,
+          }, { onConflict: 'id' });
           if (isUuid(targetUserId)) {
             await supabase.auth.admin.updateUserById(targetUserId, { app_metadata: { role: 'vendor' } });
             invalidateRoleCache(targetUserId);
