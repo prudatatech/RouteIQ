@@ -10,6 +10,7 @@ import { Request, Response, NextFunction } from 'express';
 import { supabase } from './supabase';
 import { TokenData } from './auth';
 import { HttpError } from './errors';
+import { registerClearable } from './memo';
 import { OWNED, assertVisible, isScoped } from './org-scope';
 import { assertOfVisibleVehicle, assertShipmentVisible, assertTripVisible, assertVehicleVisible } from './org-guards';
 
@@ -22,6 +23,9 @@ export function isStaff(user: TokenData | undefined): boolean {
 
 const VEHICLE_CACHE_TTL_MS = 30 * 1000;
 const driverVehicleCache = new Map<string, { ids: string[]; expiresAt: number }>();
+// Registered so clearAllMemos() empties it too - tests reset the database fixtures between cases and
+// rely on every in-process cache going with it, same as the memoize()-based ones.
+registerClearable({ clear: () => driverVehicleCache.clear() });
 
 /** IDs of the vehicles assigned to a driver (cached 30s). */
 export async function getDriverVehicleIds(driverId: string): Promise<string[]> {

@@ -26,6 +26,7 @@ import type { DriverVehicleRegister } from '../schemas';
 import { notificationService } from './notification.service';
 import { auditService } from './audit.service';
 import { listPhotosFor, listVehiclePhotos, primaryPhoto, type VehiclePhoto } from './vehicle-photos.service';
+import { VEHICLE_DOCUMENT_LABELS, VEHICLE_DOCUMENT_SLOTS, withSignedDocumentUrls, type VehicleDocumentSlot } from './vehicle-documents.service';
 import { carrierStamp } from '../core/org-context';
 import { OWNED, scopeQuery } from '../core/org-scope';
 
@@ -95,6 +96,7 @@ export async function registerDriverVehicle(driverId: string, input: DriverVehic
     reviewed_by: null,
     review_decision: null,
     rejection_reason: null,
+    document_issues: null,
   };
 
   let vehicle: Row;
@@ -190,17 +192,17 @@ export async function listVehicleRequests(limit = 100): Promise<VehicleRequest[]
     listPhotosFor(vehicles.map(v => v.id)),
   ]);
   const byId = new Map<string, Row>((drivers ?? []).map(d => [d.id, d]));
-  return vehicles.map(vehicle => {
+  return Promise.all(vehicles.map(async vehicle => {
     const driver = vehicle.driver_id ? byId.get(vehicle.driver_id) : undefined;
     const list = photos.get(vehicle.id) ?? [];
     return {
-      vehicle,
+      vehicle: await withSignedDocumentUrls(vehicle),
       driver: driver ? { id: driver.id, full_name: driver.full_name ?? null, phone: driver.phone ?? null, email: driver.email ?? null } : null,
       photos: list,
       primary_photo_url: primaryPhoto(list)?.url ?? null,
       submitted_at: vehicle.submitted_at ?? null,
     };
-  });
+  }));
 }
 
 export async function countVehicleRequests(): Promise<number> {
@@ -284,5 +286,48 @@ export async function rejectVehicle(vehicleId: string, actor: Actor, rawReason: 
 
   notifyDriver(data, vehicle.driver_id ?? vehicle.submitted_by ?? null, 'Vehicle not approved', `${data.plate_number} was not approved: ${reason}`, 'rejected');
   await auditService.record('staff-console', actor, 'vehicle_rejected', { vehicle_id: vehicleId, plate_number: data.plate_number }, reason);
+  return data;
+}
+
+export type VehicleDocumentIssues = Partial<Record<VehicleDocumentSlot, string>>;
+
+/** Validates a { slot: reason } map: known slots only, each reason a real, non-empty string. */
+function parseDocumentIssues(raw: unknown): VehicleDocumentIssues {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new HttpError(400, 'issues must be an object of { slot: reason }');
+  const out: VehicleDocumentIssues = {};
+  for (const [slot, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!(VEHICLE_DOCUMENT_SLOTS as readonly string[]).includes(slot)) throw new HttpError(400, `Unknown document: ${slot}`);
+    out[slot as VehicleDocumentSlot] = parseRejectionReason(value);
+  }
+  if (Object.keys(out).length === 0) throw new HttpError(400, 'Flag at least one document');
+  return out;
+}
+
+/**
+ * Flag one or more specific documents on a vehicle waiting for approval as needing a fix, each with its
+ * own reason - unlike rejectVehicle, the vehicle stays pending_approval (not archived) and everything the
+ * driver already got right is kept. The driver sees exactly which documents to redo and why; uploading a
+ * corrected file for a flagged slot clears it (vehicle-documents.service.ts), same as a full resubmission
+ * already clears a whole rejection.
+ */
+export async function requestVehicleDocumentFixes(vehicleId: string, actor: Actor, rawIssues: unknown): Promise<Row> {
+  const issues = parseDocumentIssues(rawIssues);
+  const vehicle = await loadReviewable(vehicleId);
+  if (vehicle.status !== PENDING_VEHICLE_STATUS) throw new HttpError(409, 'This vehicle is not waiting for approval.');
+
+  const merged = { ...(vehicle.document_issues ?? {}), ...issues };
+  const { data, error } = await supabase
+    .from('vehicles')
+    .update({ document_issues: merged })
+    .eq('id', vehicleId)
+    .eq('status', PENDING_VEHICLE_STATUS)
+    .select('*')
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new HttpError(409, 'This vehicle was already decided by someone else.');
+
+  const list = Object.entries(issues).map(([slot, reason]) => `${VEHICLE_DOCUMENT_LABELS[slot as VehicleDocumentSlot]}: ${reason}`).join('; ');
+  notifyDriver(data, vehicle.driver_id ?? vehicle.submitted_by ?? null, 'A document needs fixing', `${data.plate_number} — ${list}`, 'rejected');
+  await auditService.record('staff-console', actor, 'vehicle_document_fix_requested', { vehicle_id: vehicleId, plate_number: data.plate_number, issues });
   return data;
 }

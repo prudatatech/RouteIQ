@@ -22,8 +22,9 @@ import { emptySosCounts, loadSosCounts } from '../services/sos.service';
 import { withDriverLicenceStatus } from '../services/people-docs.service';
 import { isRealPosition, recordGpsPoints } from '../services/gps-history.service';
 import { closeOpenJobsForVehicle } from '../services/maintenance.service';
-import { approveVehicle, countVehicleRequests, getMyRegistration, listVehicleRequests, registerDriverVehicle, rejectVehicle } from '../services/vehicle-approval.service';
+import { approveVehicle, countVehicleRequests, getMyRegistration, listVehicleRequests, registerDriverVehicle, rejectVehicle, requestVehicleDocumentFixes } from '../services/vehicle-approval.service';
 import { createVehiclePhotoUploadUrl, deleteVehiclePhoto, listVehiclePhotos, removeVehiclePhotoFiles, saveVehiclePhoto } from '../services/vehicle-photos.service';
+import { createVehicleDocumentUploadUrl, saveVehicleDocument } from '../services/vehicle-documents.service';
 import { vehicleIdsOnActiveTrip, WORKING_STATUSES } from '../services/vehicle-activity';
 import { carrierStamp } from '../core/org-context';
 import { OWNED, scopeKey, scopeQuery } from '../core/org-scope';
@@ -425,6 +426,39 @@ router.post('/:vehicle_id/reject', requireAuth, requireRole(...STAFF_ROLES), asy
     const vehicle = await rejectVehicle(req.params.vehicle_id, req.user!, req.body?.reason);
     await invalidateVehicleCaches();
     res.json(vehicle);
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// POST /:vehicle_id/request-document-fixes — { issues: { <slot>: reason } }; the vehicle stays
+// pending_approval (not archived) with just those documents flagged
+router.post('/:vehicle_id/request-document-fixes', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    const vehicle = await requestVehicleDocumentFixes(req.params.vehicle_id, req.user!, req.body?.issues);
+    await invalidateVehicleCaches();
+    res.json(vehicle);
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── Vehicle documents (RC, insurance, fitness, permit, PUC): staff, or the vehicle's own driver ─────
+// POST /:vehicle_id/documents/upload-url — { slot, content_type, size } -> a signed upload URL for one file
+router.post('/:vehicle_id/documents/upload-url', requireAuth, requireRole(...STAFF_ROLES, 'driver'), requireVehicleAccess(req => req.params.vehicle_id), rateLimitByUser('vehicle-document-upload', 60, 60 * 60), async (req: Request, res: Response) => {
+  try {
+    res.json(await createVehicleDocumentUploadUrl(req.params.vehicle_id, req.body ?? {}));
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// PUT /:vehicle_id/documents/:slot — { file_path } records an uploaded file as the document, replacing the old one
+router.put('/:vehicle_id/documents/:slot', requireAuth, requireRole(...STAFF_ROLES, 'driver'), requireVehicleAccess(req => req.params.vehicle_id), async (req: Request, res: Response) => {
+  try {
+    const result = await saveVehicleDocument(req.params.vehicle_id, req.params.slot, req.body?.file_path);
+    await invalidateVehicleCaches();
+    res.json(result);
   } catch (e: any) {
     sendError(req, res, e);
   }

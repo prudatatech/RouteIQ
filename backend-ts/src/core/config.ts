@@ -127,6 +127,7 @@ export const settings = {
   // A delivery whose live ETA slips this many minutes past its planned arrival opens a delay case
   CARGO_DELAY_EXCEPTION_MINUTES: envInt('CARGO_DELAY_EXCEPTION_MINUTES', 120),
   VEHICLE_PHOTO_MAX_BYTES: envInt('VEHICLE_PHOTO_MAX_BYTES', 5 * 1024 * 1024),
+  VEHICLE_DOCUMENT_MAX_BYTES: envInt('VEHICLE_DOCUMENT_MAX_BYTES', 10 * 1024 * 1024),
 
   // Secret for the keyed hash of identity numbers (Aadhaar, PAN, licence...) used to spot duplicates.
   // Never store the numbers themselves where a hash will do. Required in production.

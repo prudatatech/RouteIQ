@@ -161,7 +161,11 @@ export interface VehiclePhoto {
 
 /** A vehicle a driver registered from the app, waiting for a decision. */
 export interface VehicleRequest {
-  vehicle: Record<string, unknown> & { id: string; plate_number: string; vehicle_type: string; capacity_kg?: number | null }
+  vehicle: Record<string, unknown> & {
+    id: string; plate_number: string; vehicle_type: string; capacity_kg?: number | null
+    /** { <slot>: reason }, slot one of rc | insurance | fitness | permit | puc. Set while staff wait on just those documents. */
+    document_issues?: Record<string, string> | null
+  }
   driver: { id: string; full_name: string | null; phone: string | null; email: string | null } | null
   photos: VehiclePhoto[]
   primary_photo_url: string | null
@@ -202,6 +206,14 @@ export const vehicleRequestsAPI = {
   count: () => api.get('/vehicles/requests/count').then(r => r.data as { pending: number }),
   approve: (id: string) => api.post(`/vehicles/${id}/approve`).then(r => r.data),
   reject: (id: string, reason: string) => api.post(`/vehicles/${id}/reject`, { reason }).then(r => r.data),
+  /** Flags one or more documents as needing a fix; the vehicle stays pending_approval, not archived. */
+  requestDocumentFixes: (id: string, issues: Record<string, string>) => api.post(`/vehicles/${id}/request-document-fixes`, { issues }).then(r => r.data),
+}
+
+export const vehicleDocumentsAPI = {
+  uploadUrl: (id: string, data: { slot: string; content_type: string; size: number }) =>
+    api.post(`/vehicles/${id}/documents/upload-url`, data).then(r => r.data as { path: string; token: string; bucket: string; signed_url: string }),
+  save: (id: string, slot: string, file_path: string) => api.put(`/vehicles/${id}/documents/${slot}`, { file_path }).then(r => r.data as { slot: string; url: string | null; issue_cleared: boolean }),
 }
 
 export const vehiclePhotosAPI = {

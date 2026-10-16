@@ -422,3 +422,88 @@ describe('vehicle photos', () => {
     expect((await uploadUrl('front', admin())).status).toBe(200);
   });
 });
+
+describe('vehicle documents', () => {
+  beforeEach(() => reset([pendingVehicle()]));
+  const uploadUrl = (slot: string, who = driver(), id = 'veh-p') =>
+    request(app).post(`/api/v1/vehicles/${id}/documents/upload-url`).set(who).send({ slot, content_type: 'application/pdf', size: 200_000 });
+
+  it('the driver and staff get a signed upload URL inside the vehicle\'s document folder', async () => {
+    const res = await uploadUrl('rc');
+    expect(res.status).toBe(200);
+    expect(res.body.path).toMatch(/^vehicles\/veh-p\/documents\/rc_[0-9a-f-]+\.pdf$/);
+    expect((await uploadUrl('insurance', admin())).status).toBe(200);
+  });
+
+  it('refuses another driver, a bad slot and a huge file', async () => {
+    expect((await uploadUrl('rc', driver('driver-2'))).status).toBe(403);
+    expect((await uploadUrl('windshield')).status).toBe(400);
+    const big = await request(app).post('/api/v1/vehicles/veh-p/documents/upload-url').set(driver()).send({ slot: 'rc', content_type: 'application/pdf', size: 50_000_000 });
+    expect(big.status).toBe(413);
+  });
+
+  it('records an uploaded document and replaces the previous one', async () => {
+    const first = (await uploadUrl('fitness')).body.path as string;
+    const saved = await request(app).put('/api/v1/vehicles/veh-p/documents/fitness').set(driver()).send({ file_path: first });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({ slot: 'fitness', url: expect.stringContaining(first), issue_cleared: false });
+    expect(vehicleRow('veh-p').fitness_document_url).toBe(first);
+
+    const second = (await uploadUrl('fitness', admin())).body.path as string;
+    await request(app).put('/api/v1/vehicles/veh-p/documents/fitness').set(admin()).send({ file_path: second });
+    expect(vehicleRow('veh-p').fitness_document_url).toBe(second);
+  });
+
+  it('only accepts a path uploaded for this vehicle and slot', async () => {
+    const put = (slot: string, file_path: string) => request(app).put(`/api/v1/vehicles/veh-p/documents/${slot}`).set(driver()).send({ file_path });
+    expect((await put('rc', 'vehicles/other/documents/rc_x.pdf')).status).toBe(400);
+    expect((await put('rc', 'vehicles/veh-p/documents/../../secret.pdf')).status).toBe(400);
+    expect((await put('rc', 'vehicles/veh-p/documents/insurance_x.pdf')).status).toBe(400);
+    expect((await put('windshield', 'vehicles/veh-p/documents/windshield_x.pdf')).status).toBe(400);
+  });
+});
+
+describe('requesting a fix on specific documents', () => {
+  beforeEach(() => reset([pendingVehicle()]));
+  const requestFixes = (issues: Record<string, string>, who = admin(), id = 'veh-p') =>
+    request(app).post(`/api/v1/vehicles/${id}/request-document-fixes`).set(who).send({ issues });
+
+  it('flags one or more documents without archiving the vehicle', async () => {
+    const res = await requestFixes({ rc: 'RC photo is unreadable', puc: 'Expired last month' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('pending_approval');
+    expect(res.body.document_issues).toEqual({ rc: 'RC photo is unreadable', puc: 'Expired last month' });
+    expect(vehicleRow('veh-p').status).toBe('pending_approval');
+
+    await vi.waitFor(() => expect(supabaseMock.rows('notifications').some(n => n.user_id === 'driver-1')).toBe(true));
+    const note = supabaseMock.rows('notifications').find(n => n.user_id === 'driver-1');
+    expect(String(note!.body)).toContain('RC photo is unreadable');
+    expect(String(note!.body)).toContain('Expired last month');
+    expect(supabaseMock.rows('ai_agent_logs')[0]).toMatchObject({ action: 'vehicle_document_fix_requested' });
+  });
+
+  it('refuses an empty or unknown slot, and a non-admin/manager caller', async () => {
+    expect((await requestFixes({})).status).toBe(400);
+    expect((await requestFixes({ windshield: 'cracked' })).status).toBe(400);
+    expect((await requestFixes({ rc: 'blurry' }, driver())).status).toBe(403);
+    expect(vehicleRow('veh-p').document_issues).toBeUndefined();
+  });
+
+  it('uploading a corrected document clears just its own flag', async () => {
+    await requestFixes({ rc: 'Unreadable', insurance: 'Expired' });
+    const upload = await request(app).post('/api/v1/vehicles/veh-p/documents/upload-url').set(driver()).send({ slot: 'rc', content_type: 'application/pdf', size: 1000 });
+    await request(app).put('/api/v1/vehicles/veh-p/documents/rc').set(driver()).send({ file_path: upload.body.path });
+    expect(vehicleRow('veh-p').document_issues).toEqual({ insurance: 'Expired' });
+  });
+
+  it('a full resubmission clears every flagged issue', async () => {
+    await requestFixes({ rc: 'Unreadable', insurance: 'Expired' });
+    await register({ ...REGISTRATION, plate_number: 'MH12AB1234' });
+    expect(vehicleRow('veh-p').document_issues).toBeNull();
+  });
+
+  it('cannot flag a vehicle that is not waiting for approval', async () => {
+    await request(app).post('/api/v1/vehicles/veh-p/approve').set(admin());
+    expect((await requestFixes({ rc: 'blurry' })).status).toBe(409);
+  });
+});

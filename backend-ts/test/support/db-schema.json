@@ -804,7 +804,8 @@
     "hazmat_certified",
     "is_reefer",
     "body_type",
-    "profile_status"
+    "profile_status",
+    "document_issues"
   ],
   "vendor_profiles": [
     "id",

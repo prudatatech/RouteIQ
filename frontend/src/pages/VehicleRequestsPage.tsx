@@ -6,18 +6,18 @@ import { Camera, Check, ClipboardCheck, Phone, Truck, User, X } from 'lucide-rea
 import { vehicleRequestsAPI, type VehicleRequest } from '@/services/api'
 import { supabase, openChannel } from '@/services/supabase'
 import {
-  Page, PageHeader, Card, CardBody, Button, DetailList, EmptyState, ErrorState, Modal, Skeleton, StatusPill, Textarea, humanize, useConfirm,
+  Page, PageHeader, Card, CardBody, Button, Checkbox, DetailList, EmptyState, ErrorState, Modal, Skeleton, StatusPill, Textarea, humanize, useConfirm,
 } from '@/components/ui'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { expiryStatus } from '@/utils/documentExpiry'
 import { errorMessage, formatDate, formatDateTime, formatRelative } from '@/utils/display'
 
 const DOCUMENTS = [
-  { label: 'RC', number: 'rc_number', expiry: 'rc_expiry', file: 'rc_document_url' },
-  { label: 'Insurance', number: 'insurance_number', expiry: 'insurance_expiry', file: 'insurance_document_url' },
-  { label: 'Fitness', number: 'fitness_certificate_number', expiry: 'fitness_expiry', file: 'fitness_document_url' },
-  { label: 'Permit', number: 'permit_number', expiry: 'permit_expiry', file: 'permit_document_url' },
-  { label: 'PUC', number: 'puc_number', expiry: 'puc_expiry', file: 'puc_document_url' },
+  { slot: 'rc', label: 'RC', number: 'rc_number', expiry: 'rc_expiry', file: 'rc_document_url' },
+  { slot: 'insurance', label: 'Insurance', number: 'insurance_number', expiry: 'insurance_expiry', file: 'insurance_document_url' },
+  { slot: 'fitness', label: 'Fitness', number: 'fitness_certificate_number', expiry: 'fitness_expiry', file: 'fitness_document_url' },
+  { slot: 'permit', label: 'Permit', number: 'permit_number', expiry: 'permit_expiry', file: 'permit_document_url' },
+  { slot: 'puc', label: 'PUC', number: 'puc_number', expiry: 'puc_expiry', file: 'puc_document_url' },
 ] as const
 
 const text = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null)
@@ -29,6 +29,9 @@ export default function VehicleRequestsPage() {
   const [rejecting, setRejecting] = useState<VehicleRequest | null>(null)
   const [reason, setReason] = useState('')
   const [reasonError, setReasonError] = useState<string | undefined>()
+  const [fixing, setFixing] = useState<VehicleRequest | null>(null)
+  const [fixSlots, setFixSlots] = useState<Record<string, string>>({})
+  const [fixError, setFixError] = useState<string | undefined>()
   const [searchParams, setSearchParams] = useSearchParams()
   const openId = searchParams.get('open')
   const [viewing, setViewing] = useState<{ url: string; name: string } | null>(null)
@@ -71,6 +74,11 @@ export default function VehicleRequestsPage() {
     onSuccess: () => { toast.success('Vehicle rejected and archived. The driver has been told why.'); closeReject(); decided() },
     onError: err => toast.error(errorMessage(err, 'We could not reject this vehicle. Try again.')),
   })
+  const requestFixes = useMutation({
+    mutationFn: ({ id, issues }: { id: string; issues: Record<string, string> }) => vehicleRequestsAPI.requestDocumentFixes(id, issues),
+    onSuccess: () => { toast.success('The driver has been told which documents to fix.'); closeFix(); decided() },
+    onError: err => toast.error(errorMessage(err, 'We could not send that. Try again.')),
+  })
 
   const askApprove = async (r: VehicleRequest) => {
     const ok = await confirm({
@@ -101,6 +109,44 @@ export default function VehicleRequestsPage() {
       return
     }
     reject.mutate({ id: rejecting.vehicle.id, reason: trimmed })
+  }
+
+  const askFix = (r: VehicleRequest) => {
+    setFixSlots({})
+    setFixError(undefined)
+    setFixing(r)
+  }
+
+  function closeFix() {
+    setFixing(null)
+    setFixSlots({})
+    setFixError(undefined)
+  }
+
+  const toggleFixSlot = (slot: string, checked: boolean) => {
+    setFixSlots(s => {
+      const next = { ...s }
+      if (checked) next[slot] = next[slot] ?? ''
+      else delete next[slot]
+      return next
+    })
+    if (fixError) setFixError(undefined)
+  }
+
+  const submitFix = () => {
+    if (!fixing) return
+    const slots = Object.keys(fixSlots)
+    if (slots.length === 0) {
+      setFixError('Check at least one document.')
+      return
+    }
+    const missingReason = slots.find(s => !fixSlots[s].trim())
+    if (missingReason) {
+      setFixError(`Say what's wrong with the ${DOCUMENTS.find(d => d.slot === missingReason)?.label ?? missingReason}.`)
+      return
+    }
+    const issues = Object.fromEntries(slots.map(s => [s, fixSlots[s].trim()]))
+    requestFixes.mutate({ id: fixing.vehicle.id, issues })
   }
 
   const pending = data?.pending ?? 0
@@ -136,6 +182,7 @@ export default function VehicleRequestsPage() {
               busy={(approve.isPending && approve.variables === r.vehicle.id) || (reject.isPending && reject.variables?.id === r.vehicle.id)}
               onApprove={() => askApprove(r)}
               onReject={() => askReject(r)}
+              onRequestFix={() => askFix(r)}
               onViewPhoto={(url, name) => setViewing({ url, name })}
             />
           ))}
@@ -145,8 +192,8 @@ export default function VehicleRequestsPage() {
       <Modal
         open={!!rejecting}
         onClose={() => { if (!reject.isPending) closeReject() }}
-        title={`Reject ${rejecting?.vehicle.plate_number ?? 'vehicle'}?`}
-        description="The vehicle is archived with your reason. The driver sees it in the app and can fix the details and submit again."
+        title={`Reject ${rejecting?.vehicle.plate_number ?? 'vehicle'} entirely?`}
+        description="The vehicle is archived with your reason. Use this only when the whole request is wrong — for one or two documents, request fixes instead and keep the rest of what the driver already got right."
         size="sm"
         onSubmit={submitReject}
         footer={(
@@ -160,7 +207,7 @@ export default function VehicleRequestsPage() {
           data-autofocus
           label="Reason"
           required
-          placeholder="For example: the plate number does not match the RC"
+          placeholder="For example: this is not a real registration, or belongs to someone else"
           value={reason}
           disabled={reject.isPending}
           error={reasonError}
@@ -168,12 +215,55 @@ export default function VehicleRequestsPage() {
         />
       </Modal>
 
+      <Modal
+        open={!!fixing}
+        onClose={() => { if (!requestFixes.isPending) closeFix() }}
+        title={`Request fixes for ${fixing?.vehicle.plate_number ?? 'vehicle'}`}
+        description="Check each document that needs fixing and say why. The vehicle stays waiting for approval — everything else the driver already got right is kept."
+        size="md"
+        onSubmit={submitFix}
+        footer={(
+          <>
+            <Button variant="secondary" disabled={requestFixes.isPending} onClick={closeFix}>Cancel</Button>
+            <Button type="submit" loading={requestFixes.isPending}>Send to driver</Button>
+          </>
+        )}
+      >
+        <div className="space-y-3">
+          {fixError && <p className="text-sm text-danger">{fixError}</p>}
+          {DOCUMENTS.map(d => {
+            const checked = d.slot in fixSlots
+            return (
+              <div key={d.slot} className="rounded-control border border-border p-3">
+                <Checkbox
+                  label={d.label}
+                  checked={checked}
+                  disabled={requestFixes.isPending}
+                  onChange={e => toggleFixSlot(d.slot, e.target.checked)}
+                />
+                {checked && (
+                  <Textarea
+                    className="mt-2"
+                    label="Reason"
+                    hideLabel
+                    placeholder={`What's wrong with the ${d.label.toLowerCase()}?`}
+                    value={fixSlots[d.slot]}
+                    disabled={requestFixes.isPending}
+                    onChange={e => setFixSlots(s => ({ ...s, [d.slot]: e.target.value }))}
+                  />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </Modal>
+
       {viewing && <DocumentViewerModal isOpen onClose={() => setViewing(null)} fileUrl={viewing.url} fileName={viewing.name} />}
     </Page>
   )
 }
 
-function RequestCard({ request, now, highlighted, onSeen, busy, onApprove, onReject, onViewPhoto }: {
+function RequestCard({ request, now, highlighted, onSeen, busy, onApprove, onReject, onRequestFix, onViewPhoto }: {
   request: VehicleRequest
   now: number
   highlighted: boolean
@@ -181,6 +271,7 @@ function RequestCard({ request, now, highlighted, onSeen, busy, onApprove, onRej
   busy: boolean
   onApprove: () => void
   onReject: () => void
+  onRequestFix: () => void
   onViewPhoto: (url: string, name: string) => void
 }) {
   const { vehicle, driver, photos, primary_photo_url: primary, submitted_at: submittedAt } = request
@@ -196,7 +287,10 @@ function RequestCard({ request, now, highlighted, onSeen, busy, onApprove, onRej
 
   const model = text(vehicle.vehicle_model)
   const container = (vehicle.container_length_ft as number | null) ?? 0
-  const filled = DOCUMENTS.filter(d => text(vehicle[d.number]) || text(vehicle[d.expiry]))
+  const issues = vehicle.document_issues ?? {}
+  const hasIssues = Object.keys(issues).length > 0
+  // A flagged document stays visible even with nothing filled in, so staff see it is still waiting on the driver
+  const filled = DOCUMENTS.filter(d => text(vehicle[d.number]) || text(vehicle[d.expiry]) || d.slot in issues)
 
   return (
     <div ref={ref}>
@@ -233,11 +327,13 @@ function RequestCard({ request, now, highlighted, onSeen, busy, onApprove, onRej
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-lg font-semibold text-text">{vehicle.plate_number}</h2>
                     <StatusPill status="pending_approval" />
+                    {hasIssues && <StatusPill tone="warning" dot={false}>Fixes requested</StatusPill>}
                   </div>
                   <p className="mt-0.5 text-sm text-muted">{model ?? humanize(vehicle.vehicle_type)}</p>
                 </div>
-                <div className="flex w-full gap-2 sm:w-auto">
+                <div className="flex w-full flex-wrap gap-2 sm:w-auto">
                   <Button variant="secondary" className="flex-1 sm:flex-none" icon={<X size={16} />} disabled={busy} onClick={onReject}>Reject</Button>
+                  <Button variant="secondary" className="flex-1 sm:flex-none" disabled={busy} onClick={onRequestFix}>Request fixes</Button>
                   <Button className="flex-1 sm:flex-none" icon={<Check size={16} />} loading={busy} onClick={onApprove}>Approve</Button>
                 </div>
               </div>
@@ -264,16 +360,18 @@ function RequestCard({ request, now, highlighted, onSeen, busy, onApprove, onRej
                     {filled.map(d => {
                       const expiry = expiryStatus(text(vehicle[d.expiry]))
                       const file = text(vehicle[d.file])
+                      const issue = issues[d.slot]
                       return (
-                        <li key={d.label} className="rounded-control border border-border px-3 py-2 text-sm">
+                        <li key={d.label} className={`rounded-control border px-3 py-2 text-sm ${issue ? 'border-warning bg-warning/5' : 'border-border'}`}>
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-medium text-text">{d.label}</span>
-                            {expiry && <StatusPill tone={expiry.tone} dot={false}>{expiry.label}</StatusPill>}
+                            {issue ? <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> : expiry && <StatusPill tone={expiry.tone} dot={false}>{expiry.label}</StatusPill>}
                           </div>
                           <p className="mt-0.5 break-all text-muted">
                             {text(vehicle[d.number]) ?? 'No number'}
                             {text(vehicle[d.expiry]) ? ` · valid to ${formatDate(text(vehicle[d.expiry]))}` : ''}
                           </p>
+                          {issue && <p className="mt-1 text-warning">{issue}</p>}
                           {file && /^https?:\/\//.test(file) && (
                             <a className="text-brand hover:underline" href={file} target="_blank" rel="noopener noreferrer">View file</a>
                           )}
