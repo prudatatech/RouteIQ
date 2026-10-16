@@ -371,6 +371,14 @@ export default function TplOnboardingPage() {
     setStep((s) => Math.max(0, s - 1))
   }
 
+  // Signing in (Google or email) has no undo on its own: this is the only way out of the form once
+  // it's up, whether to cancel entirely or to redo the sign-in with a different account.
+  const switchAccount = async () => {
+    await supabase.auth.signOut().catch(() => undefined)
+    setSession(null)
+    setUserLoading(false)
+  }
+
 
   const selectedVehicle = vehicles?.find(v => v.key === truckType)
 
@@ -404,6 +412,12 @@ export default function TplOnboardingPage() {
       <PageHeader
         title="Join Margix as a Truck Partner"
         description="Register in under a minute. Tell us about your fleet, you can upload documents later."
+        back={{ to: '/', label: 'Cancel and go home' }}
+        actions={
+          <button type="button" onClick={switchAccount} className="text-sm text-muted underline hover:text-text">
+            Signed in as {session.user.email} — not you?
+          </button>
+        }
       />
 
       <Stepper step={step} />
