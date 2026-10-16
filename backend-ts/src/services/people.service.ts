@@ -317,8 +317,13 @@ async function deleteAuthUser(id: string): Promise<void> {
   }
 }
 
-/** Creates the sign-in account the OTP flow would create, or finds it when it exists. */
-async function ensureDriverAuthUser(phone: string, fullName: string, id?: string): Promise<string> {
+/**
+ * Creates the sign-in account the OTP flow would create, or finds it when it exists.
+ * `isNew` tells the caller whether this id was just created (always safe to claim: nobody
+ * else could already be using an account that did not exist a moment ago) or found through
+ * the e-mail lookup (an existing account, worth checking before claiming it).
+ */
+async function ensureDriverAuthUser(phone: string, fullName: string, id?: string): Promise<{ id: string; isNew: boolean }> {
   const email = driverEmailFor(phone);
   const { data, error } = await supabase.auth.admin.createUser({
     ...(id ? { id } : {}),
@@ -327,10 +332,10 @@ async function ensureDriverAuthUser(phone: string, fullName: string, id?: string
     app_metadata: { role: 'driver' },
     user_metadata: { full_name: fullName, role: 'driver', phone },
   });
-  if (!error && data.user) return data.user.id;
+  if (!error && data.user) return { id: data.user.id, isNew: true };
   if (error && (error.message.includes('already been registered') || (error as any).code === 'email_exists')) {
     const existing = await findAuthUserByEmail(email);
-    if (existing) return existing.id;
+    if (existing) return { id: existing.id, isNew: false };
   }
   console.error('[people] could not create the driver sign-in account:', error?.message);
   throw new HttpError(502, 'Could not create the sign-in account. Try again');
@@ -412,9 +417,15 @@ export async function createPerson(actor: Actor, body: Record<string, any>, opts
 
   let id: string;
   if (role === 'driver') {
-    id = await ensureDriverAuthUser(phone!, fullName);
-    const { data: taken } = await supabase.from('users').select('id, full_name, role, status').eq('id', id).maybeSingle();
-    if (taken && taken.role !== 'driver') throw new HttpError(409, 'That sign-in account belongs to someone else');
+    const driverAuth = await ensureDriverAuthUser(phone!, fullName);
+    id = driverAuth.id;
+    // A brand-new account cannot belong to anyone else; checking its role here would only ever catch
+    // the moment between creation and the role upsert below, when the sign-up trigger's default role
+    // has not been corrected yet. Only an existing account (found through the e-mail lookup) is checked.
+    if (!driverAuth.isNew) {
+      const { data: taken } = await supabase.from('users').select('id, full_name, role, status').eq('id', id).maybeSingle();
+      if (taken && taken.role !== 'driver') throw new HttpError(409, 'That sign-in account belongs to someone else');
+    }
   } else {
     const { data, error } = await supabase.auth.admin.inviteUserByEmail(email!, { data: { full_name: fullName, ...(phone ? { phone } : {}) } });
     if (error || !data?.user) {
