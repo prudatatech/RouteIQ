@@ -8,7 +8,7 @@ import { supabase } from '@/services/supabase'
 import { destinationFor, loadAccount } from '@/services/account'
 import OtpModal from '@/components/load-post/OtpModal'
 import { accountKindOf, homeForKind, LOGIN_PATH, nextForKind } from '@/utils/accountKind'
-import { authAPI, orgAPI, tplAPI } from '@/services/api'
+import { authAPI, orgAPI } from '@/services/api'
 import { useOrgStore } from '@/store/orgStore'
 import { destinationForOrgs } from '@/utils/orgAccess'
 import { useAuthStore } from '@/store/authStore'
@@ -182,22 +182,7 @@ function SignInPage() {
       // The memberships call needs the session in the store
       useAuthStore.getState().setSession(session, account.role, account.tplPartnerId)
       const memberships: Membership[] = await orgAPI.mine().catch(() => [])
-      let kind = accountKindOf(account, memberships)
-
-      // Guard: If account resolved as staff/driver or has no tplPartnerId yet, check if this is a 3PL partner
-      if (!account.tplPartnerId && (kind === 'staff' || account.role === 'driver')) {
-        try {
-          const checkRes = await tplAPI.checkPartner({ user_id: session.user.id, email: session.user.email })
-          if (checkRes?.id) {
-            account.role = 'vendor'
-            account.tplPartnerId = checkRes.id
-            useAuthStore.getState().setSession(session, 'vendor', checkRes.id)
-            kind = 'tpl'
-          }
-        } catch {
-          // ignore
-        }
-      }
+      const kind = accountKindOf(account, memberships)
 
       if (registering && kind !== 'tpl') {
         // Anyone who signed up or in here goes on to the registration form
@@ -219,21 +204,6 @@ function SignInPage() {
         destination = destinationFor(account, next)
       } else {
         destination = nextForKind('tpl', next) ?? homeForKind('tpl', account)
-      }
-
-      // Safety check: if destination ever resolved to /driver or /vendor*, verify if user is 3PL before routing
-      if (destination === '/driver' || destination?.startsWith('/vendor') || (next && next.includes('/3pl-portal/'))) {
-        try {
-          const checkRes = await tplAPI.checkPartner({ user_id: session.user.id, email: session.user.email })
-          if (checkRes?.id) {
-            account.role = 'vendor'
-            account.tplPartnerId = checkRes.id
-            useAuthStore.getState().setSession(session, 'vendor', checkRes.id)
-            destination = (next && next.startsWith('/3pl-portal/')) ? next : `/3pl-portal/${checkRes.id}`
-          }
-        } catch {
-          // ignore
-        }
       }
     } catch (err) {
       console.error('Failed to load account after sign-in', err)

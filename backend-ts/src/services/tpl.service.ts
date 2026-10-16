@@ -199,92 +199,12 @@ export const tplService = {
       console.error('[tpl] Application notification failed:', e);
     }
 
+    // A quick applicant already has a Google-authenticated session (TplOnboardingPage requires one before
+    // showing the form), so `user_id` is already linked here — no separate password-based account or
+    // credential email is needed. They sign back in with Google and the backend resolves their 3PL role
+    // from tpl_partners.user_id. The applicant is only confirmed (acknowledged) here, not approved: approve()
+    // sends the one email that tells them they can start accepting loads.
     if (isQuick) {
-      const { emailService } = require('./email.service');
-      const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + "!";
-      
-      const normalizedEmail = email ? email.trim().toLowerCase() : '';
-      let targetUserId = (user_id && isUuid(user_id)) ? user_id : null;
-      try {
-        let authSuccess = false;
-        if (normalizedEmail) {
-          try {
-            const { data: rpcRes, error: rpcErr } = await supabase.rpc('ensure_tpl_partner_auth', {
-              p_email: normalizedEmail,
-              p_password: tempPassword,
-            });
-            if (rpcRes?.user_id) {
-              targetUserId = rpcRes.user_id;
-              authSuccess = true;
-            } else if (rpcErr) {
-              console.warn('[tpl] ensure_tpl_partner_auth rpc failed, falling back:', rpcErr.message);
-            }
-          } catch (e: any) {
-            console.warn('[tpl] ensure_tpl_partner_auth rpc call error:', e?.message);
-          }
-        }
-
-        if (!authSuccess && targetUserId) {
-          const { data: updateRes, error: updateErr } = await supabase.auth.admin.updateUserById(targetUserId, {
-            email: normalizedEmail || undefined,
-            password: tempPassword,
-            email_confirm: true,
-            app_metadata: { role: 'vendor' },
-            user_metadata: { role: 'vendor', full_name: companyName },
-          });
-          if (updateRes?.user?.id) {
-            authSuccess = true;
-          } else if (updateErr) {
-            console.warn('[tpl] updateUserById on targetUserId failed, falling back:', updateErr.message);
-          }
-        }
-
-        if (!authSuccess && normalizedEmail) {
-          const existingAuth = await findAuthUserByEmail(normalizedEmail);
-          if (existingAuth?.id && isUuid(existingAuth.id)) {
-            targetUserId = existingAuth.id;
-            const { data: updRes, error: updErr } = await supabase.auth.admin.updateUserById(existingAuth.id, {
-              email: normalizedEmail,
-              password: tempPassword,
-              email_confirm: true,
-              app_metadata: { role: 'vendor' },
-              user_metadata: { role: 'vendor', full_name: companyName },
-            });
-            if (updRes?.user?.id) authSuccess = true;
-            else if (updErr) console.warn('[tpl] updateUserById on found auth user failed:', updErr.message);
-          } else {
-            const { data: created, error: createErr } = await supabase.auth.admin.createUser({
-              email: normalizedEmail,
-              password: tempPassword,
-              email_confirm: true,
-              app_metadata: { role: 'vendor' },
-              user_metadata: { role: 'vendor', full_name: companyName },
-            });
-            if (created?.user?.id) {
-              targetUserId = created.user.id;
-              authSuccess = true;
-            } else if (createErr) {
-              console.error('[tpl] createUser failed:', createErr.message);
-            }
-          }
-        }
-
-        if (targetUserId && authSuccess) {
-          await supabase.from('users').upsert({
-            id: targetUserId,
-            email: normalizedEmail || email,
-            full_name: companyName,
-            role: 'vendor',
-            is_active: true,
-          }, { onConflict: 'id' });
-
-          await supabase.from('tpl_partners').update({ user_id: targetUserId }).eq('id', partnerId);
-          invalidateRoleCache(targetUserId);
-        }
-      } catch (err) {
-        console.error('[tpl] quick onboard user setup error:', err);
-      }
-
       const html = `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; background-color: #fff; border: 2px solid #FFD300; border-radius: 8px; overflow: hidden;">
           <div style="background-color: #FFD300; padding: 20px; text-align: center;">
@@ -292,21 +212,12 @@ export const tplService = {
           </div>
           <div style="padding: 30px; color: #333;">
             <p>Hi ${companyName},</p>
-            <p>You have successfully registered as a 3PL Truck Partner.</p>
-            <p>Your tracking ID is: <strong>${partnerId}</strong></p>
-            <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <p style="margin: 0;"><strong>Login Details:</strong></p>
-              <p style="margin: 5px 0;">Email / ID: ${email}</p>
-              <p style="margin: 5px 0;">Password: ${tempPassword}</p>
-            </div>
-            <a href="${settings.WEB_APP_URL}/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(tempPassword)}&next=${encodeURIComponent(`/3pl-portal/${partnerId}`)}" style="display: inline-block; background-color: #000; color: #FFD300; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Login to your Dashboard</a>
-            <p style="margin-top: 30px; font-size: 12px; color: #888;">If you signed in with Google, you can continue using Google Auth or use these fallback credentials.</p>
+            <p>Thanks for applying to become a 3PL Truck Partner. Your tracking ID is: <strong>${partnerId}</strong></p>
+            <p>Your application is now pending review. We will email you as soon as it is approved — you can keep signing in with Google in the meantime to check its status.</p>
           </div>
         </div>
       `;
-      
-      await emailService.send(email, 'Welcome to Margix - Your 3PL Access Details', html);
-      await emailService.send('u702pad-platform@margix.test', 'New 3PL Partner Onboarded', html);
+      await emailService.send(email, 'Margix India: application received', html);
     }
 
     return { partner, warnings: bank.check?.warnings ?? [] };
@@ -506,23 +417,49 @@ export const tplService = {
     throw new HttpError(409, refusal(String(existing.status)));
   },
 
+  /** Tells an approved applicant with a linked (Google) account that they can start accepting loads. Never throws. */
+  async emailApprovedLogin(partner: { email?: string | null; company_name?: string | null }) {
+    if (!partner.email) return;
+    const link = `${settings.WEB_APP_URL}/login`;
+    try {
+      await emailService.send(
+        partner.email,
+        'MargixIndia: your 3PL application was approved',
+        `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+            <h2 style="color: #8C6600;">MargixIndia 3PL Network</h2>
+            <p>Hello ${escapeHtml(partner.company_name ?? '')},</p>
+            <p>Your 3PL partner application has been approved. Sign in with Google to open your partner portal and start receiving load offers.</p>
+            <p style="margin: 24px 0;"><a href="${escapeHtml(link)}" style="background-color: #8C6600; color: #ffffff; padding: 12px 20px; border-radius: 8px; text-decoration: none;">Sign in to my portal</a></p>
+          </div>
+        `,
+      );
+    } catch (e) {
+      console.error('[tpl] Approval email (linked account) failed:', e);
+    }
+  },
+
   /** Tells an approved applicant to set up their sign-in; the page sends the code and takes the password. Never throws. */
   async emailApproval(partner: { email?: string | null; company_name?: string | null }) {
     if (!partner.email) return;
     const link = `${settings.WEB_APP_URL}/3pl/onboard/setup?email=${encodeURIComponent(partner.email)}`;
-    await emailService.send(
-      partner.email,
-      'MargixIndia: your 3PL application was approved',
-      `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-          <h2 style="color: #8C6600;">MargixIndia 3PL Network</h2>
-          <p>Hello ${escapeHtml(partner.company_name ?? '')},</p>
-          <p>Your 3PL partner application has been approved. Set up your password to open your partner portal and start receiving load offers.</p>
-          <p style="margin: 24px 0;"><a href="${escapeHtml(link)}" style="background-color: #8C6600; color: #ffffff; padding: 12px 20px; border-radius: 8px; text-decoration: none;">Set up my account</a></p>
-          <p style="font-size: 12px; color: #666;">We will email you a 6-digit code on that page to confirm it is you. If the button does not work, copy this address into your browser: ${escapeHtml(link)}</p>
-        </div>
-      `,
-    );
+    try {
+      await emailService.send(
+        partner.email,
+        'MargixIndia: your 3PL application was approved',
+        `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+            <h2 style="color: #8C6600;">MargixIndia 3PL Network</h2>
+            <p>Hello ${escapeHtml(partner.company_name ?? '')},</p>
+            <p>Your 3PL partner application has been approved. Set up your password to open your partner portal and start receiving load offers.</p>
+            <p style="margin: 24px 0;"><a href="${escapeHtml(link)}" style="background-color: #8C6600; color: #ffffff; padding: 12px 20px; border-radius: 8px; text-decoration: none;">Set up my account</a></p>
+            <p style="font-size: 12px; color: #666;">We will email you a 6-digit code on that page to confirm it is you. If the button does not work, copy this address into your browser: ${escapeHtml(link)}</p>
+          </div>
+        `,
+      );
+    } catch (e) {
+      console.error('[tpl] Approval email (setup link) failed:', e);
+    }
   },
 
   /**
@@ -606,9 +543,13 @@ export const tplService = {
       console.error('[tpl] Error syncing user role on approve:', e);
     }
 
-    // A first-time applicant who hasn't set their password yet gets the setup link.
-    // Quick-onboarded partners already received credentials in onboard(), so skip.
-    if (!updates && !partner.user_id && !updatedPartner.user_id) await this.emailApproval(partner);
+    // A first-time approval always gets exactly one email: a linked (Google) account is told it can sign in now;
+    // an application with no linked account yet (e.g. staff-created, or an applicant who never signed in) gets a
+    // password-setup link instead.
+    if (!updates) {
+      if (updatedPartner.user_id) await this.emailApprovedLogin(updatedPartner);
+      else await this.emailApproval(partner);
+    }
     await auditService.record('staff-console', actor, 'tpl_approved', { partner_id: id, company_name: updatedPartner.company_name, profile_update: Boolean(updates) });
     return updatedPartner;
   },

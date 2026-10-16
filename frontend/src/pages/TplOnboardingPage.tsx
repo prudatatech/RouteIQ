@@ -294,7 +294,8 @@ export default function TplOnboardingPage() {
           </p>
           <div className="p-4 bg-surface-subtle border border-border rounded-control">
             <p className="font-medium text-text">
-              Please check your email for your login credentials to access the 3PL Portal.
+              Your application is pending approval. We'll email you as soon as it's reviewed — you can keep
+              signing in with Google to check its status in the meantime.
             </p>
           </div>
           <button onClick={() => navigate(createdPartnerId ? `/3pl-portal/${createdPartnerId}` : '/3pl/onboard/track')} className="w-full py-3 bg-brand text-brand-fill font-semibold rounded-control transition-opacity hover:opacity-90">

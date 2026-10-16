@@ -178,10 +178,15 @@ describe('staff decisions on partners', () => {
       expect(html).toContain('Acme 3PL');
     });
 
-    it('does not email quick-onboarded partners who already have credentials', async () => {
+    it('tells a partner with a linked (Google) account to sign in, rather than a setup link', async () => {
       reset('pending');  // default fixture has user_id: 'partner-user'
       expect((await act(`approve/${PID}`)).status).toBe(200);
-      expect(send).not.toHaveBeenCalled();
+      expect(send).toHaveBeenCalledTimes(1);
+      const [to, subject, html] = send.mock.calls[0];
+      expect(to).toBe('ops@acme.in');
+      expect(subject).toMatch(/approved/);
+      expect(html).toContain('/login');
+      expect(html).not.toContain('/3pl/onboard/setup');
     });
 
     it('sends nothing for approved profile changes, or when the partner cannot be approved', async () => {
