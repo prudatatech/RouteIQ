@@ -56,8 +56,11 @@ export const settings = {
   MAPBOX_ACCESS_TOKEN: env('MAPBOX_ACCESS_TOKEN'),
 
   // WheelsEye Freight Market Benchmark
-  WHEELSEYE_TOKEN: env('WHEELSEYE_TOKEN', 'ae4f3562-8c95-4057-9839-57176177e49b'),
-  WHEELSEYE_MARKET_BENCHMARK_ENABLED: envBool('WHEELSEYE_MARKET_BENCHMARK_ENABLED', true),
+  // No committed default: a real WheelsEye session token, set only via infra secrets or the Rate API
+  // settings page (system_settings), never hardcoded in source. Off by default — unofficial,
+  // reverse-engineered endpoint, not a documented partner API; enable deliberately per stage.
+  WHEELSEYE_TOKEN: env('WHEELSEYE_TOKEN'),
+  WHEELSEYE_MARKET_BENCHMARK_ENABLED: envBool('WHEELSEYE_MARKET_BENCHMARK_ENABLED', false),
 
   // IFSC branch lookup (Razorpay's free public API, no key)
   IFSC_LOOKUP_BASE_URL: env('IFSC_LOOKUP_BASE_URL', 'https://ifsc.razorpay.com'),

@@ -66,10 +66,14 @@ export interface WheelseyeTestResult {
 }
 
 const SETTINGS_KEY = 'wheelseye_config';
-const DEFAULT_WHEELSEYE_TOKEN = 'ae4f3562-8c95-4057-9839-57176177e49b';
-const DEFAULT_USER_CODE = 'WE9228053';
-const DEFAULT_SESSION_ID = 'cb3c5bae-f4bb-4b15-80b4-f5fc5f95aa81';
-const DEFAULT_DEVICE_ID = '33fa2d55-6154-48f3-83a0-24e122254332';
+// No committed fallback values: this is one account's live WheelsEye session (token, user_code,
+// session-id, device-id together authenticate as them). The platform owner configures the real values
+// through the Rate API settings page, stored in system_settings; with nothing configured yet, calls
+// fail cleanly instead of silently authenticating as a credential sitting in source control.
+const DEFAULT_WHEELSEYE_TOKEN = '';
+const DEFAULT_USER_CODE = '';
+const DEFAULT_SESSION_ID = '';
+const DEFAULT_DEVICE_ID = '';
 const DEFAULT_PRICING_URL = 'https://consigner.wheelseye.com/consigner/v5/demand/vehicle-list';
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Linux; Android 16; Pixel 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36';
 
