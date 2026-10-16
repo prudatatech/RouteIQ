@@ -330,12 +330,8 @@ class ApiClient {
 
   // ── Auth ───────────────────────────────────────────────────
 
-  async sendOTP(phone: string): Promise<{ status: string; expires_in_seconds: number; phone?: string; otp?: string }> {
+  async sendOTP(phone: string): Promise<{ status: string; expires_in_seconds: number; phone?: string }> {
     return this.request('POST', '/auth/driver/send-otp', { phone }, false);
-  }
-
-  async getLatestOTP(phone: string): Promise<{ status: string; otp: string; phone?: string; expires_in_seconds?: number }> {
-    return this.request('GET', `/auth/driver/latest-otp?phone=${encodeURIComponent(phone)}`, undefined, false);
   }
 
   async verifyOTP(phone: string, otp: string): Promise<{

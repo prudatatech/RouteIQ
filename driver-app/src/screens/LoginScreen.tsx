@@ -31,8 +31,6 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [countdown, setCountdown] = useState(0);
   const [maskedPhone, setMaskedPhone] = useState('');
   const [error, setError] = useState('');
-  const [autoFetchedOtp, setAutoFetchedOtp] = useState<string | null>(null);
-  const [fetchingOtp, setFetchingOtp] = useState(false);
 
   const otpRefs = useRef<(TextInput | null)[]>([]);
 
@@ -53,63 +51,17 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
     setLoading(true);
     setError('');
-    setAutoFetchedOtp(null);
     try {
-      const result = await api.sendOTP(cleaned);
+      const result = (await api.sendOTP(cleaned)) as { phone?: string };
       setMaskedPhone(result.phone || `+91******${cleaned.slice(-4)}`);
       setCountdown(RESEND_SECONDS);
       setStep('otp');
-
-      // Auto-fetch direct from server
-      let serverOtp = result.otp;
-      if (!serverOtp) {
-        try {
-          const latest = await api.getLatestOTP(cleaned);
-          if (latest?.otp) serverOtp = latest.otp;
-        } catch {
-          // ignore
-        }
-      }
-
-      if (serverOtp && serverOtp.length === OTP_LENGTH) {
-        setAutoFetchedOtp(serverOtp);
-        const digits = serverOtp.split('');
-        setOtp(digits);
-        setTimeout(() => {
-          handleVerifyOTP(serverOtp);
-        }, 500);
-      } else {
-        setOtp(emptyOtp());
-        setTimeout(() => otpRefs.current[0]?.focus(), 300);
-      }
+      setOtp(emptyOtp());
+      setTimeout(() => otpRefs.current[0]?.focus(), 300);
     } catch (e: any) {
       setError(e.message || t('send_otp_failed'));
     } finally {
       setLoading(false);
-    }
-  };
-
-  // ── Direct OTP Fetch from Server ───────────────────────────
-  const handleFetchOtpFromServer = async () => {
-    const cleaned = phone.replace(/\s/g, '');
-    if (cleaned.length < 10) return;
-    setFetchingOtp(true);
-    setError('');
-    try {
-      const latest = await api.getLatestOTP(cleaned);
-      if (latest?.otp && latest.otp.length === OTP_LENGTH) {
-        setAutoFetchedOtp(latest.otp);
-        setOtp(latest.otp.split(''));
-        setTimeout(() => {
-          handleVerifyOTP(latest.otp);
-        }, 400);
-      } else {
-        setError('No active OTP found on server. Please request a new OTP.');
-      }
-    } catch (e: any) {
-      setError(e.message || 'Could not fetch OTP from server');
-    } finally {
-      setFetchingOtp(false);
     }
   };
 
@@ -188,7 +140,6 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const goBackToPhone = () => {
     setStep('phone');
     setOtp(emptyOtp());
-    setAutoFetchedOtp(null);
     setError('');
   };
 
@@ -281,15 +232,6 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                   </Text>
                 </View>
 
-                {autoFetchedOtp ? (
-                  <View style={styles.autoFetchBadge}>
-                    <Ionicons name="flash" size={16} color={colors.accent} />
-                    <Text variant="bodySmall" color="accent" style={styles.autoFetchText}>
-                      Auto-fetched OTP: {autoFetchedOtp}
-                    </Text>
-                  </View>
-                ) : null}
-
                 <View style={styles.otpRow}>
                   {otp.map((digit, index) => (
                     <TextInput
@@ -325,13 +267,6 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 />
 
                 <View style={styles.resend}>
-                  <Button
-                    title={fetchingOtp ? 'Fetching from server...' : '⚡ Fetch OTP from server'}
-                    variant="ghost"
-                    block={false}
-                    onPress={handleFetchOtpFromServer}
-                    disabled={loading || fetchingOtp}
-                  />
                   {countdown > 0 ? (
                     <Text variant="bodySmall" color="textMuted">
                       {t('resend_otp_in')}{' '}
@@ -340,7 +275,7 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                       </Text>
                     </Text>
                   ) : (
-                    <Button title={t('resend_otp')} variant="ghost" block={false} onPress={handleSendOTP} disabled={loading || fetchingOtp} />
+                    <Button title={t('resend_otp')} variant="ghost" block={false} onPress={handleSendOTP} disabled={loading} />
                   )}
                 </View>
               </>
@@ -363,20 +298,6 @@ const styles = StyleSheet.create({
   card: { gap: space[4], padding: space[6] },
   heading: { gap: space[1] },
   back: { alignSelf: 'flex-start', paddingHorizontal: space[2] },
-  autoFetchBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: space[2],
-    backgroundColor: colors.accentSoft,
-    paddingVertical: space[2],
-    paddingHorizontal: space[3],
-    borderRadius: radius.control,
-    alignSelf: 'stretch',
-  },
-  autoFetchText: {
-    fontWeight: '600',
-  },
   phoneRow: {
     flexDirection: 'row',
     alignItems: 'center',
