@@ -64,17 +64,20 @@ BEGIN
     WHERE id = v_user_id;
   END IF;
 
-  -- 2. Ensure auth.identities has 'email' provider entry for this user
+  -- 2. Ensure auth.identities has 'email' provider entry for this user. GoTrue's schema changed between
+  -- versions: older releases key identities on a text `id` (the provider's own id); current releases
+  -- (this stack runs gotrue v2.177.0) renamed that to `provider_id` and added a real uuid `id` primary
+  -- key instead, which is why the previous version of this migration failed with "column id is of type
+  -- uuid but expression is of type text" the moment it ran against this database.
   SELECT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'auth' AND table_name = 'identities' AND column_name = 'identity_id'
+    WHERE table_schema = 'auth' AND table_name = 'identities' AND column_name = 'provider_id'
   ) INTO v_has_identity_col;
 
   IF NOT EXISTS (SELECT 1 FROM auth.identities WHERE user_id = v_user_id AND provider = 'email') THEN
     IF v_has_identity_col THEN
       INSERT INTO auth.identities (
-        identity_id,
-        id,
+        provider_id,
         user_id,
         identity_data,
         provider,
@@ -82,7 +85,6 @@ BEGIN
         created_at,
         updated_at
       ) VALUES (
-        gen_random_uuid(),
         v_user_id::text,
         v_user_id,
         jsonb_build_object('sub', v_user_id::text, 'email', v_norm_email),
@@ -150,13 +152,11 @@ BEGIN
 END;
 $$;
 
+-- SECURITY DEFINER and sets an auth.users password by email with no caller identity check: never reachable
+-- over the REST API (anon/authenticated would let anyone take over any account by email), only from
+-- backend-ts's own service-role key, same as every other SECURITY DEFINER function in this schema.
+REVOKE ALL ON FUNCTION public.ensure_tpl_partner_auth(text, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.ensure_tpl_partner_auth(text, text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.ensure_tpl_partner_auth(text, text) TO postgres;
-GRANT EXECUTE ON FUNCTION public.ensure_tpl_partner_auth(text, text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.ensure_tpl_partner_auth(text, text) TO anon;
-
--- Apply immediately for recent test partner
-SELECT public.ensure_tpl_partner_auth('bossalok69@gmail.com', '9hbywif97BFZDL5P!');
 
 -- Backfill all existing tpl_partners to link user_id and set role = 'vendor'
 DO $$
