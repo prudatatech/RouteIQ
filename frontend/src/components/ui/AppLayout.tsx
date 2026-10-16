@@ -21,6 +21,7 @@ import { OrgSwitcher } from './OrgSwitcher'
 import { selectActiveMembership, useOrgStore } from '@/store/orgStore'
 import { actorFor } from '@/utils/orgAccess'
 import { usePendingOrgCount } from '@/hooks/usePendingOrgCount'
+import { usePendingPartnersCount } from '@/hooks/usePendingPartnersCount'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 
 /** True on Mac (⌘) keyboards, so the search hint shows the right modifier key. */
@@ -64,20 +65,11 @@ const QUEUE_TABLES = [
 ]
 
 /** Counts for the menu badges: the same queues as Today, from one request, refreshed when their tables change. */
-function useNavBadges(enabled: boolean, canSeePartners: boolean) {
+function useNavBadges(enabled: boolean) {
   const queryClient = useQueryClient()
   const pendingOrgs = usePendingOrgCount()
+  const partners = usePendingPartnersCount()
   const today = useQuery({ queryKey: ['ops-today'], queryFn: opsAPI.today, enabled, refetchInterval: 30_000, retry: false })
-  const partners = useQuery({
-    queryKey: ['tpl-pending-partners'],
-    enabled: enabled && canSeePartners,
-    refetchInterval: 60_000,
-    queryFn: async () => {
-      const { count, error } = await supabase.from('tpl_partners').select('id', { count: 'exact', head: true }).eq('status', 'pending')
-      if (error) throw error
-      return count ?? 0
-    },
-  })
 
   useEffect(() => {
     if (!enabled) return
@@ -98,7 +90,7 @@ function useNavBadges(enabled: boolean, canSeePartners: boolean) {
     }
   }, [enabled, queryClient])
 
-  return navBadgeCounts(today.data?.queues, partners.data ?? 0, pendingOrgs ?? 0)
+  return navBadgeCounts(today.data?.queues, partners ?? 0, pendingOrgs ?? 0)
 }
 
 /** Opens the search palette; shown in the sidebar (desktop) and the phone top bar. */
@@ -277,7 +269,7 @@ export default function AppLayout() {
 
   // Managers are staff too: they get search, notifications and the menu counts for their sections
   const isStaff = role === 'admin' || role === 'superadmin' || role === 'manager'
-  const badges = useNavBadges(isStaff, role === 'superadmin')
+  const badges = useNavBadges(isStaff)
   useSearchShortcut(useCallback(() => { if (isStaff) setSearchOpen(true) }, [isStaff]))
   const actor = actorFor(useOrgStore(selectActiveMembership))
   const sections = menuFor(role, actor)

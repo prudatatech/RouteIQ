@@ -62,7 +62,7 @@ export default function PartnersTab() {
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
-    queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
+    queryClient.invalidateQueries({ queryKey: ['tpl-pending-partners'] })
   }
 
   const approve = useMutation({

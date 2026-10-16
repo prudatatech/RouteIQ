@@ -138,7 +138,7 @@ export default function TplPartnerDetailPage() {
     onSuccess: () => {
       toast.success('Partner approved')
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
-      queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
+      queryClient.invalidateQueries({ queryKey: ['tpl-pending-partners'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
     },
     onError: (err: unknown) => toast.error(errorMessage(err, 'We could not approve this partner. Try again.')),
@@ -149,7 +149,7 @@ export default function TplPartnerDetailPage() {
     onSuccess: () => {
       toast.success('Application rejected')
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
-      queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
+      queryClient.invalidateQueries({ queryKey: ['tpl-pending-partners'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
     },
     onError: (err: unknown) => toast.error(errorMessage(err, 'We could not reject this application. Try again.')),
@@ -160,7 +160,7 @@ export default function TplPartnerDetailPage() {
     onSuccess: () => {
       toast.success(partner?.status === 'active' ? 'Partner paused.' : 'Partner resumed.')
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
-      queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
+      queryClient.invalidateQueries({ queryKey: ['tpl-pending-partners'] })
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
     },
     onError: err => toast.error(errorMessage(err, 'We could not update the partner. Try again.')),
@@ -171,7 +171,7 @@ export default function TplPartnerDetailPage() {
     onSuccess: () => {
       toast.success('Partner deleted')
       queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
-      queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
+      queryClient.invalidateQueries({ queryKey: ['tpl-pending-partners'] })
       navigate(PARTNERS_TAB)
     },
     onError: err => toast.error(errorMessage(err, 'We could not delete the partner. Try again.')),

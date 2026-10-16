@@ -116,6 +116,16 @@ registry `margixacr7m52h4t5it6og`.
   asked three times (sign-up, business profile, KYC form); no consignee GSTIN on loads (needed for e-way bills).
 - Not yet walked: scheduler jobs (document expiry, driver-without-vehicle, quote escalation), customer-app OTP,
   driver app on a device, a browser walkthrough of every screen, load testing.
+- UI complexity/duplication audit (owner asked to "think on" this; fixed the KYC-review page's duplicate
+  `tpl_partners` pending-count query, now sharing `usePendingPartnersCount` with the sidebar badge). Still open,
+  needs the owner's steer before touching them (bigger blast radius, not done unilaterally):
+  the vendor (4-step) and 3PL (3-step) onboarding wizards each hand-roll their own `Stepper` with different
+  behaviour instead of one shared component, and logistic-company registration has no steps at all - three
+  different interaction models for "register an organisation"; `LoginPage.tsx` is one 636-line component for
+  sign-in/sign-up/forgot/reset; eleven top-level nav sections (`config/navigation.ts` says so in a comment) could
+  likely merge Shipments into Dispatch and Reports into Money; Reports (Analytics vs Insights) and Dispatch
+  (Optimize vs Plan a trip) give a new admin four similarly-named trip-planning destinations; `VendorLoadPage.tsx`
+  hand-rolls a `<table>` instead of the shared `DataTable`.
 - Next phase when the owner says go: N2 matching intelligence (carrier scores, ranked matching, auto-allocation,
   price learning).
 

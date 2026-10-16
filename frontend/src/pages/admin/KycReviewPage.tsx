@@ -1,14 +1,13 @@
 import { useMemo } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
-import { useEffectiveRole } from '@/store/effectiveRole'
 import {
   Alert, Button, DataTable, Page, PageHeader, SearchInput, StatusPill, statusToLabel, Tabs, TabPanel,
   buttonClasses, parseSort, serializeSort, useOpenOnWork, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
+import { usePendingPartnersCount } from '@/hooks/usePendingPartnersCount'
 import { formatDateTime, formatRelative } from '@/utils/display'
 import type { KycStatus, RegistryRow } from '@/components/admin/vendor-review/types'
 
@@ -17,12 +16,6 @@ type TabId = typeof TAB_IDS[number]
 
 const vendorName = (v: RegistryRow) => v.name || v.email || 'Unnamed vendor'
 
-async function countPendingPartners() {
-  const { count, error } = await supabase.from('tpl_partners').select('id', { count: 'exact', head: true }).eq('status', 'pending')
-  if (error) throw error
-  return count ?? 0
-}
-
 export default function KycReviewPage() {
   const navigate = useNavigate()
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'submitted')
@@ -30,13 +23,10 @@ export default function KycReviewPage() {
   const [sortParam, setSortParam] = useUrlState('sort', { fallback: tab === 'submitted' ? 'updated:asc' : 'updated:desc' })
   const sort = parseSort(sortParam)
   const [searchParams] = useSearchParams()
-  // 3PL applications are decided on a page only superadmin can open
-  const isSuperadmin = useEffectiveRole().role === 'superadmin'
 
   const vendors = useQuery({ queryKey: ['vendor-registry'], queryFn: () => vendorAPI.registryAll() })
-  const partners = useQuery({ queryKey: ['tpl-partners-pending-count'], queryFn: countPendingPartners, enabled: isSuperadmin })
+  const pendingPartners = usePendingPartnersCount() ?? 0
   useRealtimeRefresh('kyc_review_page', ['vendor_profiles'], [['vendor-registry']])
-  useRealtimeRefresh('kyc_review_page_partners', ['tpl_partners'], [['tpl-partners-pending-count']])
 
   const all = useMemo(() => vendors.data?.items ?? [], [vendors.data])
   const counts = useMemo(() => {
@@ -109,8 +99,6 @@ export default function KycReviewPage() {
     pending: 'Every vendor has submitted KYC',
     all: 'No vendors yet',
   }
-
-  const pendingPartners = isSuperadmin ? (partners.data ?? 0) : 0
 
   return (
     <Page>
