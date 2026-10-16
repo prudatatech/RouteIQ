@@ -824,7 +824,8 @@
     "kyc_status",
     "kyc_reviewed_at",
     "kyc_reviewed_by",
-    "kyc_rejection_reason"
+    "kyc_rejection_reason",
+    "kyc_document_issues"
   ],
   "vendor_route_opportunities": [
     "id",

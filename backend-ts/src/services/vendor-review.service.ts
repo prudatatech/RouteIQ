@@ -124,7 +124,7 @@ export const vendorReviewService = {
     if (!isUuid(vendorId)) throw new HttpError(404, 'Vendor not found');
     const [{ data: user, error: uErr }, { data: profile, error: pErr }, { data: partner }] = await Promise.all([
       supabase.from('users').select('id, email, full_name, phone, role, created_at').eq('id', vendorId).maybeSingle(),
-      supabase.from('vendor_profiles').select('id, company_name, gst_number, city, address, kyc_status, kyc_data, kyc_reviewed_at, kyc_rejection_reason, updated_at').eq('id', vendorId).maybeSingle(),
+      supabase.from('vendor_profiles').select('id, company_name, gst_number, city, address, kyc_status, kyc_data, kyc_reviewed_at, kyc_rejection_reason, kyc_document_issues, updated_at').eq('id', vendorId).maybeSingle(),
       supabase.from('tpl_partners').select('id').eq('user_id', vendorId).maybeSingle(),
     ]);
     if (uErr) throw new Error(`Failed to read the vendor: ${uErr.message}`);
@@ -214,6 +214,7 @@ export const vendorReviewService = {
         status: (profile?.kyc_status ?? 'pending') as string,
         reviewed_at: profile?.kyc_reviewed_at ?? null,
         rejection_reason: profile?.kyc_rejection_reason ?? null,
+        document_issues: (profile?.kyc_document_issues ?? null) as Record<string, string> | null,
         updated_at: profile?.updated_at ?? null,
         form,
         documents,
@@ -275,6 +276,47 @@ export const vendorReviewService = {
       vendor_id: vendorId, company_name: profile.company_name, request_id: row.id, message: input.message ?? null, items: items.map(i => i.label),
     });
     return row;
+  },
+
+  /**
+   * Flag one or more of the vendor's already-submitted documents as needing a fix, each with its own
+   * reason - unlike rejectKyc, nothing else about the application is touched. Moves the KYC to
+   * 'info_requested', the same status (and vendor-side editability) requestInfo already uses, so there is
+   * one "the vendor must act before we can decide" state, not two. A corrected upload on resubmission
+   * clears every flag (vendor.service.ts submitKyc), the same as a full rejection already resets the row.
+   */
+  async flagDocumentIssues(vendorId: string, issues: Record<string, string>, actor: AuditActor) {
+    const { data: profile, error } = await supabase.from('vendor_profiles').select('id, company_name, kyc_status, kyc_document_issues').eq('id', vendorId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!profile) throw new HttpError(404, 'Vendor not found');
+    if (profile.kyc_status !== 'submitted') {
+      throw new HttpError(409, 'Documents can be flagged only while the KYC is waiting for review');
+    }
+    const unknown = Object.keys(issues).filter(key => !(key in DOC_LABELS));
+    if (unknown.length > 0) throw new HttpError(400, `Unknown document: ${unknown.join(', ')}`);
+
+    const merged = { ...(profile.kyc_document_issues ?? {}), ...issues };
+    const { data: moved, error: moveErr } = await supabase.from('vendor_profiles')
+      .update({ kyc_status: 'info_requested', kyc_document_issues: merged, updated_at: new Date().toISOString() })
+      .eq('id', vendorId).eq('kyc_status', 'submitted').select('id, kyc_status, kyc_document_issues').maybeSingle();
+    if (moveErr) throw new Error(moveErr.message);
+    if (!moved) throw new HttpError(409, 'Documents can be flagged only while the KYC is waiting for review');
+
+    invalidateOrgContext(vendorId);
+    const list = Object.entries(issues).map(([key, reason]) => `${DOC_LABELS[key] ?? key}: ${reason}`).join('; ');
+    try {
+      await notificationService.sendNotification(
+        vendorId,
+        'A document needs fixing for your KYC',
+        `We need you to fix the following before we can review your application: ${list}`,
+        'kyc_info_requested',
+        { vendor_id: vendorId },
+      );
+    } catch (e) {
+      console.error('[vendor-review] document-issue notification failed:', e);
+    }
+    await auditService.record('staff-console', actor, 'kyc_document_flagged', { vendor_id: vendorId, company_name: profile.company_name, issues });
+    return moved;
   },
 
   /** The vendor's open information requests. */

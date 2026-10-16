@@ -11,7 +11,7 @@ import { getKycDocumentUrl, uploadKycDocument } from '@/services/kycDocuments'
 import AddressPicker from '@/components/map/AddressPicker'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import type { IfscDetails } from '@/services/api'
-import { Alert, Button, Card, Checkbox, ErrorState, FileButton, IfscField, BankBranchFields, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
+import { Alert, Button, Card, Checkbox, ErrorState, FileButton, IfscField, BankBranchFields, Input, Page, PageHeader, Select, Spinner, StatusPill, useConfirm } from '@/components/ui'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { gstinError } from '@/utils/gstin'
@@ -115,6 +115,7 @@ export default function VendorDocumentsPage() {
   const [saving, setSaving] = useState(false)
   const [kycStatus, setKycStatus] = useState<KycStatus>('pending')
   const [kycRejectionReason, setKycRejectionReason] = useState<string | null>(null)
+  const [kycDocumentIssues, setKycDocumentIssues] = useState<Record<string, string>>({})
   const [hasProfile, setHasProfile] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const isEditingRef = useRef(false)
@@ -147,6 +148,7 @@ export default function VendorDocumentsPage() {
       const status = String(profile.kyc_status ?? 'pending').toLowerCase() as KycStatus
       setKycStatus(['pending', 'submitted', 'info_requested', 'approved', 'rejected'].includes(status) ? status : 'pending')
       setKycRejectionReason(profile.kyc_rejection_reason ?? null)
+      setKycDocumentIssues((profile.kyc_document_issues as Record<string, string> | null) ?? {})
 
       if (!isEditingRef.current) {
         const kycData = profile.kyc_data as { data?: Partial<KycFormData>; otherDocs?: DocRef[] } | null
@@ -484,6 +486,17 @@ export default function VendorDocumentsPage() {
         </Alert>
       )}
       {hasProfile && (kycStatus === 'info_requested' || openRequests.length > 0) && <KycInfoRequests requests={openRequests} />}
+      {hasProfile && Object.keys(kycDocumentIssues).length > 0 && (
+        <Alert tone="warning" title="Fix these documents" action={!isEditing ? <Button variant="secondary" size="sm" onClick={() => { setIsEditingKyc(true); setStep(2) }}>Fix documents</Button> : undefined}>
+          <ul className="list-disc space-y-0.5 pl-4">
+            {Object.entries(kycDocumentIssues).map(([key, reason]) => (
+              <li key={key}>
+                <span className="font-medium">{DOC_FIELDS.find(f => f.key === key)?.label ?? key}</span>: {reason}
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      )}
       {hasProfile && kycStatus === 'rejected' && (
         <Alert tone="danger" title="KYC rejected">
           {kycRejectionReason || 'Please review and correct your details below, then resubmit.'}
@@ -500,7 +513,7 @@ export default function VendorDocumentsPage() {
       )}
 
       {readOnly ? (
-        <ReadOnlySummary form={form} otherDocs={otherDocs} onView={openViewer} onAdd={() => setIsEditingKyc(true)} />
+        <ReadOnlySummary form={form} otherDocs={otherDocs} issues={kycDocumentIssues} onView={openViewer} onAdd={() => setIsEditingKyc(true)} />
       ) : (
         <Card padded className="space-y-6">
           <Stepper current={step} onSelect={i => { if (i <= step) setStep(i); else if (i === step + 1) goNext() }} />
@@ -596,6 +609,7 @@ export default function VendorDocumentsPage() {
                       label={f.label}
                       hint={f.hint}
                       path={form.docUrls[f.key]}
+                      issue={kycDocumentIssues[f.key]}
                       busy={uploadingKey === f.key}
                       onUpload={file => uploadDoc(f.key, file)}
                       onRemove={() => removeDoc(f.key)}
@@ -712,19 +726,25 @@ function Stepper({ current, onSelect }: { current: number; onSelect: (i: number)
   )
 }
 
-function DocUploadField({ label, hint, path, busy, onUpload, onRemove, onView }: {
+function DocUploadField({ label, hint, path, issue, busy, onUpload, onRemove, onView }: {
   label: string
   hint?: string
   path?: string
+  /** Set when a reviewer flagged this specific document; re-uploading clears it. */
+  issue?: string
   busy?: boolean
   onUpload: (file: File) => void
   onRemove: () => void
   onView: () => void
 }) {
   return (
-    <div className="rounded-card border border-border p-4">
-      <p className="text-sm font-medium text-text">{label}</p>
+    <div className={`rounded-card border p-4 ${issue ? 'border-warning bg-warning/5' : 'border-border'}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-text">{label}</p>
+        {issue && <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>}
+      </div>
       {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
+      {issue && <p className="mt-1 text-xs text-warning">{issue}</p>}
       <div className="mt-3 flex items-center gap-2">
         {path ? (
           <>
@@ -741,9 +761,10 @@ function DocUploadField({ label, hint, path, busy, onUpload, onRemove, onView }:
   )
 }
 
-function ReadOnlySummary({ form, otherDocs, onView, onAdd, compact }: {
+function ReadOnlySummary({ form, otherDocs, issues, onView, onAdd, compact }: {
   form: KycFormData
   otherDocs: DocRef[]
+  issues?: Record<string, string>
   onView: (path: string, name: string) => void
   /** Opens the form so an empty field can be filled in. */
   onAdd?: () => void
@@ -786,13 +807,21 @@ function ReadOnlySummary({ form, otherDocs, onView, onAdd, compact }: {
           </p>
         ) : (
           <ul className="mt-1 flex flex-wrap gap-2">
-            {DOC_FIELDS.filter(f => form.docUrls[f.key]).map(f => (
-              <li key={f.key}>
-                <button type="button" onClick={() => onView(form.docUrls[f.key], f.label)} className="rounded-full bg-surface-subtle px-3 py-1 text-xs font-medium text-brand hover:underline">
-                  {f.label}
-                </button>
-              </li>
-            ))}
+            {DOC_FIELDS.filter(f => form.docUrls[f.key]).map(f => {
+              const issue = issues?.[f.key]
+              return (
+                <li key={f.key} className={issue ? 'flex flex-col gap-0.5' : undefined}>
+                  <button
+                    type="button"
+                    onClick={() => onView(form.docUrls[f.key], f.label)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium hover:underline ${issue ? 'bg-warning/5 text-warning' : 'bg-surface-subtle text-brand'}`}
+                  >
+                    {f.label}{issue && ' · Fix requested'}
+                  </button>
+                  {issue && <span className="text-xs text-muted">{issue}</span>}
+                </li>
+              )
+            })}
             {otherDocs.map((doc, i) => (
               <li key={i}>
                 <button type="button" onClick={() => onView(doc.path, doc.name)} className="rounded-full bg-surface-subtle px-3 py-1 text-xs font-medium text-brand hover:underline">

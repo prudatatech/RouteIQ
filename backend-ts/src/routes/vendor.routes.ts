@@ -19,7 +19,7 @@ import {
 import { getBusinessProfile, saveBusinessProfile } from '../services/loads/business-profile.service';
 import { acceptQuote, listVendorQuotes } from '../services/loads/order-routing';
 import {
-  KycDocumentsSchema, KycRespondSchema, KycSubmitSchema, RegistryQuerySchema, RequestInfoSchema, ShipmentRequestSchema, VendorLocationSchema, VendorProfileSchema,
+  FlagKycDocumentsSchema, KycDocumentsSchema, KycRespondSchema, KycSubmitSchema, RegistryQuerySchema, RequestInfoSchema, ShipmentRequestSchema, VendorLocationSchema, VendorProfileSchema,
   assertKycContent, parseBody,
 } from '../schemas/vendor';
 
@@ -348,6 +348,17 @@ router.post('/kyc/:id/request-info', requireAuth, requireRole('superadmin'), asy
   try {
     const input = parseBody(RequestInfoSchema, req.body);
     res.status(201).json(await vendorReviewService.requestInfo(uuidParam(req.params.id, 'Vendor not found'), input, req.user));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Flags one or more already-submitted documents as needing a fix, each with its own reason - the
+// vendor's other details are left alone. { issues: { <docKey>: reason } }
+router.put('/kyc/:id/flag-documents', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
+  try {
+    const input = parseBody(FlagKycDocumentsSchema, req.body);
+    res.json(await vendorReviewService.flagDocumentIssues(uuidParam(req.params.id, 'Vendor not found'), input.issues, req.user));
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }

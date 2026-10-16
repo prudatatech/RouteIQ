@@ -80,6 +80,8 @@ export interface VendorReview {
     status: KycStatus
     reviewed_at: string | null
     rejection_reason: string | null
+    /** { <docKey>: reason }, set while specific documents are flagged - the status is 'info_requested', not 'rejected'. */
+    document_issues: Record<string, string> | null
     updated_at: string | null
     form: KycFormView
     documents: { key: string; label: string; path: string }[]

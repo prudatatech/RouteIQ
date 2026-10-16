@@ -112,6 +112,11 @@ export const RequestInfoSchema = z.object({
   })).min(1, 'Ask for at least one item').max(10, 'Ask for at most 10 items'),
 });
 
+export const FlagKycDocumentsSchema = z.object({
+  issues: z.record(z.string(), z.string().trim().min(3, 'Say what is wrong with each document (at least 3 characters)').max(300, 'Reason is too long (at most 300 characters)'))
+    .refine(issues => Object.keys(issues).length > 0, 'Flag at least one document'),
+});
+
 export const KycRespondSchema = z.object({
   request_id: z.string().uuid('Request not found'),
   answers: z.array(z.object({

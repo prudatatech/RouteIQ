@@ -227,6 +227,7 @@ export const vendorService = {
       company_logo: payload.companyLogo ?? null,
       kyc_data: payload.kycData,
       kyc_status: 'submitted',
+      kyc_document_issues: null,
       updated_at: new Date().toISOString(),
     };
 
@@ -683,13 +684,14 @@ export const vendorService = {
 
     const { data: profile, error: loadErr } = await supabase
       .from('vendor_profiles')
-      .select('company_name, kyc_status, kyc_data')
+      .select('company_name, kyc_status, kyc_data, kyc_document_issues')
       .eq('id', vendorId)
       .maybeSingle();
     if (loadErr) throw new Error(loadErr.message);
     if (!profile) throw new HttpError(404, 'Set up your company profile first');
 
     const current = (profile.kyc_data ?? {}) as { data?: Record<string, unknown>; otherDocs?: unknown[] } & Record<string, unknown>;
+    const previousUrls = (current.data?.docUrls ?? {}) as Record<string, string>;
     const kycData = {
       ...current,
       data: { ...(current.data ?? {}), ...(input.docUrls !== undefined ? { docUrls: input.docUrls } : {}) },
@@ -698,6 +700,18 @@ export const vendorService = {
     const changes: Record<string, unknown> = { kyc_data: kycData, updated_at: new Date().toISOString() };
     const backToReview = profile.kyc_status === 'approved';
     if (backToReview) Object.assign(changes, { kyc_status: 'submitted', kyc_reviewed_at: null, kyc_reviewed_by: null });
+
+    // Re-uploading a document clears its own flag, even without a full resubmit:
+    // the vendor should not have to redo every field just to fix one flagged document.
+    const existingIssues = (profile.kyc_document_issues ?? null) as Record<string, string> | null;
+    if (existingIssues && input.docUrls) {
+      const changedKeys = Object.keys(input.docUrls).filter(k => input.docUrls![k] !== previousUrls[k]);
+      if (changedKeys.some(k => existingIssues[k])) {
+        const remaining = { ...existingIssues };
+        for (const k of changedKeys) delete remaining[k];
+        changes.kyc_document_issues = Object.keys(remaining).length > 0 ? remaining : null;
+      }
+    }
 
     const { data, error } = await supabase
       .from('vendor_profiles')

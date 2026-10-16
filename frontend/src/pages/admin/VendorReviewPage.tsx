@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Check, MessageSquarePlus, X } from 'lucide-react'
+import { Check, FlagTriangleRight, MessageSquarePlus, X } from 'lucide-react'
 import {
   Alert, Button, EmptyState, ErrorState, Page, PageHeader, Skeleton, StatusPill, useConfirm,
 } from '@/components/ui'
@@ -8,6 +8,7 @@ import { isNotFoundError } from '@/utils/display'
 import { useReviewActions, useVendorReview } from '@/components/admin/vendor-review/useVendorReview'
 import { useDocumentViewer } from '@/components/admin/vendor-review/useDocumentViewer'
 import { AskMoreDetailsModal } from '@/components/admin/vendor-review/AskMoreDetailsModal'
+import { FlagDocumentsModal } from '@/components/admin/vendor-review/FlagDocumentsModal'
 import {
   AccountSection, ActivitySection, BusinessSection, DocumentsSection, HistorySection, KycFormSection, RequestsSection,
   StatusAlert, SummarySection,
@@ -52,12 +53,15 @@ export default function VendorReviewPage() {
 function ReviewView({ id, data }: { id: string; data: VendorReview }) {
   const { confirm, prompt } = useConfirm()
   const [askOpen, setAskOpen] = useState(false)
+  const [flagOpen, setFlagOpen] = useState(false)
   const viewer = useDocumentViewer()
-  const { approve, reject, askInfo } = useReviewActions(id, () => setAskOpen(false))
+  const { approve, reject, askInfo, flagDocuments } = useReviewActions(id, () => { setAskOpen(false); setFlagOpen(false) })
   const { account, business, kyc } = data
   const name = business?.business_name || kyc.form?.name || account.full_name || 'Unnamed vendor'
   const canDecide = kyc.status === 'submitted'
-  const busy = approve.isPending || reject.isPending || askInfo.isPending
+  const busy = approve.isPending || reject.isPending || askInfo.isPending || flagDocuments.isPending
+  // Only the vendor's own named documents (not an "other" document filed from an answered info request)
+  const namedDocuments = kyc.documents.filter(d => !d.key.startsWith('other_'))
 
   const doApprove = async () => {
     const ok = await confirm({
@@ -94,6 +98,7 @@ function ReviewView({ id, data }: { id: string; data: VendorReview }) {
         actions={(
           <>
             <Button variant="secondary" icon={<MessageSquarePlus size={16} />} disabled={!canDecide || busy} onClick={() => setAskOpen(true)}>Ask for more details</Button>
+            <Button variant="secondary" icon={<FlagTriangleRight size={16} />} disabled={!canDecide || busy} onClick={() => setFlagOpen(true)}>Flag documents</Button>
             <Button variant="secondary" icon={<X size={16} />} disabled={!canDecide || busy} loading={reject.isPending} onClick={doReject}>Reject</Button>
             <Button icon={<Check size={16} />} disabled={!canDecide || busy} loading={approve.isPending} onClick={doApprove}>Approve</Button>
           </>
@@ -109,13 +114,16 @@ function ReviewView({ id, data }: { id: string; data: VendorReview }) {
         <BusinessSection business={business} />
       </div>
       <KycFormSection form={kyc.form} ifscVerifiedAt={kyc.ifsc_verified_at} />
-      <DocumentsSection documents={kyc.documents} viewer={viewer} />
+      <DocumentsSection documents={kyc.documents} issues={kyc.document_issues} viewer={viewer} />
       <RequestsSection requests={data.info_requests} viewer={viewer} />
       <ActivitySection activity={data.activity} />
       <HistorySection history={data.history} />
 
       {askOpen && (
         <AskMoreDetailsModal open vendorName={name} busy={askInfo.isPending} onClose={() => setAskOpen(false)} onSubmit={d => askInfo.mutate(d)} />
+      )}
+      {flagOpen && (
+        <FlagDocumentsModal open vendorName={name} documents={namedDocuments} busy={flagDocuments.isPending} onClose={() => setFlagOpen(false)} onSubmit={issues => flagDocuments.mutate(issues)} />
       )}
       {viewer.modal}
     </Page>

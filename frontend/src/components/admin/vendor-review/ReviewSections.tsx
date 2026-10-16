@@ -132,22 +132,29 @@ function DocButton({ viewer, label, path, id }: { viewer: Viewer; label: string;
   )
 }
 
-export function DocumentsSection({ documents, viewer }: { documents: VendorReview['kyc']['documents']; viewer: Viewer }) {
+export function DocumentsSection({ documents, issues, viewer }: { documents: VendorReview['kyc']['documents']; issues: Record<string, string> | null; viewer: Viewer }) {
   return (
     <Section title="Documents">
       {documents.length === 0 ? (
         <p className="text-sm text-muted">No documents uploaded.</p>
       ) : (
         <ul className="divide-y divide-border rounded-control border border-border">
-          {documents.map(d => (
-            <li key={d.key} className="flex items-center justify-between gap-3 px-3 py-2">
-              <span className="flex min-w-0 items-center gap-2 text-sm text-text">
-                <FileText size={16} aria-hidden="true" className="shrink-0 text-muted" />
-                <span className="truncate">{d.label}</span>
-              </span>
-              <DocButton viewer={viewer} label={d.label} path={d.path} id={d.key} />
-            </li>
-          ))}
+          {documents.map(d => {
+            const issue = issues?.[d.key]
+            return (
+              <li key={d.key} className={`px-3 py-2 ${issue ? 'bg-warning/5' : ''}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="flex min-w-0 items-center gap-2 text-sm text-text">
+                    <FileText size={16} aria-hidden="true" className="shrink-0 text-muted" />
+                    <span className="truncate">{d.label}</span>
+                    {issue && <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>}
+                  </span>
+                  <DocButton viewer={viewer} label={d.label} path={d.path} id={d.key} />
+                </div>
+                {issue && <p className="mt-1 text-sm text-warning">{issue}</p>}
+              </li>
+            )
+          })}
         </ul>
       )}
     </Section>

@@ -140,6 +140,59 @@ describe('POST /vendor/kyc/:id/request-info', () => {
   });
 });
 
+describe('PUT /vendor/kyc/:id/flag-documents', () => {
+  const send = (issues: unknown, id = V1, token = bearer(SUPER)) => request(app).put(`/api/v1/vendor/kyc/${id}/flag-documents`).set(token).send({ issues });
+
+  it('flags the document, moves the KYC to info_requested (not rejected), tells the vendor and audits', async () => {
+    const res = await send({ panScan: 'Blurry, numbers unreadable' });
+    expect(res.status).toBe(200);
+    const [profile] = supabaseMock.rows('vendor_profiles');
+    expect(profile.kyc_status).toBe('info_requested');
+    expect(profile.kyc_document_issues).toEqual({ panScan: 'Blurry, numbers unreadable' });
+    expect(supabaseMock.writes('notifications', 'POST')[0].body).toMatchObject({ user_id: V1, type: 'kyc_info_requested' });
+    expect(supabaseMock.writes('ai_agent_logs', 'POST')[0].body).toMatchObject({ action: 'kyc_document_flagged' });
+  });
+
+  it('flags more than one document at once, and adds to (not replaces) an existing flag', async () => {
+    await send({ panScan: 'Blurry' });
+    supabaseMock.rows('vendor_profiles')[0].kyc_status = 'submitted'; // as if the vendor partially fixed something else and resubmitted
+    const res = await send({ gstRegistration: 'Expired certificate' });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_document_issues).toEqual({ panScan: 'Blurry', gstRegistration: 'Expired certificate' });
+  });
+
+  it('is a 409 when the KYC is not waiting for review', async () => {
+    reset('approved');
+    expect((await send({ panScan: 'Blurry' })).status).toBe(409);
+    reset('pending');
+    expect((await send({ panScan: 'Blurry' })).status).toBe(409);
+  });
+
+  it('rejects an empty ask, an unknown document key, a short reason and non-platform callers', async () => {
+    expect((await send({})).status).toBe(400);
+    expect((await send({ notARealDoc: 'bad' })).status).toBe(400);
+    expect((await send({ panScan: 'no' })).status).toBe(400);
+    expect((await send({ panScan: 'Blurry' }, V1, bearer(ADMIN))).status).toBe(403);
+    expect((await send({ panScan: 'Blurry' }, V1, bearer(V1))).status).toBe(403);
+  });
+
+  it('cannot be approved while a document fix is pending', async () => {
+    await send({ panScan: 'Blurry' });
+    expect((await request(app).put(`/api/v1/vendor/kyc/${V1}/approve`).set(bearer(SUPER))).status).toBe(409);
+  });
+
+  it('is cleared the moment the vendor resubmits the form', async () => {
+    await send({ panScan: 'Blurry' });
+    const resubmit = await request(app).post('/api/v1/vendor/kyc/submit').set(bearer(V1)).send({
+      companyName: 'Acme Traders', gstNumber: '27ABCDE1234F1Z0', city: 'Pune', address: '1 Main Rd', lat: 18.5, lng: 73.8, companyLogo: null,
+      kycData: { data: { panNumber: 'AAAAA0000A', docUrls: { panScan: `${V1}/pan_2.pdf` } }, otherDocs: [] },
+    });
+    expect(resubmit.status).toBe(200);
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_document_issues).toBeNull();
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_status).toBe('submitted');
+  });
+});
+
 describe('vendor answers', () => {
   const REQ = '00000000-0000-4000-8000-0000000000c1';
   const items = [

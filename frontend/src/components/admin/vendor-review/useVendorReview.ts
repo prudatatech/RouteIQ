@@ -42,5 +42,11 @@ export function useReviewActions(id: string, onDone?: () => void) {
     onError: fail('We could not send the request. Try again.'),
     onSettled: refresh,
   })
-  return { approve, reject, askInfo }
+  const flagDocuments = useMutation({
+    mutationFn: (issues: Record<string, string>) => vendorAPI.flagKycDocuments(id, issues),
+    onSuccess: () => { toast.success('The vendor has been told which documents to fix.'); onDone?.() },
+    onError: fail('We could not flag these documents. Try again.'),
+    onSettled: refresh,
+  })
+  return { approve, reject, askInfo, flagDocuments }
 }

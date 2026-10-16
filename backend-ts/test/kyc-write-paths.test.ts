@@ -148,6 +148,42 @@ describe('PUT /vendor/kyc/documents', () => {
     expect((await request(app).put('/api/v1/vendor/kyc/documents').send({ docUrls: {} })).status).toBe(401);
     expect((await save({ docUrls: {} }, bearer('driver-1'))).status).toBe(403);
   });
+
+  it('clears a document flag the moment that document is re-uploaded, without touching other flags', async () => {
+    supabaseMock.reset({
+      users: [{ id: VENDOR, role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
+      vendor_profiles: [{
+        id: VENDOR,
+        company_name: 'Acme Logistics',
+        kyc_status: 'info_requested',
+        kyc_data: { data: { name: 'Acme', docUrls: { panCard: `${VENDOR}/panCard_old.pdf`, gstRegistration: `${VENDOR}/gst_old.pdf` } }, otherDocs: [] },
+        kyc_document_issues: { panCard: 'Blurry scan', gstRegistration: 'Expired certificate' },
+      }],
+      notifications: [],
+      ai_agent_logs: [],
+    });
+    const res = await save({ docUrls: { panCard: `${VENDOR}/panCard_new.pdf`, gstRegistration: `${VENDOR}/gst_old.pdf` } });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_document_issues).toEqual({ gstRegistration: 'Expired certificate' });
+  });
+
+  it('clears kyc_document_issues entirely once every flagged document has been replaced', async () => {
+    supabaseMock.reset({
+      users: [{ id: VENDOR, role: 'vendor', is_active: true }],
+      vendor_profiles: [{
+        id: VENDOR,
+        company_name: 'Acme Logistics',
+        kyc_status: 'info_requested',
+        kyc_data: { data: { name: 'Acme', docUrls: { panCard: `${VENDOR}/panCard_old.pdf` } }, otherDocs: [] },
+        kyc_document_issues: { panCard: 'Blurry scan' },
+      }],
+      notifications: [],
+      ai_agent_logs: [],
+    });
+    const res = await save({ docUrls: { panCard: `${VENDOR}/panCard_new.pdf` } });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_document_issues).toBeNull();
+  });
 });
 
 describe('vendor form validation', () => {

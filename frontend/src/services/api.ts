@@ -622,6 +622,10 @@ export const vendorAPI = {
   /** Ask the vendor for more details; the KYC moves to "More details asked". */
   requestKycInfo: (id: string, data: { message?: string; items: InfoRequestInput[] }): Promise<{ success: boolean }> =>
     api.post(`/vendor/kyc/${encodeURIComponent(id)}/request-info`, data).then(r => r.data),
+  /** Flags one or more already-submitted documents as needing a fix, each with its own reason; the KYC
+   * moves to "More details asked" too, not rejected - everything else about the application is kept. */
+  flagKycDocuments: (id: string, issues: Record<string, string>) =>
+    api.put(`/vendor/kyc/${encodeURIComponent(id)}/flag-documents`, { issues }).then(r => r.data),
   /** The vendor's own open requests for more details. */
   kycRequests: (): Promise<VendorKycRequest[]> =>
     api.get('/vendor/kyc/requests').then(r => (Array.isArray(r.data) ? r.data : (ensureArray(r.data?.items) as VendorKycRequest[]))),

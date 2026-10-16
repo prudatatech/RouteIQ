@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { VendorReview } from '@/components/admin/vendor-review/types'
 
 const api = vi.hoisted(() => ({
-  review: vi.fn(), approveKyc: vi.fn(), rejectKyc: vi.fn(), requestKycInfo: vi.fn(),
+  review: vi.fn(), approveKyc: vi.fn(), rejectKyc: vi.fn(), requestKycInfo: vi.fn(), flagKycDocuments: vi.fn(),
 }))
 vi.mock('@/services/api', () => ({ vendorAPI: api }))
 vi.mock('@/services/supabase', () => ({ supabase: {} }))
@@ -26,7 +26,7 @@ const fixture = (over: Partial<VendorReview['kyc']> = {}): VendorReview => ({
     monthly_loads: '10-50', gstin: '27AAAPL1234C1ZV', gstin_status: 'unverified', address: '12 MG Road', pincode: '411001', state: 'Maharashtra', state_code: '27', email: 'owner@acme.in',
   },
   kyc: {
-    status: 'submitted', reviewed_at: null, rejection_reason: null, updated_at: '2026-09-10T05:00:00Z', ifsc_verified_at: null,
+    status: 'submitted', reviewed_at: null, rejection_reason: null, document_issues: null, updated_at: '2026-09-10T05:00:00Z', ifsc_verified_at: null,
     form: { name: 'Acme Traders Pvt Ltd', panNumber: 'AAAPL1234C', bankAccountNumber: '123456789012', extra: { 'Latest GST return': 'Filed 20 Sep' } },
     documents: [{ key: 'panScan', label: 'PAN card', path: 'v1/pan.pdf' }],
     ...over,
