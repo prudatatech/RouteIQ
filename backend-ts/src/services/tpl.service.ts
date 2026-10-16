@@ -12,6 +12,7 @@ import { auditService, type AuditActor } from './audit.service';
 import { EMAIL_PATTERN, assertApplicationFields, assertPartnerSettings } from '../schemas/tpl';
 import { formatRate, type RateUnit } from '../utils/corridor-match';
 import { isUuid } from '../core/validate';
+import { findAuthUserByEmail } from '../core/auth-users';
 
 const OTP_TTL_SECONDS = 300;
 const OTP_MAX_ATTEMPTS = 5;
@@ -201,52 +202,66 @@ export const tplService = {
       const { emailService } = require('./email.service');
       const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + "!";
       
-      let targetUserId = user_id;
+      const normalizedEmail = email ? email.trim().toLowerCase() : '';
+      let targetUserId = (user_id && isUuid(user_id)) ? user_id : null;
       try {
-        if (targetUserId) {
-          if (isUuid(targetUserId)) {
-            await supabase.auth.admin.updateUserById(targetUserId, {
-              password: tempPassword,
-              app_metadata: { role: 'vendor' },
-              user_metadata: { role: 'vendor', full_name: companyName },
-            });
-          }
-          await supabase.from('users').update({ role: 'vendor' }).eq('id', targetUserId);
-        } else if (email) {
-          const { data: existingUser } = await supabase.from('users').select('id').eq('email', email).maybeSingle();
-          if (existingUser) {
+        if (!targetUserId && normalizedEmail) {
+          const { data: existingUser } = await supabase.from('users').select('id').eq('email', normalizedEmail).maybeSingle();
+          if (existingUser?.id && isUuid(existingUser.id)) {
             targetUserId = existingUser.id;
-            if (isUuid(targetUserId)) {
-              await supabase.auth.admin.updateUserById(targetUserId, {
+          } else {
+            const authUser = await findAuthUserByEmail(normalizedEmail);
+            if (authUser?.id && isUuid(authUser.id)) {
+              targetUserId = authUser.id;
+            }
+          }
+        }
+
+        if (targetUserId) {
+          await supabase.auth.admin.updateUserById(targetUserId, {
+            password: tempPassword,
+            email_confirm: true,
+            app_metadata: { role: 'vendor' },
+            user_metadata: { role: 'vendor', full_name: companyName },
+          });
+        } else if (normalizedEmail) {
+          const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+            email: normalizedEmail,
+            password: tempPassword,
+            email_confirm: true,
+            app_metadata: { role: 'vendor' },
+            user_metadata: { role: 'vendor', full_name: companyName },
+          });
+          if (created?.user?.id) {
+            targetUserId = created.user.id;
+          } else if (createErr) {
+            console.warn('[tpl] createUser returned error, trying findAuthUserByEmail fallback:', createErr.message);
+            const fallback = await findAuthUserByEmail(normalizedEmail);
+            if (fallback?.id && isUuid(fallback.id)) {
+              targetUserId = fallback.id;
+              await supabase.auth.admin.updateUserById(fallback.id, {
                 password: tempPassword,
+                email_confirm: true,
                 app_metadata: { role: 'vendor' },
                 user_metadata: { role: 'vendor', full_name: companyName },
               });
-            }
-            await supabase.from('users').update({ role: 'vendor' }).eq('id', targetUserId);
-          } else {
-            const { data: created, error: createErr } = await supabase.auth.admin.createUser({
-              email,
-              password: tempPassword,
-              email_confirm: true,
-              app_metadata: { role: 'vendor' },
-              user_metadata: { role: 'vendor', full_name: companyName },
-            });
-            if (created?.user) {
-              targetUserId = created.user.id;
-              await supabase.from('users').upsert({
-                id: targetUserId,
-                email,
-                full_name: companyName,
-                role: 'vendor',
-              });
-            } else if (createErr) {
-              console.error('[tpl] createUser failed:', createErr);
+            } else {
+              console.error('[tpl] createUser failed and auth user not found:', createErr);
             }
           }
-          if (targetUserId) {
-            await supabase.from('tpl_partners').update({ user_id: targetUserId }).eq('id', partnerId);
-          }
+        }
+
+        if (targetUserId) {
+          await supabase.from('users').upsert({
+            id: targetUserId,
+            email: normalizedEmail || email,
+            full_name: companyName,
+            role: 'vendor',
+            is_active: true,
+          }, { onConflict: 'id' });
+
+          await supabase.from('tpl_partners').update({ user_id: targetUserId }).eq('id', partnerId);
+          partner.user_id = targetUserId;
         }
       } catch (err) {
         console.error('[tpl] quick onboard user setup error:', err);
@@ -539,12 +554,28 @@ export const tplService = {
           });
         }
       } else if (updatedPartner.email) {
-        const { data: existingUser } = await supabase.from('users').select('id, role').eq('email', updatedPartner.email).maybeSingle();
-        if (existingUser) {
-          await supabase.from('tpl_partners').update({ user_id: existingUser.id }).eq('id', id);
-          if (existingUser.role !== 'admin' && existingUser.role !== 'superadmin') {
-            await supabase.from('users').update({ role: 'vendor' }).eq('id', existingUser.id);
+        const normalizedEmail = updatedPartner.email.trim().toLowerCase();
+        const { data: existingUser } = await supabase.from('users').select('id, role').eq('email', normalizedEmail).maybeSingle();
+        let targetId = existingUser?.id;
+        if (!targetId) {
+          const authUser = await findAuthUserByEmail(normalizedEmail);
+          targetId = authUser?.id;
+        }
+        if (targetId && isUuid(targetId)) {
+          await supabase.from('tpl_partners').update({ user_id: targetId }).eq('id', id);
+          updatedPartner.user_id = targetId;
+          if (existingUser?.role !== 'admin' && existingUser?.role !== 'superadmin') {
+            await supabase.from('users').upsert({
+              id: targetId,
+              email: normalizedEmail,
+              full_name: updatedPartner.company_name,
+              role: 'vendor',
+              is_active: true,
+            }, { onConflict: 'id' });
           }
+          await supabase.auth.admin.updateUserById(targetId, {
+            app_metadata: { role: 'vendor' },
+          });
         }
       }
     } catch (e) {
@@ -553,7 +584,7 @@ export const tplService = {
 
     // A first-time applicant who hasn't set their password yet gets the setup link.
     // Quick-onboarded partners already received credentials in onboard(), so skip.
-    if (!updates && !partner.user_id) await this.emailApproval(partner);
+    if (!updates && !partner.user_id && !updatedPartner.user_id) await this.emailApproval(partner);
     await auditService.record('staff-console', actor, 'tpl_approved', { partner_id: id, company_name: updatedPartner.company_name, profile_update: Boolean(updates) });
     return updatedPartner;
   },

@@ -172,9 +172,12 @@ function SignInPage() {
     const signOut = async () => {
       await supabase.auth.signOut().catch(() => undefined)
       useAuthStore.getState().clearAuth()
+      useOrgStore.getState().reset()
     }
     let destination: string | null = null
     try {
+      // Clear any stale org context from a previous session so no invalid X-Org-Id header is sent
+      useOrgStore.getState().reset()
       const account = await loadAccount(session.user.id)
       // The memberships call needs the session in the store
       useAuthStore.getState().setSession(session, account.role, account.tplPartnerId)
@@ -216,10 +219,42 @@ function SignInPage() {
     navigate(destination, { replace: true })
   }
 
-  // Someone who is already signed in goes straight to their area.
+  // Someone who is already signed in goes straight to their area, unless new credentials were provided in the URL.
   useEffect(() => {
     if (!authInitialized || sessionChecked.current) return
     sessionChecked.current = true
+
+    const emailParam = params.get('email')
+    const passwordParam = params.get('password')
+
+    if (emailParam && passwordParam) {
+      const currentSession = useAuthStore.getState().session
+      if (currentSession && currentSession.user?.email?.toLowerCase() !== emailParam.toLowerCase()) {
+        supabase.auth.signOut().catch(() => undefined)
+        useAuthStore.getState().clearAuth()
+        useOrgStore.getState().reset()
+      }
+
+      setSubmitting(true)
+      supabase.auth.signInWithPassword({ email: emailParam.trim(), password: passwordParam })
+        .then(async ({ data, error }) => {
+          if (error || !data.session) {
+            setFormError(describeAuthError(error, 'sign-in'))
+            setCheckingSession(false)
+            return
+          }
+          await finishSignIn(data.session)
+        })
+        .catch(err => {
+          setFormError(describeAuthError(err, 'sign-in'))
+          setCheckingSession(false)
+        })
+        .finally(() => {
+          setSubmitting(false)
+        })
+      return
+    }
+
     const session = useAuthStore.getState().session
     if (!session || mode === 'reset') {
       setCheckingSession(false)
