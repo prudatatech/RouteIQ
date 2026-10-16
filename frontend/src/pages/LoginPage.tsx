@@ -221,15 +221,15 @@ function SignInPage() {
         destination = nextForKind('tpl', next) ?? homeForKind('tpl', account)
       }
 
-      // Safety check: if destination ever resolved to /driver, verify if user is 3PL before routing
-      if (destination === '/driver') {
+      // Safety check: if destination ever resolved to /driver or /vendor*, verify if user is 3PL before routing
+      if (destination === '/driver' || destination?.startsWith('/vendor') || (next && next.includes('/3pl-portal/'))) {
         try {
           const checkRes = await tplAPI.checkPartner({ user_id: session.user.id, email: session.user.email })
           if (checkRes?.id) {
             account.role = 'vendor'
             account.tplPartnerId = checkRes.id
             useAuthStore.getState().setSession(session, 'vendor', checkRes.id)
-            destination = `/3pl-portal/${checkRes.id}`
+            destination = (next && next.startsWith('/3pl-portal/')) ? next : `/3pl-portal/${checkRes.id}`
           }
         } catch {
           // ignore

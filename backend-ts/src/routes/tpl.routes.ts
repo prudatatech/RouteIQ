@@ -17,6 +17,7 @@ import { attachOrgContext, currentOrgContext } from '../core/org-context';
 import { isStaff } from '../core/ownership';
 import { partnerRowIdsOf, withoutPrivateDetails } from '../services/tpl-affiliation';
 import { supabase } from '../core/supabase';
+import { findAuthUserByEmail } from '../core/auth-users';
 
 const router = Router();
 
@@ -113,15 +114,16 @@ router.post('/check-partner', rateLimitByIp('tpl-check', 30, 60), optionalAuth, 
         .ilike('email', email)
         .maybeSingle();
       if (data?.id) {
-        if (userId) {
-          if (data.user_id !== userId) {
+        const targetUserId = userId || (await findAuthUserByEmail(email))?.id;
+        if (targetUserId) {
+          if (data.user_id !== targetUserId) {
             await supabase
-              .from('tpl_partners').update({ user_id: userId }).eq('id', data.id);
+              .from('tpl_partners').update({ user_id: targetUserId }).eq('id', data.id);
           }
-          await supabase.from('users').upsert({ id: userId, email, role: 'vendor', is_active: true }, { onConflict: 'id' });
-          if (isUuid(userId)) {
-            await supabase.auth.admin.updateUserById(userId, { app_metadata: { role: 'vendor' } });
-            invalidateRoleCache(userId);
+          await supabase.from('users').upsert({ id: targetUserId, email, role: 'vendor', is_active: true }, { onConflict: 'id' });
+          if (isUuid(targetUserId)) {
+            await supabase.auth.admin.updateUserById(targetUserId, { app_metadata: { role: 'vendor' } });
+            invalidateRoleCache(targetUserId);
           }
         }
         res.json({ id: data.id, status: data.status });

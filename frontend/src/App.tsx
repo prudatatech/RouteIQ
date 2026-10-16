@@ -158,7 +158,7 @@ export default function App() {
         return
       }
       try {
-        const account = await loadAccount(session.user.id)
+        const account = await loadAccount(session.user.id, session.user.email)
         store.setSession(session, account.role, account.tplPartnerId)
       } catch (err) {
         console.error('Failed to load the account role', err)

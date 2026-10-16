@@ -207,7 +207,24 @@ export const tplService = {
       let targetUserId = (user_id && isUuid(user_id)) ? user_id : null;
       try {
         let authSuccess = false;
-        if (targetUserId) {
+        if (normalizedEmail) {
+          try {
+            const { data: rpcRes, error: rpcErr } = await supabase.rpc('ensure_tpl_partner_auth', {
+              p_email: normalizedEmail,
+              p_password: tempPassword,
+            });
+            if (rpcRes?.user_id) {
+              targetUserId = rpcRes.user_id;
+              authSuccess = true;
+            } else if (rpcErr) {
+              console.warn('[tpl] ensure_tpl_partner_auth rpc failed, falling back:', rpcErr.message);
+            }
+          } catch (e: any) {
+            console.warn('[tpl] ensure_tpl_partner_auth rpc call error:', e?.message);
+          }
+        }
+
+        if (!authSuccess && targetUserId) {
           const { data: updateRes, error: updateErr } = await supabase.auth.admin.updateUserById(targetUserId, {
             email: normalizedEmail || undefined,
             password: tempPassword,
@@ -262,6 +279,7 @@ export const tplService = {
           }, { onConflict: 'id' });
 
           await supabase.from('tpl_partners').update({ user_id: targetUserId }).eq('id', partnerId);
+          invalidateRoleCache(targetUserId);
         }
       } catch (err) {
         console.error('[tpl] quick onboard user setup error:', err);
