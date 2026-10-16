@@ -551,8 +551,9 @@ export const tplService = {
       console.error('[tpl] Error syncing user role on approve:', e);
     }
 
-    // A first-time applicant who hasn't set their password yet gets the setup link
-    if (!updates) await this.emailApproval(partner);
+    // A first-time applicant who hasn't set their password yet gets the setup link.
+    // Quick-onboarded partners already received credentials in onboard(), so skip.
+    if (!updates && !partner.user_id) await this.emailApproval(partner);
     await auditService.record('staff-console', actor, 'tpl_approved', { partner_id: id, company_name: updatedPartner.company_name, profile_update: Boolean(updates) });
     return updatedPartner;
   },
