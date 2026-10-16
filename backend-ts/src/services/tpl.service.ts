@@ -206,53 +206,53 @@ export const tplService = {
       const normalizedEmail = email ? email.trim().toLowerCase() : '';
       let targetUserId = (user_id && isUuid(user_id)) ? user_id : null;
       try {
-        if (!targetUserId && normalizedEmail) {
-          const { data: existingUser } = await supabase.from('users').select('id').eq('email', normalizedEmail).maybeSingle();
-          if (existingUser?.id && isUuid(existingUser.id)) {
-            targetUserId = existingUser.id;
+        let authSuccess = false;
+        if (targetUserId) {
+          const { data: updateRes, error: updateErr } = await supabase.auth.admin.updateUserById(targetUserId, {
+            email: normalizedEmail || undefined,
+            password: tempPassword,
+            email_confirm: true,
+            app_metadata: { role: 'vendor' },
+            user_metadata: { role: 'vendor', full_name: companyName },
+          });
+          if (updateRes?.user?.id) {
+            authSuccess = true;
+          } else if (updateErr) {
+            console.warn('[tpl] updateUserById on targetUserId failed, falling back:', updateErr.message);
+          }
+        }
+
+        if (!authSuccess && normalizedEmail) {
+          const existingAuth = await findAuthUserByEmail(normalizedEmail);
+          if (existingAuth?.id && isUuid(existingAuth.id)) {
+            targetUserId = existingAuth.id;
+            const { data: updRes, error: updErr } = await supabase.auth.admin.updateUserById(existingAuth.id, {
+              email: normalizedEmail,
+              password: tempPassword,
+              email_confirm: true,
+              app_metadata: { role: 'vendor' },
+              user_metadata: { role: 'vendor', full_name: companyName },
+            });
+            if (updRes?.user?.id) authSuccess = true;
+            else if (updErr) console.warn('[tpl] updateUserById on found auth user failed:', updErr.message);
           } else {
-            const authUser = await findAuthUserByEmail(normalizedEmail);
-            if (authUser?.id && isUuid(authUser.id)) {
-              targetUserId = authUser.id;
+            const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+              email: normalizedEmail,
+              password: tempPassword,
+              email_confirm: true,
+              app_metadata: { role: 'vendor' },
+              user_metadata: { role: 'vendor', full_name: companyName },
+            });
+            if (created?.user?.id) {
+              targetUserId = created.user.id;
+              authSuccess = true;
+            } else if (createErr) {
+              console.error('[tpl] createUser failed:', createErr.message);
             }
           }
         }
 
-        if (targetUserId) {
-          await supabase.auth.admin.updateUserById(targetUserId, {
-            password: tempPassword,
-            email_confirm: true,
-            app_metadata: { role: 'vendor' },
-            user_metadata: { role: 'vendor', full_name: companyName },
-          });
-        } else if (normalizedEmail) {
-          const { data: created, error: createErr } = await supabase.auth.admin.createUser({
-            email: normalizedEmail,
-            password: tempPassword,
-            email_confirm: true,
-            app_metadata: { role: 'vendor' },
-            user_metadata: { role: 'vendor', full_name: companyName },
-          });
-          if (created?.user?.id) {
-            targetUserId = created.user.id;
-          } else if (createErr) {
-            console.warn('[tpl] createUser returned error, trying findAuthUserByEmail fallback:', createErr.message);
-            const fallback = await findAuthUserByEmail(normalizedEmail);
-            if (fallback?.id && isUuid(fallback.id)) {
-              targetUserId = fallback.id;
-              await supabase.auth.admin.updateUserById(fallback.id, {
-                password: tempPassword,
-                email_confirm: true,
-                app_metadata: { role: 'vendor' },
-                user_metadata: { role: 'vendor', full_name: companyName },
-              });
-            } else {
-              console.error('[tpl] createUser failed and auth user not found:', createErr);
-            }
-          }
-        }
-
-        if (targetUserId) {
+        if (targetUserId && authSuccess) {
           await supabase.from('users').upsert({
             id: targetUserId,
             email: normalizedEmail || email,
@@ -262,7 +262,6 @@ export const tplService = {
           }, { onConflict: 'id' });
 
           await supabase.from('tpl_partners').update({ user_id: targetUserId }).eq('id', partnerId);
-          partner.user_id = targetUserId;
         }
       } catch (err) {
         console.error('[tpl] quick onboard user setup error:', err);
