@@ -136,6 +136,26 @@ describe('Today, the dashboard and search count only the company\'s own records'
     expect(b.problems.count).toBe(1);
   });
 
+  it('Today: the new-vendor-loads badge matches what a company can see, not every company\'s pending loads', async () => {
+    seed();
+    supabaseMock.reset({
+      ...(Object.fromEntries(['vehicles', 'shipments', 'cargo_exceptions', 'sos_alerts'].map(t => [t, supabaseMock.rows(t)]))),
+      ...orgWorld(),
+      vendor_shipment_requests: [
+        { id: 'vl-open', status: 'pending', routing: 'open', company_ids: [] },
+        { id: 'vl-chosen-a', status: 'pending', routing: 'chosen', company_ids: [ORG.companyA] },
+        { id: 'vl-chosen-b', status: 'pending', routing: 'chosen', company_ids: [ORG.companyB] },
+      ],
+    });
+    const a = (await get('/ops/today', 'admin-a')).body.queues;
+    const b = (await get('/ops/today', 'admin-b')).body.queues;
+    const platform = (await get('/ops/today', 'super-1', ORG.platform)).body.queues;
+    // the open load counts for both; each chosen one counts only for the company it was routed to
+    expect(a.requests.vendor_loads).toBe(2);
+    expect(b.requests.vendor_loads).toBe(2);
+    expect(platform.requests.vendor_loads).toBe(3);
+  });
+
   it('the dashboard: active vehicles and shipment counts', async () => {
     seed();
     supabaseMock.reset({
