@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefOb
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
-import { Eye, EyeOff } from 'lucide-react'
+import { Building2, Eye, EyeOff, MapPinned, Package, Truck } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/services/supabase'
 import { destinationFor, loadAccount } from '@/services/account'
@@ -463,7 +463,10 @@ function SignInPage() {
       )}
 
       {mode === 'sign-in' && (
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between">
+          <button type="button" className={clsx(linkClass, 'text-sm')} onClick={() => setOtpOpen(true)}>
+            Use a mobile code instead
+          </button>
           <button type="button" className={clsx(linkClass, 'text-sm')} onClick={() => switchMode('forgot')}>
             Forgot password?
           </button>
@@ -476,14 +479,17 @@ function SignInPage() {
     </form>
   )
 
+  // Sign-in has one audience-defining choice shown inline (run a company?) and several narrower ones
+  // (vendor quick-start, tracking, 3PL) tucked under a disclosure so the card itself stays short.
   const otherOptions: ReactNode[] = []
+  const moreOptions: ReactNode[] = []
   if (mode === 'sign-in') {
     if (!registering) {
       otherOptions.push(
         <>Run a transport company? <Link className={linkClass} to="/login?register=company">Register your logistic company</Link></>,
       )
     }
-    otherOptions.push(
+    moreOptions.push(
       <>Ready to ship? <Link className={linkClass} to="/vendor/request">Start your load without signing in</Link></>,
       <>Have a tracking ID? <Link className={linkClass} to="/track">Track a shipment</Link></>,
       <>Want to work with us as a 3PL partner? <Link className={linkClass} to="/3pl/onboard">Apply to join</Link></>,
@@ -501,18 +507,45 @@ function SignInPage() {
     )
   }
 
+  const brandHighlights: { icon: typeof Package; text: string }[] = [
+    { icon: Package, text: 'Vendors post loads and track them to delivery' },
+    { icon: Building2, text: 'Operations teams plan trips and fill capacity' },
+    { icon: Truck, text: '3PL partners manage their fleet and coverage' },
+    { icon: MapPinned, text: 'Everyone sees where a shipment is, live' },
+  ]
+
   return (
-    <div className="flex min-h-screen flex-col bg-bg text-text">
-      <header className="mx-auto flex w-full max-w-content items-center px-4 py-4 sm:px-6">
-        <Link to="/" className={clsx(linkClass, 'flex items-center gap-2.5 text-text hover:no-underline')}>
+    <div className="min-h-screen bg-bg text-text lg:grid lg:grid-cols-2">
+      {/* Brand panel: desktop only. A plain form on a blank page reads as a bare admin tool; this gives the
+          sign-in a visual identity and tells a visitor what the product actually does while they wait. */}
+      <aside className="hidden flex-col justify-between bg-text p-10 lg:flex">
+        <Link to="/" className="flex items-center gap-2.5 text-white hover:no-underline">
+          <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
+          <span className="text-lg font-semibold text-white">MargixIndia</span>
+        </Link>
+        <div>
+          <h2 className="text-3xl font-semibold leading-tight text-white">
+            One sign-in for your whole freight operation
+          </h2>
+          <ul className="mt-8 space-y-4">
+            {brandHighlights.map(({ icon: Icon, text }) => (
+              <li key={text} className="flex items-start gap-3 text-sm text-white/70">
+                <Icon size={18} className="mt-0.5 shrink-0 text-brand-fill" aria-hidden />
+                {text}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-xs text-white/40">© {new Date().getFullYear()} MargixIndia by Prudata</p>
+      </aside>
+
+      <main className="flex min-h-screen flex-col px-4 py-6 sm:px-6 lg:min-h-0 lg:justify-center lg:px-16 lg:py-0">
+        <Link to="/" className={clsx(linkClass, 'mb-8 flex items-center gap-2.5 text-text hover:no-underline lg:hidden')}>
           <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
           <span className="text-lg font-semibold">MargixIndia</span>
-          <span className="text-sm font-normal text-muted">by Prudata</span>
         </Link>
-      </header>
 
-      <main className="flex flex-1 justify-center px-4 pb-12 pt-4 sm:items-center sm:px-6 sm:pt-0">
-        <div className="w-full max-w-md">
+        <div className="mx-auto w-full max-w-md lg:mx-0">
           {waitingForSession ? (
             <LoadingState label="Checking your sign-in" />
           ) : (
@@ -560,29 +593,33 @@ function SignInPage() {
                       </div>
                     )}
                     {form}
-                    {mode === 'sign-in' && (
-                      <div className="mt-5 border-t border-border pt-4">
-                        <p className="mb-2 text-sm text-muted">Prefer your mobile number? We text you a 6-digit code.</p>
-                        <Button variant="secondary" size="lg" fullWidth onClick={() => setOtpOpen(true)}>Sign in with a mobile code</Button>
-                      </div>
-                    )}
                   </>
                 )}
               </Card>
 
               {mode === 'sign-in' && !resetLinkMissing && (
-                <div className="mt-4 rounded-card border border-brand/40 bg-brand-soft p-4">
-                  <p className="text-sm font-medium text-text">New here?</p>
-                  <p className="mt-0.5 text-sm text-muted">Create a free vendor account. Anything you filled in is kept{next ? ' and you come straight back to it' : ''}.</p>
-                  <Button variant="secondary" size="lg" fullWidth className="mt-3" onClick={() => switchMode('sign-up')}>
-                    New here? Create a vendor account
-                  </Button>
-                </div>
+                <p className="mt-4 text-center text-sm text-muted">
+                  New here? <button type="button" className={linkClass} onClick={() => switchMode('sign-up')}>Create a free vendor account</button>
+                </p>
               )}
 
-              <ul className="mt-6 space-y-2 text-sm text-muted">
-                {otherOptions.map((option, i) => <li key={i}>{option}</li>)}
-              </ul>
+              {otherOptions.length > 0 && (
+                <ul className="mt-6 space-y-2 text-sm text-muted">
+                  {otherOptions.map((option, i) => <li key={i}>{option}</li>)}
+                </ul>
+              )}
+
+              {mode === 'sign-in' && moreOptions.length > 0 && (
+                <details className="group mt-4">
+                  <summary className="cursor-pointer list-none text-sm font-medium text-muted hover:text-text">
+                    More ways to get started
+                    <span className="ml-1 inline-block transition-transform group-open:rotate-180">⌄</span>
+                  </summary>
+                  <ul className="mt-3 space-y-2 text-sm text-muted">
+                    {moreOptions.map((option, i) => <li key={i}>{option}</li>)}
+                  </ul>
+                </details>
+              )}
             </>
           )}
         </div>

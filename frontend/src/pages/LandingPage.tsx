@@ -71,10 +71,10 @@ function LiveNumbers() {
   const shown = data ? statLabels.filter(s => data[s.key] > 0) : []
   if (shown.length === 0) return null
   return (
-    <section aria-label="Platform in numbers" className="mx-auto max-w-content px-4 pb-12 sm:px-6 sm:pb-16">
-      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <section aria-label="Platform in numbers" className="mx-auto -mt-8 max-w-content px-4 pb-4 sm:px-6 sm:pb-6">
+      <dl className="grid grid-cols-2 gap-4 rounded-card border border-border bg-surface p-6 shadow-raised lg:grid-cols-4">
         {shown.map(({ key, label }) => (
-          <div key={key} className="rounded-card border border-border bg-surface p-5">
+          <div key={key}>
             <dd className="text-3xl font-semibold tabular text-text">{data![key].toLocaleString('en-IN')}</dd>
             <dt className="mt-1 text-sm text-muted">{label}</dt>
           </div>
@@ -93,15 +93,14 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-bg text-text">
-      <header className="border-b border-border bg-surface">
+      <header className="border-b border-border/10 bg-text">
         <div className="mx-auto flex h-16 max-w-content items-center justify-between gap-4 px-4 sm:px-6">
-          <Link to="/" className="flex min-w-0 items-center gap-2.5 rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+          <Link to="/" className="flex min-w-0 items-center gap-2.5 rounded-control text-white hover:no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-fill">
             <img src="/margix-logo.png" alt="" className="h-8 w-8 shrink-0 object-contain" />
-            <span className="text-lg font-semibold">MargixIndia</span>
-            <span className="hidden text-sm text-muted sm:inline">by Prudata</span>
+            <span className="truncate text-lg font-semibold">MargixIndia</span>
           </Link>
-          <nav aria-label="Main" className="flex items-center gap-2">
-            <Link to="/track" className={`${buttonClasses({ variant: 'ghost', size: 'sm' })} hidden sm:inline-flex`}>
+          <nav aria-label="Main" className="flex shrink-0 items-center gap-2">
+            <Link to="/track" className="hidden rounded-control px-3 py-2 text-sm font-medium text-white/70 hover:text-white sm:inline-flex">
               Track a shipment
             </Link>
             <Link to="/login" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>Sign in</Link>
@@ -110,30 +109,35 @@ export default function LandingPage() {
       </header>
 
       <main>
-        <section className="mx-auto max-w-content px-4 py-12 sm:px-6 sm:py-16 lg:py-24">
-          <div className="max-w-3xl">
-            <h1 className="text-3xl font-semibold text-text sm:text-5xl">Freight operations, capacity and tracking in one place</h1>
-            <p className="mt-4 text-base text-muted sm:text-lg">
-              MargixIndia connects your operations team, vendors, 3PL partners and drivers. Plan shipments and trips, fill
-              trucks through bidding and partners, and let everyone see where a load is.
-            </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link to="/vendor/request" className={buttonClasses({ variant: 'primary', size: 'lg' })}>Post a load</Link>
+        <section className="bg-text">
+          <div className="mx-auto max-w-content px-4 pb-20 pt-12 sm:px-6 sm:pb-28 sm:pt-16">
+            <div className="max-w-3xl">
+              <p className="text-sm font-semibold uppercase tracking-wide text-brand-fill">Freight operations platform</p>
+              <h1 className="mt-3 text-3xl font-semibold text-white sm:text-5xl">Freight operations, capacity and tracking in one place</h1>
+              <p className="mt-4 max-w-xl text-base text-white/70 sm:text-lg">
+                MargixIndia connects your operations team, vendors, 3PL partners and drivers. Plan shipments and trips, fill
+                trucks through bidding and partners, and let everyone see where a load is.
+              </p>
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <Link to="/vendor/request" className={buttonClasses({ variant: 'primary', size: 'lg' })}>Post a load</Link>
+                <Link to="/login" className={buttonClasses({ variant: 'secondary', size: 'lg' })}>Sign in</Link>
+              </div>
+              <p className="mt-3 text-sm text-white/50">Fill in your load first. You sign in only when you submit.</p>
             </div>
-            <p className="mt-3 text-sm text-muted">Fill in your load first. You sign in only when you submit.</p>
           </div>
         </section>
 
         <LiveNumbers />
 
-        <section aria-labelledby="audiences-title" className="mx-auto max-w-content px-4 pb-12 sm:px-6 sm:pb-16">
-          <h2 id="audiences-title" className="sr-only">Get started</h2>
-          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section aria-labelledby="audiences-title" className="mx-auto max-w-content px-4 pb-12 pt-8 sm:px-6 sm:pb-16 sm:pt-10">
+          <h2 id="audiences-title" className="text-2xl font-semibold text-text sm:text-3xl">Get started</h2>
+          <p className="mt-2 max-w-2xl text-base text-muted">Pick the one that's you — everyone signs in from the same place.</p>
+          <ul className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {audiences.map(({ icon: AudienceIcon, title, description, action, secondary }) => {
               const to = title === '3PL partners' && tplPartnerId ? `/3pl-portal/${tplPartnerId}` : action.to
               const label = title === '3PL partners' && tplPartnerId ? 'Go to partner portal' : action.label
               return (
-                <li key={title} className="flex flex-col rounded-card border border-border bg-surface p-6">
+                <li key={title} className="flex flex-col rounded-card border border-border bg-surface p-6 shadow-raised transition-shadow hover:shadow-dialog">
                   <span className="flex h-10 w-10 items-center justify-center rounded-control bg-brand-soft text-brand">
                     <AudienceIcon size={20} aria-hidden />
                   </span>
@@ -151,18 +155,18 @@ export default function LandingPage() {
           </ul>
         </section>
 
-        <section aria-labelledby="features-title" className="border-t border-border bg-surface">
+        <section aria-labelledby="features-title" className="border-t border-border bg-surface-subtle">
           <div className="mx-auto max-w-content px-4 py-12 sm:px-6 sm:py-16">
             <h2 id="features-title" className="text-2xl font-semibold text-text sm:text-3xl">What the console does</h2>
             <p className="mt-2 max-w-2xl text-base text-muted">The tools your operations team uses every day, in one place.</p>
-            <ul className="mt-8 grid gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
+            <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {features.map(({ icon: FeatureIcon, title, description }) => (
-                <li key={title} className="flex gap-3">
-                  <FeatureIcon size={20} aria-hidden className="mt-0.5 shrink-0 text-brand" />
-                  <div>
-                    <h3 className="text-base font-semibold text-text">{title}</h3>
-                    <p className="mt-1 text-sm text-muted">{description}</p>
-                  </div>
+                <li key={title} className="rounded-card border border-border bg-surface p-5">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-control bg-brand-soft text-brand">
+                    <FeatureIcon size={18} aria-hidden />
+                  </span>
+                  <h3 className="mt-3 text-base font-semibold text-text">{title}</h3>
+                  <p className="mt-1 text-sm text-muted">{description}</p>
                 </li>
               ))}
             </ul>
