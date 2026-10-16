@@ -217,7 +217,7 @@ async function resolveSupabaseRole(userId: string): Promise<string> {
   if (cached && cached.expiresAt > Date.now()) return cached.role;
 
   const [userRes, vendorRes, tplRes] = await Promise.all([
-    supabase.from('users').select('role, is_active, email').eq('id', userId).maybeSingle(),
+    supabase.from('users').select('role, is_active').eq('id', userId).maybeSingle(),
     supabase.from('vendor_profiles').select('id').eq('id', userId).maybeSingle(),
     supabase.from('tpl_partners').select('id').eq('user_id', userId).maybeSingle(),
   ]);
@@ -226,37 +226,8 @@ async function resolveSupabaseRole(userId: string): Promise<string> {
   const user = userRes.data;
   if (user && user.is_active === false) throw new AuthError('Account is inactive');
 
-  let isVendor = Boolean(vendorRes.data || tplRes.data);
+  const isVendor = Boolean(vendorRes.data || tplRes.data);
   let role: string | undefined = user?.role;
-
-  if (!isVendor && role !== 'admin' && role !== 'superadmin') {
-    let email = user?.email?.trim().toLowerCase();
-    if (!email) {
-      try {
-        const { data: authUser } = await supabase.auth.admin.getUserById(userId);
-        email = authUser?.user?.email?.trim().toLowerCase();
-      } catch {
-        // ignore
-      }
-    }
-    if (email) {
-      const { data: byEmail } = await supabase
-        .from('tpl_partners')
-        .select('id, user_id')
-        .ilike('email', email)
-        .maybeSingle();
-      if (byEmail) {
-        isVendor = true;
-        if (byEmail.user_id !== userId) {
-          await supabase.from('tpl_partners').update({ user_id: userId }).eq('id', byEmail.id);
-        }
-        if (role !== 'vendor') {
-          await supabase.from('users').upsert({ id: userId, email, role: 'vendor', is_active: true }, { onConflict: 'id' });
-        }
-      }
-    }
-  }
-
   if (role !== 'admin' && role !== 'superadmin' && isVendor) role = 'vendor';
   if (!role) throw new AuthError('No role assigned to this account');
 
