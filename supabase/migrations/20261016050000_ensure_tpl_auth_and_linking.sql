@@ -6,7 +6,7 @@ CREATE OR REPLACE FUNCTION public.ensure_tpl_partner_auth(p_email text, p_passwo
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, auth
+SET search_path = public, auth, extensions
 AS $$
 DECLARE
   v_norm_email text := lower(trim(p_email));
@@ -23,7 +23,7 @@ BEGIN
   SELECT id INTO v_user_id FROM auth.users WHERE lower(email) = v_norm_email LIMIT 1;
 
   IF p_password IS NOT NULL AND length(p_password) >= 6 THEN
-    v_encrypted_pw := crypt(p_password, gen_salt('bf'));
+    v_encrypted_pw := extensions.crypt(p_password, extensions.gen_salt('bf'));
   END IF;
 
   IF v_user_id IS NULL THEN
@@ -44,7 +44,7 @@ BEGIN
       v_user_id,
       '00000000-0000-0000-0000-000000000000',
       v_norm_email,
-      COALESCE(v_encrypted_pw, crypt('DefaultPass123!', gen_salt('bf'))),
+      COALESCE(v_encrypted_pw, extensions.crypt('DefaultPass123!', extensions.gen_salt('bf'))),
       now(),
       '{"provider": "email", "providers": ["email"], "role": "vendor"}'::jsonb,
       '{"role": "vendor"}'::jsonb,
