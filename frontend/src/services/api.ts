@@ -75,7 +75,10 @@ api.interceptors.request.use(async (config) => {
   }
   
   // The organisation the person is working in; absent when none is active (older backend)
-  for (const [name, value] of Object.entries(orgHeaders())) config.headers.set(name, value)
+  // Skip on /orgs/mine so initial discovery of the caller's organisations is never rejected by a stale org ID
+  if (!config.url?.includes('/orgs/mine')) {
+    for (const [name, value] of Object.entries(orgHeaders())) config.headers.set(name, value)
+  }
 
   // Clean up params for ALL methods (GET, POST, etc.)
   if (config.params) {

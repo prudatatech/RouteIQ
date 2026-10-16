@@ -11,6 +11,7 @@ import { gstinError, normalizeGstin } from '../utils/gstin';
 import { auditService, type AuditActor } from './audit.service';
 import { EMAIL_PATTERN, assertApplicationFields, assertPartnerSettings } from '../schemas/tpl';
 import { formatRate, type RateUnit } from '../utils/corridor-match';
+import { isUuid } from '../core/validate';
 
 const OTP_TTL_SECONDS = 300;
 const OTP_MAX_ATTEMPTS = 5;
@@ -200,8 +201,55 @@ export const tplService = {
       const { emailService } = require('./email.service');
       const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + "!";
       
-      if (user_id) {
-        await supabase.auth.admin.updateUserById(user_id, { password: tempPassword });
+      let targetUserId = user_id;
+      try {
+        if (targetUserId) {
+          if (isUuid(targetUserId)) {
+            await supabase.auth.admin.updateUserById(targetUserId, {
+              password: tempPassword,
+              app_metadata: { role: 'vendor' },
+              user_metadata: { role: 'vendor', full_name: companyName },
+            });
+          }
+          await supabase.from('users').update({ role: 'vendor' }).eq('id', targetUserId);
+        } else if (email) {
+          const { data: existingUser } = await supabase.from('users').select('id').eq('email', email).maybeSingle();
+          if (existingUser) {
+            targetUserId = existingUser.id;
+            if (isUuid(targetUserId)) {
+              await supabase.auth.admin.updateUserById(targetUserId, {
+                password: tempPassword,
+                app_metadata: { role: 'vendor' },
+                user_metadata: { role: 'vendor', full_name: companyName },
+              });
+            }
+            await supabase.from('users').update({ role: 'vendor' }).eq('id', targetUserId);
+          } else {
+            const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+              email,
+              password: tempPassword,
+              email_confirm: true,
+              app_metadata: { role: 'vendor' },
+              user_metadata: { role: 'vendor', full_name: companyName },
+            });
+            if (created?.user) {
+              targetUserId = created.user.id;
+              await supabase.from('users').upsert({
+                id: targetUserId,
+                email,
+                full_name: companyName,
+                role: 'vendor',
+              });
+            } else if (createErr) {
+              console.error('[tpl] createUser failed:', createErr);
+            }
+          }
+          if (targetUserId) {
+            await supabase.from('tpl_partners').update({ user_id: targetUserId }).eq('id', partnerId);
+          }
+        }
+      } catch (err) {
+        console.error('[tpl] quick onboard user setup error:', err);
       }
 
       const html = `
@@ -482,7 +530,28 @@ export const tplService = {
       'tpl_approved',
       id,
     );
-    // A first-time applicant has no account yet, so the in-app notice above reaches nobody: email the setup link
+    try {
+      if (updatedPartner.user_id) {
+        await supabase.from('users').update({ role: 'vendor' }).eq('id', updatedPartner.user_id);
+        if (isUuid(updatedPartner.user_id)) {
+          await supabase.auth.admin.updateUserById(updatedPartner.user_id, {
+            app_metadata: { role: 'vendor' },
+          });
+        }
+      } else if (updatedPartner.email) {
+        const { data: existingUser } = await supabase.from('users').select('id, role').eq('email', updatedPartner.email).maybeSingle();
+        if (existingUser) {
+          await supabase.from('tpl_partners').update({ user_id: existingUser.id }).eq('id', id);
+          if (existingUser.role !== 'admin' && existingUser.role !== 'superadmin') {
+            await supabase.from('users').update({ role: 'vendor' }).eq('id', existingUser.id);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[tpl] Error syncing user role on approve:', e);
+    }
+
+    // A first-time applicant who hasn't set their password yet gets the setup link
     if (!updates) await this.emailApproval(partner);
     await auditService.record('staff-console', actor, 'tpl_approved', { partner_id: id, company_name: updatedPartner.company_name, profile_update: Boolean(updates) });
     return updatedPartner;

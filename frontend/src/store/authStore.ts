@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Session } from '@supabase/supabase-js'
+import { useOrgStore } from './orgStore'
 
 // Supabase's own client already persists the token/refreshToken/session in localStorage
 // under 'margixindia-auth' (see services/supabase.ts). This store used to duplicate that
@@ -62,8 +63,10 @@ export const useAuthStore = create<AuthState>()(
 
       setAuthInitialized: (initialized: boolean) => set({ authInitialized: initialized }),
 
-      clearAuth: () =>
-        set({ token: null, refreshToken: null, role: null, userId: null, tplPartnerId: null, session: null }),
+      clearAuth: () => {
+        useOrgStore.getState().reset()
+        set({ token: null, refreshToken: null, role: null, userId: null, tplPartnerId: null, session: null })
+      },
     }),
     {
       name: LEGACY_PERSISTED_KEY,
