@@ -44,7 +44,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * Customer price from the shared pricing engine (rate card, driving distance,
- * weight, vehicle type, demand and past accepted prices). The customer sees the
+ * selected truck capacity and the owner's reference bands). The customer sees the
  * engine's range and its reasons; staff confirm the final price on acceptance.
  */
 export async function computeQuote(input: QuoteInput, ctx: { userId?: string } = {}): Promise<Quote> {
@@ -81,6 +81,7 @@ export async function computeQuote(input: QuoteInput, ctx: { userId?: string } =
     distance_km: outcome.distance_km,
     factors: [
       ...outcome.factors.map(f => ({ code: f.code, label: f.label, detail: f.detail })),
+      { code: 'reference_note', label: 'Reference price', detail: outcome.notes.join(' ') },
       { code: 'final_price', label: 'Final price', detail: 'This is an estimate. Our team confirms the price when your booking is accepted.' },
     ],
     source: 'pricing_engine',

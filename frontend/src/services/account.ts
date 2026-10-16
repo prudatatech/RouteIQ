@@ -14,16 +14,30 @@ export interface Account {
  * vendor profile or a 3PL partner record is a vendor, otherwise the public.users role.
  * Never reads user_metadata, which the user can set themselves.
  */
-export async function loadAccount(userId: string, email?: string): Promise<Account> {
-  const [user, vendor, partner] = await Promise.all([
-    Promise.resolve(supabase.from('users').select('role').eq('id', userId).maybeSingle()).catch(() => ({ data: null, error: null })),
-    Promise.resolve(supabase.from('vendor_profiles').select('id').eq('id', userId).maybeSingle()).catch(() => ({ data: null, error: null })),
-    Promise.resolve(supabase.from('tpl_partners').select('id').eq('user_id', userId).limit(1).maybeSingle()).catch(() => ({ data: null, error: null })),
-  ])
+const pendingAccounts = new Map<string, Promise<Account>>()
 
-  let userRole: string | null = user?.data?.role ?? null
-  const hasVendorProfile = !!vendor?.data
-  let tplPartnerId: string | null = partner?.data?.id ?? null
+/** Session restoration and auth events can arrive together. Share only the in-flight
+ * lookup; later requests still read fresh roles and profile state from the database. */
+export function loadAccount(userId: string, email?: string): Promise<Account> {
+  const pending = pendingAccounts.get(userId)
+  if (pending) return pending
+  const request = readAccount(userId, email).finally(() => pendingAccounts.delete(userId))
+  pendingAccounts.set(userId, request)
+  return request
+}
+
+async function readAccount(userId: string, email?: string): Promise<Account> {
+  const [user, vendor, partner] = await Promise.all([
+    supabase.from('users').select('role').eq('id', userId).maybeSingle(),
+    supabase.from('vendor_profiles').select('id').eq('id', userId).maybeSingle(),
+    supabase.from('tpl_partners').select('id').eq('user_id', userId).limit(1).maybeSingle(),
+  ])
+  const failed = user.error || vendor.error || partner.error
+  if (failed) throw failed
+
+  let userRole: string | null = user.data?.role ?? null
+  const hasVendorProfile = !!vendor.data
+  let tplPartnerId: string | null = partner.data?.id ?? null
 
   if (!tplPartnerId) {
     try {

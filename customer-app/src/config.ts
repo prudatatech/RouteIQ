@@ -20,7 +20,9 @@ function required(name: string, value: string | undefined): string {
   return trimmed;
 }
 
-export const API_BASE_URL = required('EXPO_PUBLIC_API_URL', process.env.EXPO_PUBLIC_API_URL).replace(/\/+$/, '');
+const DEFAULT_API_URL = 'https://api.margixindia.com';
+
+export const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL?.trim() || DEFAULT_API_URL).replace(/\/+$/, '');
 
 export const API_V1 = `${API_BASE_URL}/api/v1`;
 

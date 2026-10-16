@@ -7,7 +7,7 @@ import { api } from '../services/api';
 import { colors } from '../theme';
 import { openNotification } from '../services/driverLinks';
 
-const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient || (Constants as unknown as { appOwnership?: string }).appOwnership === 'expo';
 
 // Configure how notifications behave when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -141,6 +141,12 @@ async function registerForPushNotificationsAsync() {
       lightColor: colors.danger,
       sound: 'uber_driver_sound.mp3'
     });
+  }
+
+  // Remote push notification tokens are not supported in Expo Go on Android since SDK 53
+  if (isExpoGo && Platform.OS === 'android') {
+    console.log('[NotificationListener] Skipping remote push token in Expo Go (dev/standalone build required for FCM)');
+    return;
   }
 
   const { status: existingStatus } = await Notifications.getPermissionsAsync();

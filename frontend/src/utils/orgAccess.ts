@@ -26,10 +26,32 @@ export function isPlatformActor(active: Membership | null): boolean {
 export type Actor = 'platform' | 'company'
 export const actorFor = (active: Membership | null): Actor => (isPlatformActor(active) ? 'platform' : 'company')
 
-/** Where a path may be opened by this actor: /platform/* is for the platform owner only. */
+/**
+ * Day-to-day logistics pages: dispatching trips, running a fleet, pricing shipments. These belong to a
+ * logistic company, never to the platform (docs/platform-model.md: the platform is "orgs, users, config,
+ * commissions — NOT day-to-day logistics"). The platform owner manages organisations and staff instead.
+ */
+const COMPANY_OPERATIONAL_PATHS = [
+  '/today', '/requests', '/bookings', '/vendor-requests',
+  '/shipments', '/dispatch', '/cargo', '/emergency',
+  '/fleet', '/vehicle-requests', '/routes', '/route-planner', '/optimize', '/live-map',
+  '/return-trips', '/3pl-partners', '/money', '/analytics', '/insights',
+]
+
+/** True for a page that belongs to running a logistic company's fleet and shipments, not to the platform. */
+export function isCompanyOperationalPath(pathname: string): boolean {
+  return COMPANY_OPERATIONAL_PATHS.some(base => pathname === base || pathname.startsWith(`${base}/`))
+}
+
+/**
+ * Where a path may be opened by this actor: /platform/* and vendor KYC review are for the platform owner
+ * only; day-to-day logistics pages are for a company (or the platform owner acting as one) but not for
+ * someone acting as the platform, which owns no fleet of its own.
+ */
 export function canOpenPath(pathname: string, active: Membership | null): boolean {
   if (pathname === '/platform' || pathname.startsWith('/platform/')) return isPlatformActor(active)
   if (isPlatformOnlyPath(pathname)) return isPlatformActor(active)
+  if (isCompanyOperationalPath(pathname)) return !isPlatformActor(active)
   return true
 }
 

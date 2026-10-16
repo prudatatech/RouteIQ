@@ -81,7 +81,7 @@ export async function getTodayQueues(userId: string, scope: TodayScope) {
 
   const [
     sos, problemsOpen, problemsOverdue, bookings, vendorLoads, shipmentsNeedVehicle, vendorLoadsNeedVehicle,
-    tripsToSend, vehicleRequests, documents, driverActions,
+    tripsToSend, vehicleRequests, pendingVehicles, documents, driverActions,
     activeTrips, vehiclesOnRoad, routesToday, routesDoneToday,
     kyc, bids, unpriced, paymentReports,
   ] = await Promise.all([
@@ -95,6 +95,7 @@ export async function getTodayQueues(userId: string, scope: TodayScope) {
     countOf(head('vendor_shipment_requests').in('status', VENDOR_LOAD_NEEDS_VEHICLE), 'vendor loads needing a vehicle'),
     countOf(owned('routes').eq('status', 'pending'), 'trips to send'),
     countVehicleRequests(),
+    countOf(owned('vehicles').in('profile_status', ['quick_added', 'pending_documents']), 'trucks needing document completion'),
     countDocumentsToReview(),
     countOf(head('notifications').eq('user_id', userId).eq('is_read', false).in('type', [...DRIVER_ACTION_NOTIFICATION_TYPES]), 'driver actions'),
     countOf(owned('routes').eq('status', 'active'), 'active trips'),
@@ -115,6 +116,7 @@ export async function getTodayQueues(userId: string, scope: TodayScope) {
     needs_vehicle: { count: shipmentsNeedVehicle + vendorLoadsNeedVehicle, shipments: shipmentsNeedVehicle, vendor_loads: vendorLoadsNeedVehicle },
     trips_to_send: { count: tripsToSend },
     vehicle_requests: { count: vehicleRequests },
+    pending_vehicles: { count: pendingVehicles },
     documents: { count: documents },
     driver_actions: { count: driverActions },
   };

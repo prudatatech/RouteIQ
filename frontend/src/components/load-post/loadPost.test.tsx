@@ -432,7 +432,7 @@ describe('the form draft', () => {
     render(wrap(<VendorShipmentRequestPage />))
     await waitFor(() => expect(screen.getByTestId('vehicle-suggestion').textContent).toBe('Eicher 14 ft · 3–5 T'))
     await waitFor(() => expect(loadGuestDraft<{ vehicle_class: string }>('load')?.vehicle_class).toBe('v'))
-    expect(screen.getByTestId('freight-range').textContent).toBe('₹32,000 – ₹38,000')
+    await waitFor(() => expect(screen.getByTestId('freight-range').textContent).toBe('₹32,000 – ₹38,000'))
     expect(screen.getByText(/can book your load at any price in this range/i)).toBeTruthy()
   })
 

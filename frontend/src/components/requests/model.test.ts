@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CustomerBooking } from '@/services/api'
-import { customerName, customerRow, inboxLink, priceText, primaryLabel, shipmentHref, stageCounts, stageFromOldTab, vendorRow, type VendorRequest } from './model'
+import { customerName, customerRow, inboxLink, priceText, primaryLabel, shipmentHref, stageCounts, stageFromOldTab, vendorRow, rowsForStage, type VendorRequest } from './model'
 
 const booking = (over: Partial<CustomerBooking> = {}): CustomerBooking => ({
   id: 'b1', customer_id: 'c1', pickup_name: 'Bhiwandi, MH', pickup_address: 'Bhiwandi, Maharashtra', drop_name: 'Pune, MH', drop_address: 'Pune, Maharashtra',
@@ -30,6 +30,13 @@ describe('customer bookings in the inbox', () => {
 })
 
 describe('vendor loads in the inbox', () => {
+  it('keeps a newly posted vendor load in New loads when there is no company board, and in All', () => {
+    const rows = [vendorRow(load()), vendorRow(load({ id: 'accepted', status: 'approved' }))]
+    expect(rowsForStage(rows, 'accept', false).map(r => r.id)).toEqual(['r1234567-0000'])
+    expect(rowsForStage(rows, 'all', false)).toHaveLength(2)
+    expect(rowsForStage(rows, 'accept', true)).toHaveLength(0)
+    expect(rowsForStage(rows, 'accepted', true).map(r => r.id)).toEqual(['accepted'])
+  })
   it('needs accepting with a price before a vehicle', () => {
     expect(vendorRow(load())).toMatchObject({ stage: 'accept', action: 'accept', price: 9000, priceKind: 'offered', pieces: 12 })
     expect(vendorRow(load({ status: 'approved', cost: 9500 }))).toMatchObject({ stage: 'accepted', action: 'assign', price: 9500, priceKind: 'agreed' })

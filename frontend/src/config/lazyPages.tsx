@@ -54,7 +54,6 @@ export const adminRateApi = page(() => import('@/pages/admin/RateApiPage'))
 export const vendorLoads = page(() => import('@/pages/VendorLoadsPage'))
 export const vendorLoad = page(() => import('@/pages/VendorLoadPage'))
 export const vendorClaims = page(() => import('@/pages/VendorClaimsPage'))
-export const ship = page(() => import('@/pages/ShipPage'))
 export const vendorCorridor = page(() => import('@/pages/VendorCorridorPage'))
 export const vendorOnboarding = page(() => import('@/pages/VendorOnboardingPage'))
 export const vendorDocuments = page(() => import('@/pages/VendorDocumentsPage'))
@@ -102,7 +101,6 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/platform/organisations': platformOrganisations.preload,
   '/track': customerTracking.preload,
   '/vendor/loads': vendorLoads.preload,
-  '/ship': ship.preload,
   '/vendor/request': vendorShipmentRequest.preload,
   '/vendor/return-trips': vendorCorridor.preload,
   '/vendor/invoices': vendorInvoices.preload,

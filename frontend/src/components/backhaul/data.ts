@@ -25,6 +25,7 @@ export interface BackhaulVehicle {
   plate_number: string
   status: string | null
   vehicle_type?: string | null
+  body_type?: 'open' | 'closed' | 'container' | 'reefer' | 'tanker' | 'trailer' | null
   capacity_kg: number | null
   available_capacity_kg?: number | null
 }

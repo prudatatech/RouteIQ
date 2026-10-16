@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { publicAPI } from '@/services/api'
 import { pricingAPI, type QuoteRequest, type QuoteResponse } from '@/services/pricing'
+import { useOrgStore } from '@/store/orgStore'
 
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -15,22 +15,21 @@ function useDebounced<T>(value: T, ms: number): T {
 /**
  * The suggested price for a load. Pass `null` until the inputs are complete. Changes wait
  * a moment before asking again, so typing a weight does not ask for a price on every key.
- * With `guest`, the public price check is used (no sign-in).
  */
-export function usePriceQuote(input: QuoteRequest | null, opts: { guest?: boolean } = {}) {
-  const guest = !!opts.guest
+export function usePriceQuote(input: QuoteRequest | null) {
   const key = input ? JSON.stringify(input) : null
   const settled = useDebounced(key, 600)
-  return useQuery<QuoteResponse>({
-    queryKey: ['price-quote', guest ? 'guest' : 'account', settled],
+  const orgId = useOrgStore(s => s.activeOrgId)
+  const query = useQuery<QuoteResponse>({
+    queryKey: ['price-quote', 'account', orgId, settled],
     queryFn: () => {
       const body = JSON.parse(settled as string) as QuoteRequest
-      if (!guest) return pricingAPI.quote(body)
-      const { source: _source, ...rest } = body
-      return publicAPI.quote(rest)
+      return pricingAPI.quote(body)
     },
     enabled: !!settled && settled === key,
     staleTime: 60_000,
     retry: false,
   })
+  const waiting = !!key && settled !== key
+  return { ...query, data: key && settled === key ? query.data : undefined, isLoading: waiting || query.isLoading, isFetching: waiting || query.isFetching }
 }

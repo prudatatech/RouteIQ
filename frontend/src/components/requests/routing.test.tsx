@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { MarketLoad, MarketTab } from '@/types/routing'
@@ -32,6 +32,7 @@ import LoadQuotes from '@/components/vendor/LoadQuotes'
 import QuotePanel from './QuotePanel'
 import { canAcceptDirect } from './quoteRules'
 import LoadMarket from './LoadMarket'
+import { useOrgStore } from '@/store/orgStore'
 
 const wrap = (ui: React.ReactNode) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -48,6 +49,7 @@ const marketRow = (over: Partial<MarketLoad> = {}): MarketLoad => ({
 })
 
 beforeEach(() => {
+  useOrgStore.setState({ loaded: true, activeOrgId: 'company-a', memberships: [{ org: { id: 'company-a', kind: 'logistic_company', name: 'Company A', status: 'active' }, role: 'owner', app_role: 'admin' }] })
   Object.values(api).forEach(f => f.mockReset())
   api.vehicleClasses.mockResolvedValue([])
 })
@@ -148,7 +150,7 @@ describe('QuotePanel direct accept', () => {
     const input = await openPanel()
     expect(screen.getByText('Urgent')).toBeTruthy()
     expect(screen.getByTestId('range-line').textContent).toMatch(/₹32,000 – ₹38,000/)
-    expect(input.value).toBe('32000')
+    await waitFor(() => expect(input.value).toBe('32000'))
     expect(screen.queryByRole('button', { name: 'Submit quote' })).toBeNull()
     fireEvent.change(input, { target: { value: '35000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Book this load' }))
@@ -195,6 +197,37 @@ describe('QuotePanel direct accept', () => {
 })
 
 describe('LoadMarket tabs', () => {
+  it('loads fresh rows after switching companies instead of reusing another company cache', async () => {
+    useOrgStore.setState({ memberships: ['company-a', 'company-b'].map(id => ({ org: { id, kind: 'logistic_company' as const, name: id, status: 'active' }, role: 'owner' as const, app_role: 'admin' })) })
+    api.market.mockResolvedValueOnce([marketRow({ load_number: 'LD-A' })]).mockResolvedValueOnce([marketRow({ load_number: 'LD-B' })])
+    render(wrap(<LoadMarket onOpen={() => {}} />))
+    expect((await screen.findAllByText('LD-A')).length).toBeGreaterThan(0)
+    act(() => useOrgStore.getState().setActiveOrg('company-b'))
+    expect((await screen.findAllByText('LD-B')).length).toBeGreaterThan(0)
+    expect(screen.queryAllByText('LD-A')).toHaveLength(0)
+    expect(api.market).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['pending', 'suspended', 'rejected'])('does not request company loads for a %s organisation', status => {
+    useOrgStore.setState({ memberships: [{ org: { id: 'company-a', kind: 'logistic_company', name: 'Company A', status }, role: 'owner' }] })
+    render(wrap(<LoadMarket onOpen={() => {}} />))
+    expect(screen.getByRole('status').textContent).toContain(status)
+    expect(api.market).not.toHaveBeenCalled()
+  })
+
+  it('does not call company endpoints from the platform or its load drawer', () => {
+    useOrgStore.setState({ activeOrgId: 'platform', memberships: [{ org: { id: 'platform', kind: 'platform', name: 'Platform', status: 'active' }, role: 'owner', app_role: 'superadmin' }] })
+    render(wrap(<><LoadMarket onOpen={() => {}} /><QuotePanel loadId="L1" status="pending" /></>))
+    expect(screen.getByRole('status').textContent).toMatch(/Choose a logistic company/)
+    expect(api.market).not.toHaveBeenCalled()
+  })
+
+  it('waits for memberships instead of requesting without an organisation', () => {
+    useOrgStore.setState({ loaded: false })
+    render(wrap(<LoadMarket onOpen={() => {}} />))
+    expect(api.market).not.toHaveBeenCalled()
+  })
+
   it('shows the priority (Urgent for high) and the recommended range on the board', async () => {
     api.market.mockResolvedValue([marketRow({ priority: 'high', price_min_inr: 32000, price_max_inr: 38000, quote_requested: false })])
     render(wrap(<LoadMarket onOpen={() => {}} />))

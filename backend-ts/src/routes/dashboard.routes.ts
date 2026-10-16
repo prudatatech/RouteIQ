@@ -10,7 +10,7 @@ import { sendError } from '../core/errors';
 import { FUEL_PRICE_PER_LITER } from '../services/analytics.service';
 import { startOfIndianDay } from '../core/istDate';
 import { getPeopleAttention } from '../services/people-docs.service';
-import { OWNED, scopeQuery } from '../core/org-scope';
+import { OWNED, orgFilter, scopeQuery } from '../core/org-scope';
 
 const router = Router();
 
@@ -37,23 +37,18 @@ router.get('/kpis', requireAuth, requireRole(...STAFF_ROLES, 'driver'), async (r
         const vIds = driverVehicles.map((v: any) => v.id);
         const { data: routes } = await supabase
           .from('routes')
-          .select('*')
+          .select('status, estimated_fuel_liters')
           .in('vehicle_id', vIds)
           .gte('created_at', todayISO);
         routesToday = routes || [];
       }
     } else {
       // Admin/manager view
-      const { count } = await scopeQuery(supabase
-        .from('vehicles')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'on_route'), OWNED.carrier);
+      const [{ count }, { data: routes }] = await Promise.all([
+        scopeQuery(supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('status', 'on_route'), OWNED.carrier),
+        scopeQuery(supabase.from('routes').select('status, estimated_fuel_liters').gte('created_at', todayISO), OWNED.carrier),
+      ]);
       activeVehicles = count || 0;
-
-      const { data: routes } = await scopeQuery(supabase
-        .from('routes')
-        .select('*')
-        .gte('created_at', todayISO), OWNED.carrier);
       routesToday = routes || [];
     }
 
@@ -100,33 +95,20 @@ export const SHIPMENT_STATUSES = [
 
 router.get('/shipment-counts', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
   try {
-    const results = await Promise.all(
-      SHIPMENT_STATUSES.map(async status => {
-        const { count, error } = await scopeQuery(supabase
-          .from('shipments')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', status)
-          // A split consignment is counted by its lots, never also as its master
-          .neq('is_master', true), OWNED.carrier);
-        if (error) throw error;
-        return [status, count ?? 0] as const;
-      }),
-    );
-    const counts = Object.fromEntries(results) as Record<(typeof SHIPMENT_STATUSES)[number], number>;
+    const filter = orgFilter(OWNED.carrier);
+    const { data, error } = await supabase.rpc('dashboard_shipment_counts', { p_carrier_org_id: filter?.id ?? null });
+    if (error) throw error;
+    const counts = Object.fromEntries(SHIPMENT_STATUSES.map(status => [status, 0])) as Record<(typeof SHIPMENT_STATUSES)[number], number>;
     // Vendor loads (cargo manifests) are part of the shipments list, so they are part of its counts:
     // scheduled shows as created, delivered and completed as delivered; the rest keep their names.
     const manifestStatus: Record<string, (typeof SHIPMENT_STATUSES)[number]> = {
       scheduled: 'created', in_transit: 'in_transit', delivered: 'delivered', completed: 'delivered',
       exception: 'exception', on_hold: 'on_hold', returning: 'returning', returned: 'returned',
     };
-    const manifestCounts = await Promise.all(
-      Object.keys(manifestStatus).map(async status => {
-        const { count, error } = await scopeQuery(supabase.from('cargo_manifest').select('id', { count: 'exact', head: true }).eq('status', status).neq('is_master', true), OWNED.carrier);
-        if (error) throw error;
-        return [status, count ?? 0] as const;
-      }),
-    );
-    for (const [status, n] of manifestCounts) counts[manifestStatus[status]] += n;
+    for (const row of (data ?? []) as Array<{ source: string; status: string; total: number | string }>) {
+      const status = row.source === 'manifest' ? manifestStatus[row.status] : row.status;
+      if (Object.prototype.hasOwnProperty.call(counts, status)) counts[status as keyof typeof counts] += Number(row.total);
+    }
     res.json({ counts, total: Object.values(counts).reduce((sum, n) => sum + n, 0) });
   } catch (e: any) {
     sendError(req, res, e);

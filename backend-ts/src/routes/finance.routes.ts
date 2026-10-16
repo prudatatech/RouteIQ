@@ -31,8 +31,8 @@ import {
 import { carrierStamp } from '../core/org-context';
 
 const router = Router();
-// Money is for admin and superadmin; managers run operations only
-router.use(requireAuth, requireRole('admin'));
+// Money is for admin, superadmin and the finance role; managers run operations only
+router.use(requireAuth, requireRole('admin', 'finance'));
 
 /** A malformed id can match no row of a scoped table (the database would reject it, not return nothing). */
 const badId = (id: unknown, cols: OwnerColumns) => isScoped(cols) && !isUuid(id);

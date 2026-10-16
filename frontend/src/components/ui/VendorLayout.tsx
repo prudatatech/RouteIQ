@@ -23,7 +23,6 @@ function prefetchRoute(to: string) {
 
 /** The vendor's menu, in the order the work happens. */
 const links = [
-  { to: '/ship', label: 'Find a truck', requiresSignIn: false },
   { to: '/vendor/loads', label: 'My loads', requiresSignIn: true },
   { to: '/vendor/request', label: 'Post a load', requiresSignIn: false },
   { to: '/vendor/return-trips', label: 'Return trips', requiresSignIn: false },
@@ -176,7 +175,7 @@ export default function VendorLayout() {
       <header className="sticky top-0 z-40 border-b border-border bg-surface">
         <div className="mx-auto flex h-16 max-w-content items-center justify-between gap-4 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-4 xl:gap-6">
-            <NavLink to={session ? '/vendor/loads' : '/ship'} className="flex items-center gap-2.5">
+            <NavLink to={session ? '/vendor/loads' : '/vendor/request'} className="flex items-center gap-2.5">
               <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
               <span className="text-lg font-semibold text-text">MargixIndia</span>
               <span className="hidden text-sm text-muted xl:inline">for vendors</span>

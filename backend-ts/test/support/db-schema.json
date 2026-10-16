@@ -375,16 +375,6 @@
     "created_at",
     "updated_at"
   ],
-  "payments": [
-    "id",
-    "invoice_id",
-    "amount",
-    "method",
-    "transaction_id",
-    "status",
-    "paid_at",
-    "created_at"
-  ],
   "price_quotes": [
     "id",
     "user_id",
@@ -813,7 +803,8 @@
     "carrier_org_id",
     "hazmat_certified",
     "is_reefer",
-    "body_type"
+    "body_type",
+    "profile_status"
   ],
   "vendor_profiles": [
     "id",

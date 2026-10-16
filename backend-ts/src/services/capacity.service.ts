@@ -50,7 +50,7 @@ function toVendorWindow(w: any) {
     closes_at: w.closes_at,
     floor_price: w.floor_price,
     vehicles: v
-      ? { vehicle_type: v.vehicle_type ?? null, available_capacity_kg: v.available_capacity_kg ?? null }
+      ? { vehicle_type: v.vehicle_type ?? null, capacity_kg: v.capacity_kg ?? null, body_type: v.body_type ?? null, available_capacity_kg: v.available_capacity_kg ?? null }
       : null,
   };
 }
@@ -166,7 +166,7 @@ export const capacityService = {
     // Vendors see every company's open space (that is the marketplace); staff see their own company's
     let openQuery = supabase
       .from('capacity_windows')
-      .select('id, trigger_type, opens_at, closes_at, floor_price, vehicles(vehicle_type, available_capacity_kg, latitude, longitude, current_location_name)');
+      .select('id, trigger_type, opens_at, closes_at, floor_price, vehicles(vehicle_type, capacity_kg, body_type, available_capacity_kg, latitude, longitude, current_location_name)');
     if (!vendorId) openQuery = scopeQuery(openQuery, OWNED.carrier);
     const { data, error } = await openQuery
       .eq('status', 'open')
@@ -206,7 +206,7 @@ export const capacityService = {
 
     const { data: window, error: windowErr } = await supabase
       .from('capacity_windows')
-      .select('id, opens_at, closes_at, floor_price, status, winning_bid_id, carrier_org_id, vehicles(plate_number, latitude, longitude, current_location_name, available_capacity_kg)')
+      .select('id, opens_at, closes_at, floor_price, status, winning_bid_id, carrier_org_id, vehicles(plate_number, vehicle_type, capacity_kg, body_type, latitude, longitude, current_location_name, available_capacity_kg)')
       .eq('id', data.window_id)
       .maybeSingle();
     if (windowErr) throw new Error(`Failed to load window ${data.window_id}: ${windowErr.message}`);
@@ -268,7 +268,7 @@ export const capacityService = {
     if (minimum === null) {
       const { data: drop } = await supabase.from('delivery_points').select('latitude, longitude').eq('id', data.dropoff_point_id).maybeSingle();
       const dropAt = point(drop?.latitude, drop?.longitude);
-      if (isValidPoint(dropAt)) minimum = await pricingService.minimumFor(vendorAt, dropAt, weightKg, { userId: data.vendor_id, role: 'vendor' });
+      if (isValidPoint(dropAt)) minimum = await pricingService.minimumFor(vendorAt, dropAt, weightKg, { userId: data.vendor_id, role: 'vendor', vehicle_type: windowVehicle?.vehicle_type, vehicle_capacity_t: windowVehicle?.capacity_kg != null ? Number(windowVehicle.capacity_kg) / 1000 : null, body_type: windowVehicle?.body_type });
     }
     // Staff set none and the engine has no rate card: a platform minimum still keeps a 1-rupee bid out
     if (minimum === null) minimum = settings.CAPACITY_MIN_BID_INR;

@@ -108,7 +108,7 @@ export default function VendorLoadsPage() {
           action={(
             <div className="flex flex-col items-center gap-3 sm:flex-row">
               <Link to={`/login?next=${encodeURIComponent('/vendor/loads')}`} className={buttonClasses({ variant: 'primary' })}>Sign in</Link>
-              <Link to="/ship" className={buttonClasses({ variant: 'secondary' })}>Find a truck without an account</Link>
+              <Link to="/vendor/request" className={buttonClasses({ variant: 'secondary' })}>Post a load</Link>
             </div>
           )}
         />

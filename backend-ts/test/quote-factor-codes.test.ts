@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { supabaseMock } from './support/mock-supabase';
 import { pricingService } from '../src/services/pricing.service';
+import { goodsTables } from './support/goods-world';
 import { computeQuote } from '../src/services/customer-booking.service';
 
 vi.mock('../src/services/distance.service', () => ({
@@ -31,9 +32,10 @@ beforeEach(() => supabaseMock.reset({
   shipments: [],
   delivery_points: [],
   price_quotes: [],
+  ...goodsTables(),
 }));
 
-const ALL_CODES = ['rate_card', 'weight', 'load_type', 'demand', 'history', 'min_charge', 'fuel'];
+const ALL_CODES = ['rate_card'];
 
 describe('quote factor codes', () => {
   it('gives every pricing factor a stable machine code and keeps the English label', async () => {
@@ -62,6 +64,6 @@ describe('quote factor codes', () => {
       expect(f.label).toBeTruthy();
     }
     expect(quote.factors[quote.factors.length - 1].code).toBe('final_price');
-    expect(quote.factors[0]).toMatchObject({ code: 'rate_card', label: 'Rate card' });
+    expect(quote.factors[0]).toMatchObject({ code: 'rate_card', label: 'Reference rate band' });
   });
 });

@@ -16,7 +16,7 @@ export function useAccountKind(): { kind: AccountKind | null; signedIn: boolean;
 }
 
 /**
- * For the public vendor pages (/ship, /vendor/request, /vendor/return-trips): the kind of a signed-in person who
+ * For the public vendor pages (/vendor/request, /vendor/return-trips): the kind of a signed-in person who
  * is not a vendor (company staff or a 3PL partner), else null. Posting a load and bidding need a vendor account.
  */
 export function useBlockedFromVendorActions(): Exclude<AccountKind, 'vendor'> | null {

@@ -57,6 +57,9 @@ export default function MatchReturnLoadTab({ manifest, onDismissManifest }: {
         drop: { lat: load.dest_lat, lng: load.dest_lng, label: load.destination },
         weight_kg: load.weight_kg,
         vehicle_type: vehicle?.vehicle_type ?? null,
+        vehicle_capacity_t: vehicle?.capacity_kg != null ? vehicle.capacity_kg / 1000 : null,
+        body_type: vehicle?.body_type ?? null,
+        load_type: 'ptl',
         source: 'backhaul',
       }
     : null)

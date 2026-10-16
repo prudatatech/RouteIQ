@@ -1,4 +1,5 @@
 import { api } from '@/services/api'
+import type { FreightEstimate } from '@/types/load'
 
 // ── Pricing ───────────────────────────────────────────────
 export interface QuoteRequest {
@@ -6,6 +7,8 @@ export interface QuoteRequest {
   drop: { lat: number; lng: number; label?: string | null }
   weight_kg: number
   vehicle_type?: string | null
+  vehicle_capacity_t?: number | null
+  body_type?: 'open' | 'closed' | 'container' | 'reefer' | 'tanker' | 'trailer' | null
   load_type?: string | null
   date?: string | null
   source?: 'backhaul' | 'vendor_request' | 'bid' | 'assign' | 'customer' | 'api'
@@ -25,40 +28,8 @@ export interface QuoteOk {
   per_km_suggested: number
   factors: QuoteFactor[]
   notes: string[]
-  demand: { open_loads: number; available_vehicles: number; radius_km: number }
-  history: { samples: number; median_per_km: number | null; band_km: [number, number] }
-  weather: { checked: boolean; severe: boolean; description: string | null }
-  market_benchmark?: {
-    provider: 'wheelseye'
-    mode: 'ftl' | 'ptl'
-    available: boolean
-    lane: { origin: string; destination: string }
-    ftl?: {
-      recommendedVehicle: string
-      lowestPriceInr: number
-      highestPriceInr: number
-      averagePriceInr: number
-      vehicleOptions: Array<{
-        vid?: number
-        name: string
-        bodyType: string
-        tyre: number
-        lengthFt: number
-        actualPriceInr: number
-        discountedPriceInr: number
-        discountPct: number
-        capacityTon: number
-        remark?: string | null
-      }>
-    }
-    ptl?: {
-      derivedRatePerKgInr: number
-      estimatedMarketPriceInr: number
-      benchmarkTruck: string
-      benchmarkTruckPriceInr: number
-      benchmarkTruckTonnage: number
-    }
-  } | null
+  basis?: FreightEstimate['basis']
+  market_benchmark?: FreightEstimate['market_benchmark']
 }
 
 export type QuoteResponse = QuoteOk | { status: 'unavailable'; reason: string; notes: string[] }

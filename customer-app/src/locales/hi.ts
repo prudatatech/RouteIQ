@@ -55,7 +55,6 @@ const hi: Record<keyof typeof en, string> = {
   home_choose_drop: 'ड्रॉप की जगह चुनें',
   home_choose_pickup: 'पिकअप की जगह चुनें',
   home_close_map: 'नक्शा बंद करें',
-  home_find_truck: 'ट्रक खोजें',
   home_need_both: 'पहले पिकअप और ड्रॉप चुनें',
   home_opens_search: 'जगह की खोज खुलेगी',
   home_search_pickup: 'पिकअप की जगह खोजें',

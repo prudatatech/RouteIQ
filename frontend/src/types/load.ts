@@ -281,6 +281,50 @@ export interface AssistTax {
   grand_total: number
 }
 
+export interface FreightEstimate {
+  low: number
+  high: number
+  distance_km: number
+  label: string
+  suggested?: number
+  basis?: {
+    source: string
+    rate_key: string
+    truck_type: string
+    vehicle_name: string
+    vehicle_capacity_t: number
+    weight_kg: number
+    min_per_km: number
+    max_per_km: number
+    midpoint_per_km: number
+    distance_is_estimate: boolean
+    distance_source?: 'mappls' | 'google' | 'estimate'
+    load_type: LoadType | null
+    rates: Array<{ key: string; name: string; payload: string; min_per_km: number; max_per_km: number }>
+  }
+  market_benchmark?: {
+    provider: 'wheelseye'
+    mode: 'ftl' | 'ptl'
+    available: boolean
+    lane: { origin: string; destination: string }
+    ftl?: {
+      recommendedVehicle: string
+      lowestPriceInr: number
+      highestPriceInr: number
+      averagePriceInr: number
+      vehicleOptions: Array<{
+        vid?: number; name: string; bodyType: string; tyre: number; lengthFt: number
+        actualPriceInr: number; discountedPriceInr: number; discountPct: number
+        capacityTon: number; remark?: string | null
+      }>
+    }
+    ptl?: {
+      derivedRatePerKgInr: number; estimatedMarketPriceInr: number
+      benchmarkTruck: string; benchmarkTruckPriceInr: number; benchmarkTruckTonnage: number
+    }
+  } | null
+}
+
 export interface AssistResult {
   totals: { weight_kg: number; declared_value: number; product_count: number }
   eway: { required: boolean; threshold: number; reason: string }
@@ -288,33 +332,7 @@ export interface AssistResult {
   hazmat_mixed: boolean
   perishable: boolean
   suggested: { load_type: LoadType; vehicle_class: string | null; capacity_t: number | null }
-  estimate: {
-    low: number
-    high: number
-    distance_km: number
-    label: string
-    market_benchmark?: {
-      provider: 'wheelseye'
-      mode: 'ftl' | 'ptl'
-      available: boolean
-      lane: { origin: string; destination: string }
-      ftl?: {
-        recommendedVehicle: string
-        lowestPriceInr: number
-        highestPriceInr: number
-        averagePriceInr: number
-        vehicleOptions: Array<{
-          vid?: number; name: string; bodyType: string; tyre: number; lengthFt: number
-          actualPriceInr: number; discountedPriceInr: number; discountPct: number
-          capacityTon: number; remark?: string | null
-        }>
-      }
-      ptl?: {
-        derivedRatePerKgInr: number; estimatedMarketPriceInr: number
-        benchmarkTruck: string; benchmarkTruckPriceInr: number; benchmarkTruckTonnage: number
-      }
-    } | null
-  } | null
+  estimate: FreightEstimate | null
   recommendations: Recommendation[]
 }
 

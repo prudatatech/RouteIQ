@@ -3,6 +3,7 @@ import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
 import { testApp } from './support/test-app';
 import { createAccessToken } from '../src/core/auth';
+import { goodsTables } from './support/goods-world';
 import { indianDateKey } from '../src/core/istDate';
 
 const app = testApp();
@@ -17,14 +18,14 @@ const body = (over: Record<string, unknown> = {}) => ({
 const quote = (b: Record<string, unknown>, headers = customer()) => request(app).post('/api/v1/customer/quote').set(headers).send(b);
 
 describe('customer quote', () => {
-  beforeEach(() => supabaseMock.reset({ system_settings: [{ key: 'rate_per_km', value: { rate: 20 } }] }));
+  beforeEach(() => supabaseMock.reset({ ...goodsTables(), system_settings: [{ key: 'rate_per_km', value: { rate: 20 } }] }));
 
   it('needs a customer sign-in', async () => {
     expect((await request(app).post('/api/v1/customer/quote').send(body())).status).toBe(401);
     expect((await quote(body(), driver())).status).toBe(403);
   });
 
-  it('prices through the pricing engine at the configured rate', async () => {
+  it('prices through the same reference bands as company and vendor', async () => {
     const res = await quote(body());
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ available: true, source: 'pricing_engine' });
@@ -34,11 +35,11 @@ describe('customer quote', () => {
     expect(res.body.low).toBeLessThanOrEqual(res.body.suggested);
     expect(res.body.suggested).toBeLessThanOrEqual(res.body.high);
     expect(res.body.suggested).toBeGreaterThanOrEqual(res.body.distance_km * 20 * 0.8);
-    expect(res.body.factors.some((f: { label: string }) => f.label === 'Rate card')).toBe(true);
+    expect(res.body.factors.some((f: { label: string }) => f.label === 'Reference rate band')).toBe(true);
   });
 
-  it('says so when no rate is set, instead of inventing a price', async () => {
-    supabaseMock.reset({ system_settings: [] });
+  it('says so when no reference truck capacity is available, instead of inventing a price', async () => {
+    supabaseMock.reset({ ...goodsTables(), vehicle_classes: [], system_settings: [] });
     const res = await quote(body());
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ available: false, suggested: null, low: null, high: null });

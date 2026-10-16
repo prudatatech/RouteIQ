@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { pricingAPI, type QuoteRequest } from '@/services/pricing'
+import { publicAPI } from '@/services/api'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { Alert, Button, Card, CardBody, CardHeader, ErrorState, Input, PlaceSearch, Select, Skeleton, humanize } from '@/components/ui'
 import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
@@ -22,9 +23,10 @@ const norm = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').r
 /** Today's date in India, as YYYY-MM-DD. */
 const todayIso = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10)
 
-/** Price a load with the same engine vendors and customers see, and edit the rate card behind it. */
+/** Price a load with the same engine vendors and customers see, and retain negotiated company settings. */
 export default function PriceLoadTab() {
   const vehicles = useBackhaulVehicles()
+  const classes = useQuery({ queryKey: ['public', 'vehicle-classes'], queryFn: publicAPI.vehicleClasses })
   const [pickup, setPickup] = useState<ResolvedPlace | null>(null)
   const [drop, setDrop] = useState<ResolvedPlace | null>(null)
   const [weight, setWeight] = useState('')
@@ -55,7 +57,7 @@ export default function PriceLoadTab() {
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
       <div className="space-y-6 xl:col-span-3">
         <Card>
-          <CardHeader title="Price a load" description="A suggested price range from the rate card, the driving distance, demand near the pickup and past accepted prices." />
+          <CardHeader title="Price a load" description="The same reference truck rates and distance calculation used when vendors post a load." />
           <CardBody className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <PlaceSearch label="Pickup" required value={pickup} onChange={setPickup} placeholder="Search pickup address" />
@@ -63,13 +65,13 @@ export default function PriceLoadTab() {
               <Input label="Weight (kg)" type="number" min={1} required value={weight} onChange={e => setWeight(e.target.value)} />
               <Select
                 label="Vehicle type"
-                hint={vehicleTypes.length === 0 && !vehicles.isLoading ? 'No vehicle types on file yet' : undefined}
+                hint="Choose the truck class to use its capacity and reference rate band."
                 value={vehicleType}
                 onChange={e => setVehicleType(e.target.value)}
-                options={[{ value: '', label: 'Any vehicle' }, ...vehicleTypes.map(t => ({ value: t, label: humanize(t) }))]}
+                options={[{ value: '', label: 'Recommend from goods weight' }, ...(classes.data ?? []).map(v => ({ value: v.key, label: v.name }))]}
               />
               <Select label="Load type" value={loadType} onChange={e => setLoadType(e.target.value)} options={LOAD_TYPES} />
-              <Input label="Pickup date" type="date" min={todayIso()} value={date} onChange={e => setDate(e.target.value)} hint="Weather is only checked for pickups today." />
+              <Input label="Pickup date" type="date" min={todayIso()} value={date} onChange={e => setDate(e.target.value)} />
             </div>
             <div className="border-t border-border pt-4">
               <PriceSuggestion query={quote} idle="Choose a pickup, a drop and a weight to see a price." />
@@ -85,10 +87,10 @@ export default function PriceLoadTab() {
 }
 
 const BASE_FIELDS = [
-  { key: 'rate_per_km', label: 'Standard rate per km (₹)', hint: 'Used for every vehicle type without its own rate.' },
-  { key: 'min_charge', label: 'Minimum charge (₹)', hint: 'No quote goes below this.' },
-  { key: 'per_kg_surcharge', label: 'Extra per kg (₹)', hint: 'Added for each kg of weight.' },
-  { key: 'fuel_price_per_litre', label: 'Fuel price per litre (₹)', hint: 'Keeps the low end of a range above the fuel cost.' },
+  { key: 'rate_per_km', label: 'Standard rate per km (₹)', hint: 'Saved negotiated standard rate.' },
+  { key: 'min_charge', label: 'Minimum charge (₹)', hint: 'Saved negotiated minimum charge.' },
+  { key: 'per_kg_surcharge', label: 'Extra per kg (₹)', hint: 'Saved negotiated weight surcharge.' },
+  { key: 'fuel_price_per_litre', label: 'Fuel price per litre (₹)', hint: 'Saved fuel cost for company pricing.' },
 ] as const
 
 function RateCard({ vehicleTypes }: { vehicleTypes: string[] }) {
@@ -100,7 +102,7 @@ function RateCard({ vehicleTypes }: { vehicleTypes: string[] }) {
     ...BASE_FIELDS.map(f => ({ ...f })),
     ...vehicleTypes.map(t => ({ key: `rate_per_km_${norm(t)}`, label: `${humanize(t)} rate per km (₹)`, hint: undefined as string | undefined })),
     ...LOAD_TYPES.filter(l => l.value !== 'general').map(l => ({
-      key: `load_multiplier_${l.value}`, label: `${l.label} multiplier`, hint: 'For example 1.2 charges 20% more. Leave blank for none.',
+      key: `load_multiplier_${l.value}`, label: `${l.label} multiplier`, hint: 'Saved negotiated multiplier; excluded from instant reference prices.',
     })),
   ], [vehicleTypes])
 
@@ -132,7 +134,7 @@ function RateCard({ vehicleTypes }: { vehicleTypes: string[] }) {
 
   return (
     <Card>
-      <CardHeader title="Rate card" description="Staff set these. Vendors and customers see prices worked out from them." />
+      <CardHeader title="Company pricing settings" description="Negotiated company settings are retained. Instant recommendations currently use the platform's reference truck bands, without these adjustments." />
       <CardBody className="space-y-4">
         {settings.isLoading ? (
           <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
@@ -141,7 +143,7 @@ function RateCard({ vehicleTypes }: { vehicleTypes: string[] }) {
         ) : (
           <>
             {settings.data?.rate_per_km === undefined && (
-              <Alert tone="warning">No standard rate per km is set, so prices come from past accepted prices only. Set a rate to price every load.</Alert>
+              <Alert tone="info">No negotiated standard rate is recorded. Instant reference recommendations remain available.</Alert>
             )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1">
               {fields.map(f => (

@@ -339,11 +339,12 @@ async function vendorNames(loads: Array<Record<string, any>>): Promise<Map<strin
   return new Map(orgs.map(o => [o.id, o.name ?? null]));
 }
 
-/** Board order: priority (high, medium, low), then pickup date (no date last), then newest first. */
+/** Board order: priority (high, medium, low), then pickup date (no date last), then longest-waiting first
+ * (so a load does not sit unseen while newer ones of the same priority and date keep jumping ahead of it). */
 export function boardOrder(a: Record<string, any>, b: Record<string, any>): number {
   return priorityRank(a.priority) - priorityRank(b.priority)
     || String(a.pickup_date ?? '9999-12-31').localeCompare(String(b.pickup_date ?? '9999-12-31'))
-    || String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
+    || String(a.created_at ?? '9999-12-31').localeCompare(String(b.created_at ?? '9999-12-31'));
 }
 
 /**

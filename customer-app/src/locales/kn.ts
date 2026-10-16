@@ -55,7 +55,6 @@ const kn: Record<keyof typeof en, string> = {
   home_choose_drop: 'ಡ್ರಾಪ್ ಸ್ಥಳ ಆರಿಸಿ',
   home_choose_pickup: 'ಪಿಕಪ್ ಸ್ಥಳ ಆರಿಸಿ',
   home_close_map: 'ನಕ್ಷೆ ಮುಚ್ಚಿ',
-  home_find_truck: 'ಟ್ರಕ್ ಹುಡುಕಿ',
   home_need_both: 'ಮೊದಲು ಪಿಕಪ್ ಮತ್ತು ಡ್ರಾಪ್ ಆರಿಸಿ',
   home_opens_search: 'ಸ್ಥಳದ ಹುಡುಕಾಟ ತೆರೆಯುತ್ತದೆ',
   home_search_pickup: 'ಪಿಕಪ್ ಸ್ಥಳ ಹುಡುಕಿ',

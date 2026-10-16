@@ -28,6 +28,7 @@ export function useLiveVehiclePositions(): Record<string, LatLng> {
 
   useEffect(() => {
     let cancelled = false
+    let polling = false
 
     const apply = (rows: Partial<VehicleRow>[]) => {
       setPositions((prev) => {
@@ -69,18 +70,28 @@ export function useLiveVehiclePositions(): Record<string, LatLng> {
       .subscribe()
 
     const poll = async () => {
-      const { data, error } = await supabase.from('vehicles').select('id, latitude, longitude, status')
-      if (cancelled || error || !data) return
-      const rows = data as VehicleRow[]
-      rows.forEach(statusChanged)
-      apply(rows)
+      if (cancelled || polling || document.visibilityState === 'hidden') return
+      polling = true
+      try {
+        const { data, error } = await supabase.from('vehicles').select('id, latitude, longitude, status')
+        if (cancelled || error || !data) return
+        const rows = data as VehicleRow[]
+        rows.forEach(statusChanged)
+        apply(rows)
+      } catch {
+        // The next visible poll retries a failed network request.
+      } finally {
+        polling = false
+      }
     }
+    document.addEventListener('visibilitychange', poll)
     poll()
     const timer = window.setInterval(poll, POLL_INTERVAL_MS)
 
     return () => {
       cancelled = true
       window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', poll)
       supabase.removeChannel(channel)
     }
   }, [queryClient, channelId])

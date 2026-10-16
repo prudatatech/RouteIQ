@@ -43,9 +43,11 @@ describe('nextForKind', () => {
     expect(nextForKind('staff', '/3pl-portal/p1/orders')).toBeNull()
   })
 
-  it('lets a vendor keep the vendor area, /ship and the public pages only', () => {
+  it('lets a vendor keep their area and public pages, migrating old lane-search links', () => {
     expect(nextForKind('vendor', '/vendor/loads/5')).toBe('/vendor/loads/5')
-    expect(nextForKind('vendor', '/ship')).toBe('/ship')
+    expect(nextForKind('vendor', '/ship')).toBe('/vendor/request')
+    expect(nextForKind('vendor', '/ship?from=Pune')).toBe('/vendor/request')
+    expect(nextForKind('vendor', '/vendor/request?resume=1')).toBe('/vendor/request?resume=1')
     expect(nextForKind('vendor', '/vendor/return-trips?bid=1&resume=1')).toBe('/vendor/return-trips?bid=1&resume=1')
     expect(nextForKind('vendor', '/track/ABC')).toBe('/track/ABC')
     expect(nextForKind('vendor', '/today')).toBeNull()

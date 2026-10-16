@@ -61,7 +61,7 @@ describe('members', () => {
     supabaseMock.rows('org_members').push({ org_id: ORG.companyA, user_id: uid('loner'), role: 'member', status: 'removed', created_at: '2026-10-02T00:00:00Z' });
     const res = await request(app).get(api('/org/members')).set(as('admin-a'));
     expect(res.status).toBe(200);
-    expect(res.body.map((m: any) => m.user_id).sort()).toEqual(['admin-a', 'driver-a', 'manager-a', 'super-1'].map(uid).sort());
+    expect(res.body.map((m: any) => m.user_id).sort()).toEqual(['admin-a', 'driver-a', 'finance-a', 'manager-a', 'super-1'].map(uid).sort());
     expect(res.body.find((m: any) => m.user_id === uid('admin-a'))).toMatchObject({ name: 'Asha Alpha', role: 'admin', email: 'asha@example.test' });
     expect((await request(app).get(api('/org/members')).set(as('manager-a'))).status).toBe(403);
   });
@@ -175,7 +175,7 @@ describe('registering an organisation', () => {
 
 describe('the seats of the test world', () => {
   it('give every person at least one organisation, but the lone admin', () => {
-    expect(new Set(SEATS.map(s => s.user)).size).toBe(8);
+    expect(new Set(SEATS.map(s => s.user)).size).toBe(9);
   });
 });
 

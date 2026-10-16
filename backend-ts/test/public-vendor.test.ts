@@ -1,11 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { supabaseMock } from './support/mock-supabase';
 import { testApp } from './support/test-app';
-
-vi.mock('../src/services/distance.service', () => ({
-  getDrivingDistance: async () => ({ km: 150, source: 'estimate', is_estimate: true }),
-}));
 
 const app = testApp();
 const base = '/api/v1/public';
@@ -56,8 +52,6 @@ function seed() {
     price_quotes: [],
   });
 }
-
-const quoteBody = { pickup: { lat: 18.52, lng: 73.86 }, drop: { lat: 19.07, lng: 72.87 }, weight_kg: 500, date: '2099-01-01' };
 
 beforeEach(seed);
 
@@ -110,6 +104,7 @@ describe('GET /public/companies', () => {
     expect(res.status).toBe(200);
     expect(res.headers['cache-control']).toBe('public, max-age=60');
     expect(res.body.items).toEqual([{ id: 'o1', name: 'Alpha Logistics', city: 'Pune', vehicle_types: ['truck'], trips_completed: 2 }]);
+    expect(res.body.truncated).toBe(false);
     expect(forbiddenKeys(res.body)).toEqual([]);
     expect(JSON.stringify(res.body)).not.toMatch(/gstin|27AAAAA|a@x\.in|9999999999|Pending Carriers|Suspended Freight|A Vendor Org/);
   });
@@ -118,6 +113,14 @@ describe('GET /public/companies', () => {
     expect((await request(app).get(`${base}/companies?city=pune&vehicle_type=Truck`)).body.items).toHaveLength(1);
     expect((await request(app).get(`${base}/companies?city=Delhi`)).body.items).toHaveLength(0);
     expect((await request(app).get(`${base}/companies?vehicle_type=tempo`)).body.items).toHaveLength(0);
+  });
+
+  it('says so, instead of silently dropping companies, when there are more active companies than the page scans', async () => {
+    const extra = Array.from({ length: 205 }, (_, i) => ({ id: `extra-${i}`, kind: 'logistic_company', status: 'active', name: `Carrier ${i}`, city: 'Nagpur' }));
+    supabaseMock.rows('organizations').push(...extra);
+    const res = await request(app).get(`${base}/companies`);
+    expect(res.status).toBe(200);
+    expect(res.body.truncated).toBe(true);
   });
 });
 
@@ -131,34 +134,11 @@ describe('GET /public/cities', () => {
   });
 });
 
-describe('POST /public/quote', () => {
-  it('gives a price range without signing in and stores nothing', async () => {
-    const res = await request(app).post(`${base}/quote`).send(quoteBody);
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe('ok');
-    expect(res.body.distance_km).toBe(150);
-    expect(res.body.low).toBeLessThanOrEqual(res.body.suggested);
-    expect(res.body.suggested).toBeLessThanOrEqual(res.body.high);
-    expect(supabaseMock.writes('price_quotes')).toEqual([]);
+describe('retired lane-search quote endpoint', () => {
+  it('is unavailable and cannot create quotes', async () => {
+    const res = await request(app).post(`${base}/quote`).send({});
+    expect(res.status).toBe(404);
     expect(supabaseMock.mutations).toEqual([]);
-    expect(res.body).not.toHaveProperty('factors');
-    expect(res.body).not.toHaveProperty('quote_id');
-    expect(forbiddenKeys(res.body)).toEqual([]);
-  });
-
-  it('validates the body', async () => {
-    expect((await request(app).post(`${base}/quote`).send({})).status).toBe(400);
-    expect((await request(app).post(`${base}/quote`).send({ ...quoteBody, weight_kg: -3 })).status).toBe(400);
-    expect((await request(app).post(`${base}/quote`).send({ ...quoteBody, pickup: { lat: 99, lng: 0 } })).status).toBe(400);
-    expect(supabaseMock.mutations).toEqual([]);
-  });
-
-  it('says so, without leaking the rate card, when no price can be given', async () => {
-    supabaseMock.reset({ system_settings: [], vehicles: [], price_quotes: [] });
-    const res = await request(app).post(`${base}/quote`).send(quoteBody);
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe('unavailable');
-    expect(JSON.stringify(res.body)).not.toMatch(/rate card|staff/i);
   });
 });
 
@@ -168,7 +148,6 @@ describe('guest safety across every endpoint', () => {
       (await request(app).get(`${base}/spare-space`)).body,
       (await request(app).get(`${base}/companies`)).body,
       (await request(app).get(`${base}/cities`)).body,
-      (await request(app).post(`${base}/quote`).send(quoteBody)).body,
     ];
     for (const b of bodies) expect(forbiddenKeys(b)).toEqual([]);
   });
@@ -180,12 +159,5 @@ describe('rate limits', () => {
     let last = 200;
     for (let i = 0; i < 65; i++) last = (await request(app).get(`${base}/spare-space`)).status;
     expect(last).toBe(429);
-  });
-
-  it('limits the quote to 20 a minute per IP', async () => {
-    const codes: number[] = [];
-    for (let i = 0; i < 22; i++) codes.push((await request(app).post(`${base}/quote`).send(quoteBody)).status);
-    expect(codes[20]).toBe(429);
-    expect(codes[21]).toBe(429);
   });
 });

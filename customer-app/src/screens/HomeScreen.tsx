@@ -218,7 +218,7 @@ export default function HomeScreen({ navigation }: any) {
           )}
 
           <Button
-            title={t('home_find_truck')}
+            title={t('cargo_title')}
             disabled={!canContinue}
             accessibilityHint={canContinue ? undefined : t('home_need_both')}
             onPress={() => navigation.navigate('CargoConfig', { pickupLocation, dropoffLocation, pickupCoord, dropoffCoord, loadType })}

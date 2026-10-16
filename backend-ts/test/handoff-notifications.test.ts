@@ -164,6 +164,14 @@ describe('a return trip window opens', () => {
     expect(of('return_trip_opened')).toHaveLength(1);
   });
 
+  it('does not send when the duplicate check fails', async () => {
+    const { notificationService } = await import('../src/services/notification.service');
+    supabaseMock.fail('notifications', 'Timed out acquiring connection from connection pool');
+    await expect(notificationService.sendNotificationOnce('vendor-near', 't', 'b', 'return_trip_opened', { window_id: 'w1' }, 'window_id'))
+      .rejects.toThrow('Failed to check duplicate notification');
+    expect(supabaseMock.rows('notifications')).toHaveLength(0);
+  });
+
   it('asks a vendor with no location to fix their profile when their bid cannot be awarded', async () => {
     const window = (await openWindow()).body;
     supabaseMock.rows('capacity_bids').push({ id: 'bid-1', window_id: window.id, vendor_id: 'vendor-noloc', status: 'pending', bid_amount: 900, weight_kg: 100 });

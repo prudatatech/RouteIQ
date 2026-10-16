@@ -30,6 +30,8 @@ import { MaintenanceNote } from '@/components/fleet/maintenance/MaintenanceNote'
 import { useOpenMaintenanceJobs } from '@/components/fleet/maintenance/useOpenMaintenanceJobs'
 import { useFleetHealth } from '@/components/fleet/useFleetHealth'
 
+import QuickAddTruckModal from '@/components/fleet/QuickAddTruckModal'
+
 const VIEW_IDS = ['vehicles', 'analytics', 'alerts', 'service'] as const
 
 // The backend's /vehicles/summary groups "idle" and "available" into one count, so
@@ -37,10 +39,18 @@ const VIEW_IDS = ['vehicles', 'analytics', 'alerts', 'service'] as const
 // "All" is the active fleet: no archived vehicles and no drafts (placeholder stubs and saved
 // drafts), which have their own filter and never count in the totals. This is the same rule the
 // summary uses, so the tab counts and the rows always agree.
-const STATUS_FILTERS = ['all', 'on_route', 'idle', 'maintenance', 'offline', 'archived', 'drafts'] as const
+const STATUS_FILTERS = ['all', 'quick_added', 'pending_documents', 'on_route', 'idle', 'maintenance', 'offline', 'archived', 'drafts'] as const
 type StatusFilter = (typeof STATUS_FILTERS)[number]
 const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
-  all: 'All', on_route: 'On trip', idle: 'Idle / available', maintenance: 'Maintenance', offline: 'Offline', archived: 'Archived', drafts: 'Drafts',
+  all: 'All',
+  quick_added: 'Quick Added',
+  pending_documents: 'Pending Docs',
+  on_route: 'On trip',
+  idle: 'Idle / available',
+  maintenance: 'Maintenance',
+  offline: 'Offline',
+  archived: 'Archived',
+  drafts: 'Drafts',
 }
 
 function matchesFilter(v: Vehicle, filter: StatusFilter): boolean {
@@ -48,6 +58,8 @@ function matchesFilter(v: Vehicle, filter: StatusFilter): boolean {
   if (v.status === 'pending_approval') return false
   if (filter === 'drafts') return isDraftVehicle(v)
   if (isDraftVehicle(v)) return false
+  if (filter === 'quick_added') return v.profile_status === 'quick_added'
+  if (filter === 'pending_documents') return v.profile_status === 'pending_documents'
   if (filter === 'all') return v.status !== 'archived'
   if (filter === 'idle') return v.status === 'idle' || v.status === 'available'
   return v.status === filter
@@ -87,6 +99,7 @@ export default function FleetPage() {
   const [sortParam, setSortParam] = useUrlState('sort')
   const sort = parseSort(sortParam)
   const [isAddOpen, setIsAddOpen] = useState(false)
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -249,10 +262,26 @@ export default function FleetPage() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: 'Status & Profile',
       cell: v => (
-        <div className="max-w-[13rem] space-y-1">
-          <StatusPill status={v.status} />
+        <div className="max-w-[14rem] space-y-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <StatusPill status={v.status} />
+            {v.profile_status === 'quick_added' && (
+              <StatusPill tone="warning" dot={false}>Quick Added</StatusPill>
+            )}
+            {v.profile_status === 'pending_documents' && (
+              <StatusPill tone="warning" dot={false}>Pending Docs</StatusPill>
+            )}
+            {v.profile_status === 'complete' && (
+              <StatusPill tone="success" dot={false}>Fully Verified</StatusPill>
+            )}
+          </div>
+          {v.carrier_org && (
+            <p className="truncate text-xs font-medium text-brand" title={v.carrier_org.name}>
+              {v.carrier_org.kind === 'tpl_partner' ? '3PL: ' : 'Fleet: '}{v.carrier_org.name}
+            </p>
+          )}
           {v.status === 'maintenance' && openJobs.get(v.id) && <MaintenanceNote job={openJobs.get(v.id)!} className="line-clamp-3 text-xs text-muted" />}
         </div>
       ),
@@ -443,7 +472,10 @@ export default function FleetPage() {
           <>
             <Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv}>Export CSV</Button>
             {role !== 'driver' && (
-              <Button icon={<Plus size={16} />} onClick={() => setIsAddOpen(true)}>Add vehicle</Button>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" onClick={() => setIsAddOpen(true)}>Full wizard</Button>
+                <Button icon={<Plus size={16} />} onClick={() => setIsQuickAddOpen(true)}>Add Truck</Button>
+              </div>
             )}
           </>
         )}
@@ -511,6 +543,11 @@ export default function FleetPage() {
         isOpen={isAddOpen || !!editingVehicle}
         onClose={() => { setIsAddOpen(false); setEditingVehicle(null) }}
         initialData={editingVehicle}
+      />
+
+      <QuickAddTruckModal
+        open={isQuickAddOpen}
+        onClose={() => setIsQuickAddOpen(false)}
       />
     </Page>
   )

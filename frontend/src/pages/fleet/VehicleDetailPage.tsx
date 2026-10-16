@@ -158,7 +158,21 @@ export default function VehicleDetailPage() {
     <Page>
       <PageHeader
         back={{ to: '/fleet', label: 'Back to fleet' }}
-        title={<span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-3"><span className="min-w-0 break-all font-mono">{vehicle.plate_number}</span><StatusPill status={vehicle.status} /></span>}
+        title={
+          <span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-3">
+            <span className="min-w-0 break-all font-mono">{vehicle.plate_number}</span>
+            <StatusPill status={vehicle.status} />
+            {vehicle.profile_status === 'quick_added' && (
+              <StatusPill tone="warning" dot={false}>Quick Added</StatusPill>
+            )}
+            {vehicle.profile_status === 'pending_documents' && (
+              <StatusPill tone="warning" dot={false}>Pending Documents</StatusPill>
+            )}
+            {vehicle.profile_status === 'complete' && (
+              <StatusPill tone="success" dot={false}>Fully Verified</StatusPill>
+            )}
+          </span>
+        }
         description={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>{vehicle.vehicle_model || humanize(vehicle.vehicle_type)}</span>
@@ -169,6 +183,12 @@ export default function VehicleDetailPage() {
             )}
             <span aria-hidden="true">·</span>
             {isLive ? <StatusPill tone="success">Live</StatusPill> : <span>{ping ? `Last seen ${formatRelative(ping, now)}` : 'Never reported a position'}</span>}
+            {vehicle.carrier_org && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-brand font-medium">{vehicle.carrier_org.kind === 'tpl_partner' ? '3PL: ' : 'Fleet: '}{vehicle.carrier_org.name}</span>
+              </>
+            )}
           </span>
         }
         actions={(
@@ -200,6 +220,30 @@ export default function VehicleDetailPage() {
       >
         <Tabs tabs={tabs} value={tab} onChange={setTab} label="Vehicle sections" />
       </PageHeader>
+      {vehicle.profile_status === 'quick_added' && (
+        <div className="mb-4">
+          <Alert
+            tone="warning"
+            title="Quick Added Vehicle — Complete Profile Anytime"
+            className="w-full"
+            action={<Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Complete Profile</Button>}
+          >
+            This truck was registered via quick onboarding and is already active for load matching. You can add vehicle photos, driver assignment, GPS tracker, and documents (RC, Insurance, Fitness, Permit, PUC) anytime to unlock dispatch on restricted loads.
+          </Alert>
+        </div>
+      )}
+      {vehicle.profile_status === 'pending_documents' && (
+        <div className="mb-4">
+          <Alert
+            tone="warning"
+            title="Pending Documents"
+            className="w-full"
+            action={<Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Update Documents</Button>}
+          >
+            Some compliance documents or driver details are still missing. Complete them to ensure full dispatch clearance across all cargo types.
+          </Alert>
+        </div>
+      )}
 
       <TabPanel id={tab}>
         {tab === 'overview' && (

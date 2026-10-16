@@ -25,6 +25,8 @@ const QuoteSchema = z.object({
   drop: point,
   weight_kg: z.number().positive().max(1_000_000),
   vehicle_type: z.string().max(60).optional().nullable(),
+  vehicle_capacity_t: z.number().positive().max(1000).nullish(),
+  body_type: z.enum(['open', 'closed', 'container', 'reefer', 'tanker', 'trailer']).nullish(),
   load_type: z.string().max(60).optional().nullable(),
   date: z.string().max(40).optional().nullable(),
   source: z.enum(['backhaul', 'vendor_request', 'bid', 'assign', 'customer', 'api']).optional(),

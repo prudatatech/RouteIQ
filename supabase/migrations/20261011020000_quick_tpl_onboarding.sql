@@ -1,7 +1,12 @@
--- Apply changes as the app_owner to respect security
-SET ROLE app_owner;
+-- Runs as app_owner where that role exists (Azure); elsewhere (CI, local) as the connecting login. Idempotent.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_owner') THEN
+    SET LOCAL ROLE app_owner;
+  END IF;
+END $$;
 
-DO $$ 
+DO $$
 BEGIN
   -- 1. Make strict KYC fields nullable for Quick Onboarding
   ALTER TABLE public.tpl_partners ALTER COLUMN pan_number DROP NOT NULL;
@@ -20,5 +25,3 @@ BEGIN
     ALTER TABLE public.tpl_partners ADD COLUMN truck_type TEXT;
   END IF;
 END $$;
-
-RESET ROLE;

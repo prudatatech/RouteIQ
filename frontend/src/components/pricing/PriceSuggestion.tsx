@@ -3,6 +3,7 @@ import type { QuoteOk } from '@/services/pricing'
 import { Alert, Button, Skeleton, StatusPill } from '@/components/ui'
 import { type usePriceQuote } from './usePriceQuote'
 import { formatKm, formatRupees } from '@/utils/display'
+import PriceRecommendationModal from '@/components/load-post/PriceRecommendationModal'
 
 function errorText(err: unknown): string {
   const detail = (err as AxiosError<{ detail?: unknown }>)?.response?.data?.detail
@@ -59,8 +60,10 @@ export function PriceSuggestion({ query, onUse, useLabel = 'Use suggested price'
         {data.distance_is_estimate
           ? <StatusPill tone="warning" dot={false}>Estimated distance</StatusPill>
           : <StatusPill tone="neutral" dot={false}>{data.distance_source === 'mappls' ? 'Mappls route' : data.distance_source === 'google' ? 'Google route' : 'Road distance'}</StatusPill>}
-        {data.history.samples > 0 && <span>{data.history.samples.toLocaleString('en-IN')} similar accepted prices</span>}
       </div>
+
+      <PriceRecommendationModal estimate={{ low: data.low, high: data.high, suggested: data.suggested, distance_km: data.distance_km,
+        label: 'Actual rate confirmed after carrier assignment', basis: data.basis }} />
 
       {data.factors.length > 0 && <div>
         <p className="mb-2 text-sm font-medium text-text">How this price was worked out</p>

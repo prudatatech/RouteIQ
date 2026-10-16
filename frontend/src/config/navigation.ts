@@ -3,7 +3,7 @@ import {
   ClipboardList, Building2,
 } from 'lucide-react'
 
-export type StaffRole = 'admin' | 'superadmin' | 'manager'
+export type StaffRole = 'admin' | 'superadmin' | 'manager' | 'finance'
 
 /** The counts the menu shows: what needs someone, per section and per sub-link. */
 export type NavBadge =
@@ -41,10 +41,12 @@ export interface NavSection {
 const admins: StaffRole[] = ['admin', 'superadmin']
 const superadmin: StaffRole[] = ['superadmin']
 const everyone: StaffRole[] = ['admin', 'superadmin', 'manager']
+const moneyAndReports: StaffRole[] = ['admin', 'superadmin', 'finance']
 
 /**
  * The staff menu: eleven sections in the order the work happens (docs/workflow-blueprint.html).
- * Managers see the operations sections only: no Money, Reports, Settings, KYC or 3PL.
+ * Managers see the operations sections only: no Money, Reports, Settings, KYC or 3PL. The finance
+ * role sees only Money and Reports: no operations, Settings, KYC or 3PL.
  */
 export const navSections: NavSection[] = [
   {
@@ -103,22 +105,22 @@ export const navSections: NavSection[] = [
     ],
   },
   {
-    to: '/money', label: 'Money', icon: Banknote, roles: admins, badge: 'money',
+    to: '/money', label: 'Money', icon: Banknote, roles: moneyAndReports, badge: 'money',
     // Old claim links and notifications still open /cargo?tab=claims: keep Money lit for them
     also: ['/cargo?tab=claims'],
     children: [
-      { to: '/money', label: 'To price', roles: admins, badge: 'money' },
-      { to: '/money?tab=invoices', label: 'Invoices', roles: admins, alsoMatch: ['/money/invoices'] },
-      { to: '/money?tab=driver-pay', label: 'Driver pay', roles: admins },
-      { to: '/money?tab=expenses', label: 'Expenses', roles: admins },
-      { to: '/money?tab=claims', label: 'Claims', roles: admins },
+      { to: '/money', label: 'To price', roles: moneyAndReports, badge: 'money' },
+      { to: '/money?tab=invoices', label: 'Invoices', roles: moneyAndReports, alsoMatch: ['/money/invoices'] },
+      { to: '/money?tab=driver-pay', label: 'Driver pay', roles: moneyAndReports },
+      { to: '/money?tab=expenses', label: 'Expenses', roles: moneyAndReports },
+      { to: '/money?tab=claims', label: 'Claims', roles: moneyAndReports },
     ],
   },
   {
-    to: '/analytics', label: 'Reports', icon: BarChart3, roles: admins,
+    to: '/analytics', label: 'Reports', icon: BarChart3, roles: moneyAndReports,
     children: [
-      { to: '/analytics', label: 'Analytics', roles: admins },
-      { to: '/insights', label: 'Insights', roles: admins },
+      { to: '/analytics', label: 'Analytics', roles: moneyAndReports },
+      { to: '/insights', label: 'Insights', roles: moneyAndReports },
     ],
   },
   {
@@ -142,11 +144,20 @@ export const platformSection: NavSection = {
   ],
 }
 
+/**
+ * The platform owns no fleet or shipments, so while acting as the platform the menu drops every
+ * day-to-day logistics section (Today, Requests, Shipments, Dispatch, On the road, Fleet, Return trips,
+ * Money, Reports) and shows only its own governance work: Platform, its own staff and its own settings.
+ */
+const PLATFORM_SECTION_PATHS = new Set(['/admin/users', '/admin/settings'])
+
 /** Sections and links this role may see. A section left with no page of its own is dropped. */
 export function menuFor(role: string | null | undefined, actor: 'platform' | 'company' = 'company'): NavSection[] {
   if (!role) return []
   const allowed = (roles: StaffRole[]) => (roles as string[]).includes(role)
-  const sections = (actor === 'platform' ? [navSections[0], platformSection, ...navSections.slice(1)] : navSections)
+  const sections = actor === 'platform'
+    ? [platformSection, ...navSections.filter(s => PLATFORM_SECTION_PATHS.has(s.to))]
+    : navSections
   return sections
     .filter(s => allowed(s.roles))
     .map(s => ({ ...s, children: s.children.filter(c => allowed(c.roles)) }))
@@ -192,6 +203,7 @@ export interface QueueCounts {
   needs_vehicle?: { count: number }
   trips_to_send?: { count: number }
   vehicle_requests?: { count: number }
+  pending_vehicles?: { count: number }
   documents?: { count: number }
   kyc?: { count: number }
   bids?: { count: number }
@@ -207,6 +219,7 @@ export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners:
   const needsVehicle = n(queues?.needs_vehicle)
   const tripsToSend = n(queues?.trips_to_send)
   const vehicleRequests = n(queues?.vehicle_requests)
+  const pendingVehicles = n(queues?.pending_vehicles)
   const documents = n(queues?.documents)
   const kyc = n(queues?.kyc)
   const bids = n(queues?.bids)
@@ -221,7 +234,7 @@ export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners:
     onTheRoad: sos + problems,
     problems,
     sos,
-    fleet: vehicleRequests,
+    fleet: vehicleRequests + pendingVehicles,
     vehicleRequests,
     people: documents + kyc,
     documents,

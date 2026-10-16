@@ -1,10 +1,9 @@
-import { Suspense, useEffect, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/services/supabase'
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js'
-import AppLayout from '@/components/ui/AppLayout'
 import { ConfirmProvider, LoadingState } from '@/components/ui'
 import { loadAccount } from '@/services/account'
 import { ChunkErrorBoundary } from '@/components/ChunkErrorBoundary'
@@ -13,16 +12,19 @@ import { returnTripsLink, type OldReturnTripsPage } from '@/config/returnTripsRe
 import LoginPage from '@/pages/LoginPage'
 import LandingPage from '@/pages/LandingPage'
 import NotFoundPage from '@/pages/NotFoundPage'
-import VendorLayout from '@/components/ui/VendorLayout'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
   returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminAudit, money, invoicePage, adminSettings, adminRateApi, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, vendorInvoices,
-  ship, vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
+  vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
 import { OrgSync } from '@/components/OrgSync'
 import { OrgGuard } from '@/components/OrgGuard'
 import PrivateRoute from '@/components/PrivateRoute'
+
+// Login and the public landing page do not need either signed-in workspace shell.
+const AppLayout = lazy(() => import('@/components/ui/AppLayout'))
+const VendorLayout = lazy(() => import('@/components/ui/VendorLayout'))
 
 const TodayPage = today.Component
 const FleetPage = fleet.Component
@@ -67,7 +69,6 @@ const TplDashboardPage = tplDashboard.Component
 const LiveMapPage = liveMap.Component
 const MobileTrackPage = mobileTrack.Component
 const VehicleSharePage = vehicleShare.Component
-const ShipPage = ship.Component
 const VendorLoadsPage = vendorLoads.Component
 const VendorLoadPage = vendorLoad.Component
 const VendorClaimsPage = vendorClaims.Component
@@ -77,9 +78,13 @@ const VendorDocumentsPage = vendorDocuments.Component
 const VendorCorridorPage = vendorCorridor.Component
 const RequestsPage = requests.Component
 
-/** Who may open which part of the console. Managers run operations only: no money, settings, audit, KYC or 3PL. */
+/**
+ * Who may open which part of the console. Managers run operations only: no money, settings, audit, KYC or
+ * 3PL. The finance role is the opposite: money and reports only, no operations, settings, audit, KYC or 3PL.
+ */
 const OPERATIONS = ['superadmin', 'admin', 'manager']
 const ADMINS = ['superadmin', 'admin']
+const MONEY_AND_REPORTS = ['superadmin', 'admin', 'finance']
 const SUPERADMIN = ['superadmin']
 
 /** Fallback for a route that isn't behind a shell (no sidebar/header to keep on screen). */
@@ -224,7 +229,7 @@ export default function App() {
           } />
           {/* Vendor Portal. Return trips is public (browsable before login; bidding itself redirects to
               sign-in when there's no session). Everything that needs a vendor account is gated below. */}
-          <Route path="/vendor" element={<VendorLayout />}>
+          <Route path="/vendor" element={<LazyRoute><VendorLayout /></LazyRoute>}>
             <Route index element={<Navigate to="/vendor/loads" replace />} />
             <Route path="loads" element={
               <PrivateRoute allowedRoles={['vendor']} kinds={['vendor']}>
@@ -267,10 +272,8 @@ export default function App() {
             <Route path="tracking" element={<KeepQuery to="/vendor/loads" />} />
           </Route>
 
-          {/* Find a truck: public, so a visitor can search a lane before any account */}
-          <Route path="/ship" element={<VendorLayout />}>
-            <Route index element={<ShipPage />} />
-          </Route>
+          {/* Retired lane search: existing bookmarks open the full load form. */}
+          <Route path="/ship" element={<MovedTo to="/vendor/request" />} />
 
           {/* 3PL Public/Partner Routes */}
           <Route path="/3pl/onboard" element={<LazyRoute><TplOnboardingPage /></LazyRoute>} />
@@ -292,7 +295,7 @@ export default function App() {
           <Route element={
             <PrivateRoute>
               <OrgGuard>
-                <AppLayout />
+                <LazyRoute><AppLayout /></LazyRoute>
               </OrgGuard>
             </PrivateRoute>
           }>
@@ -384,19 +387,19 @@ export default function App() {
               </PrivateRoute>
             } />
             <Route path="analytics" element={
-              <PrivateRoute allowedRoles={ADMINS}>
+              <PrivateRoute allowedRoles={MONEY_AND_REPORTS}>
                 <AnalyticsPage />
               </PrivateRoute>
             } />
             <Route path="money" element={
-              <PrivateRoute allowedRoles={ADMINS}>
+              <PrivateRoute allowedRoles={MONEY_AND_REPORTS}>
                 <MoneyPage />
               </PrivateRoute>
             } />
             {/* The menu's Invoices link: the Invoices tab of Money */}
             <Route path="money/invoices" element={<Navigate to="/money?tab=invoices" replace />} />
             <Route path="money/invoices/:id" element={
-              <PrivateRoute allowedRoles={ADMINS}>
+              <PrivateRoute allowedRoles={MONEY_AND_REPORTS}>
                 <InvoicePage />
               </PrivateRoute>
             } />
@@ -463,7 +466,7 @@ export default function App() {
               </PrivateRoute>
             } />
             <Route path="insights" element={
-              <PrivateRoute allowedRoles={ADMINS}>
+              <PrivateRoute allowedRoles={MONEY_AND_REPORTS}>
                 <InsightsPage />
               </PrivateRoute>
             } />

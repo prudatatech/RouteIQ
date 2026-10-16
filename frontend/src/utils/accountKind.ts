@@ -37,7 +37,7 @@ export function accountKindOf(input: KindInput, memberships: Membership[] = []):
 }
 
 /** Pages anyone may open, so a vendor can come back to them after signing in. */
-const PUBLIC_PATHS = ['/ship', '/vendor/request', '/vendor/return-trips', '/track']
+const PUBLIC_PATHS = [ '/vendor/request', '/vendor/return-trips', '/track']
 
 function pathOf(next: string): string {
   return next.split(/[?#]/)[0].replace(/\/+$/, '') || '/'
@@ -47,7 +47,7 @@ const isUnder = (path: string, base: string) => path === base || path.startsWith
 
 /**
  * `next` only counts when it belongs to the account's own area; otherwise null (the caller goes to the home page).
- * Staff: anything but /vendor/*, /ship and /3pl-portal/*. Vendor: /vendor/*, /ship or the public pages. 3PL: /3pl-portal/*.
+ * Staff: anything but the vendor and 3PL areas. Vendor: /vendor/* or the public pages. 3PL: /3pl-portal/*.
  * Also keeps the open-redirect guard (a path starting with "/" and not "//").
  */
 export function nextForKind(kind: AccountKind | null, next: string | null | undefined): string | null {
@@ -57,7 +57,11 @@ export function nextForKind(kind: AccountKind | null, next: string | null | unde
   const vendorArea = isUnder(path, '/vendor') || path === '/ship'
   const tplArea = isUnder(path, '/3pl-portal')
   if (kind === 'staff') return vendorArea || tplArea ? null : safe
-  if (kind === 'vendor') return vendorArea || PUBLIC_PATHS.some(p => isUnder(path, p)) ? safe : null
+  if (kind === 'vendor') {
+    // Old sign-in links go straight to the full load form.
+    if (path === '/ship') return '/vendor/request'
+    return vendorArea || PUBLIC_PATHS.some(p => isUnder(path, p)) ? safe : null
+  }
   return tplArea ? safe : null
 }
 

@@ -18,6 +18,14 @@ describe('the staff menu', () => {
     }
   })
 
+  it('gives the finance role Money and Reports only, no operations', () => {
+    expect(labels('finance')).toEqual(['Money', 'Reports'])
+    const links = menuFor('finance').flatMap(s => [s.to, ...s.children.map(c => c.to)])
+    for (const forbidden of ['/today', '/dispatch', '/fleet', '/admin/users', '/admin/settings', '/return-trips', '/3pl-partners']) {
+      expect(links).not.toContain(forbidden)
+    }
+  })
+
   it('shows a company admin the return trips and its own 3PL partners, but not KYC review (the platform decides that), nor the audit log', () => {
     const links = menuFor('admin').flatMap(s => s.children.map(c => c.to))
     expect(links).not.toContain('/admin/kyc')

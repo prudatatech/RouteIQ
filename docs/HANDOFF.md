@@ -46,6 +46,19 @@ registry `margixacr7m52h4t5it6og`.
   Key set on TEST only.
 
 ## 3. Decisions already taken (do not reopen without the owner)
+- Requests opens on New loads and keeps pending vendor rows visible there when the company board is unavailable
+  in the active organisation context. Active company staff use the company board; All remains aggregate history.
+- The company load board and quote drawer wait for organisation context and request `/company/loads/market`
+  only for active logistic company staff. Platform/vendor/3PL contexts show a company-selection message instead
+  of making forbidden requests. Market caches include the acting organisation; switching companies reloads rows.
+- All instant price recommendations (vendor, company, shipment/return-trip and customer/mobile quotes) now use the owner's five provisional per-km bands (LCV 15–25, 6-wheeler 20–30,
+  10-wheeler 25–40, multi-axle 35–55, container 50–80 rupees). The price modal explains distance × rate and the
+  midpoint; posted ranges and signed-in quotes use one server calculation. Company acceptance passes the load's selected truck class, and company price screens show the shared explanation modal. See `docs/vendor-price-recommendation.md` for capacity,
+  part-load and specialised-truck limits. This is separate from negotiated company pricing configuration.
+- Vendor entry is **Post a load**. The owner requested removal of the duplicate Find a truck flow: its page,
+  navigation, query seeding and standalone `/public/quote` endpoint are removed. Old `/ship` bookmarks redirect
+  to `/vendor/request`. Return trips retain spare-space browsing and bidding; load estimates use `/public/loads/assist`.
+  The mobile booking button says Cargo and weight (with existing translations); its booking flow is separate.
 - Freight GST is the company's GTA option (`rcm_5` default, `fcm_5`, `fcm_18`), never the goods' HSN rate.
   Same-day pickup allowed with a warning. (`docs/gst-rates.md`)
 - Vendor KYC review and 3PL approval are platform-only. A company sees its own partners without bank/PAN/documents.
@@ -63,6 +76,16 @@ registry `margixacr7m52h4t5it6og`.
 - Realtime change feeds cannot run on Azure Postgres (needs a superuser-only setting); the web polls instead.
 
 ## 4. Azure pitfalls (each broke something once)
+- Staging was reset on 4 Oct at the owner's request: operational test records cleared; six existing demo accounts
+  retained (platform owner, company admin, manager, driver, vendor, 3PL). All six password logins were verified.
+  Organisations/configuration and reference catalogues remain; credentials were delivered separately, never committed.
+- Performance investigation and measurements: `docs/performance-2026-10-04.md`. Shipment counts now use one
+  backend-only grouped SQL call; notification bodies load on opening the bell; account restores share in-flight
+  requests; map polls cannot overlap and pause in hidden tabs. SQL profiling is enabled on test without a restart.
+- Staging notification history reached ~2.8 million rows; type-filtered queries scanned tens of thousands of
+  unrelated rows per recipient and exhausted the REST pool (`PGRST003`, API 503). Migration
+  `20261011120000_notification_query_indexes.sql` adds recipient/type/date and covering unread indexes.
+  Duplicate-notification checks now stop on database errors instead of inserting after a failed check.
 - Uploads go to Azure Blob through s3proxy (`JCLOUDS_AZUREBLOB_AUTH=azureKey`); signed links last 900 s.
 - `platform.sh` re-binds the data domain's TLS every run (a redeploy once dropped it and broke sign-in).
 - Tables created by the admin login lack grants: `db-migrate.sh` hands stray tables to app_owner.
@@ -75,7 +98,7 @@ registry `margixacr7m52h4t5it6og`.
 - Owner choices pending: put the Resend key on live; restore "Need unloading help" on delivery?; company board
   order within the same priority and date (newest first now, or longest-waiting first).
 - Owner configuration still missing: Twilio + Redis (SMS OTP), WhatsApp, TomTom key (route optimisation returns
-  502; traffic calls get 401), telematics webhook secret, per-km rate card, CA review of GST 2.0 rates (507 rows
+  502; traffic calls get 401), telematics webhook secret, negotiated company per-km rate card, CA review of GST 2.0 rates (507 rows
   flagged needs_review).
 - Product gaps: a real finance role (finance/dispatcher/ops map to one role); `/capacity/nearby-vendors` lists all
   vendors to any company; `/public/companies` caps at 200; finance lists unpaginated; vendor company details are

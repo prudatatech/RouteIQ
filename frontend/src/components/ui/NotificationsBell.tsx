@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { Bell, MessageSquare } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
@@ -43,11 +43,8 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
   // Vendors and 3PL partners both sign in with the vendor role; drivers' messages are for staff only
   const audience: NotificationAudience = role === 'vendor' ? 'vendor' : 'staff'
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
-  const [items, setItems] = useState<NotificationRow[]>([])
-  const [unreadNotifications, setUnreadNotifications] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [loadFailed, setLoadFailed] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [position, setPosition] = useState<PanelPosition | null>(null)
@@ -76,30 +73,39 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
   useRealtimeRefresh('messages-unread-bell', ['messages'], [['messages-unread']])
   const unreadThreads = messagesUnread.data?.threads ?? []
   const unreadMessages = messagesUnread.data?.total ?? 0
+  const unreadQuery = useQuery({
+    queryKey: ['notifications', userId, 'unread'],
+    enabled: !!userId,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { count, error } = await supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', userId!).eq('is_read', false)
+      if (error) throw error
+      return count ?? 0
+    },
+  })
+  // The badge needs only a count. Fetch notification bodies when the panel is opened,
+  // and share cached results across navigation and responsive bell remounts.
+  const listQuery = useQuery({
+    queryKey: ['notifications', userId, 'list'],
+    enabled: !!userId && open,
+    refetchInterval: open ? 60_000 : false,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('notifications').select('id,title,body,type,is_read,data,created_at').eq('user_id', userId!).order('created_at', { ascending: false }).limit(LIST_LIMIT)
+      if (error) throw error
+      return (data as NotificationRow[] | null) ?? []
+    },
+  })
+  const items = listQuery.data ?? []
+  const unreadNotifications = unreadQuery.data ?? 0
   const unread = unreadNotifications + unreadMessages
-
-  const load = useCallback(async () => {
-    if (!userId) return
-    try {
-      const [{ data, error }, { count }] = await Promise.all([
-        supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(LIST_LIMIT),
-        supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('is_read', false),
-      ])
-      setLoadFailed(!!error)
-      if (!error) {
-        setItems((data as NotificationRow[] | null) ?? [])
-        setUnreadNotifications(count ?? 0)
-      }
-    } catch {
-      setLoadFailed(true)
-    } finally {
-      setLoading(false)
-    }
-  }, [userId])
+  const loading = listQuery.isLoading
+  const loadFailed = listQuery.isError || unreadQuery.isError
+  const load = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['notifications', userId] })
+  }, [queryClient, userId])
 
   useEffect(() => {
     if (!userId) return
-    load()
     const channel = openChannel(`notifications_${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, load)
       .subscribe()
@@ -131,8 +137,8 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
     const path = notificationPath(n, audience)
     if (path) navigate(path)
     if (!n.is_read) {
-      setItems(prev => prev.map(i => (i.id === n.id ? { ...i, is_read: true } : i)))
-      setUnreadNotifications(c => Math.max(0, c - 1))
+      queryClient.setQueryData<NotificationRow[]>(['notifications', userId, 'list'], prev => prev?.map(i => (i.id === n.id ? { ...i, is_read: true } : i)))
+      queryClient.setQueryData<number>(['notifications', userId, 'unread'], c => Math.max(0, (c ?? 0) - 1))
       // Go to the page first; marking it read happens in the background.
       const { error } = await supabase.from('notifications').update({ is_read: true }).eq('id', n.id)
       if (error) load()
@@ -141,9 +147,10 @@ export function NotificationsBell({ placement = 'left' }: { placement?: 'left' |
 
   const markAllRead = async () => {
     if (!userId || unreadNotifications === 0) return
-    setItems(prev => prev.map(i => ({ ...i, is_read: true })))
-    setUnreadNotifications(0)
-    await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false)
+    queryClient.setQueryData<NotificationRow[]>(['notifications', userId, 'list'], prev => prev?.map(i => ({ ...i, is_read: true })))
+    queryClient.setQueryData(['notifications', userId, 'unread'], 0)
+    const { error } = await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false)
+    if (error) load()
   }
 
   return (

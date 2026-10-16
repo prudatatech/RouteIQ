@@ -466,7 +466,18 @@ class MockSupabase {
         try { args = raw ? JSON.parse(raw) : null; } catch { /* not JSON */ }
         this.rpcCalls.push({ name, fn: name, args });
         const handler = this.rpcHandlers.get(name);
-        const out = handler ? handler(args) : null;
+        let out = handler ? handler(args) : null;
+        if (!handler && name === 'dashboard_shipment_counts') {
+          const org = (args as { p_carrier_org_id?: string | null })?.p_carrier_org_id;
+          out = ['shipments', 'cargo_manifest'].flatMap(table => {
+            const counts = new Map<string, number>();
+            for (const row of this.rows(table)) {
+              if (row.is_master === true || (org && row.carrier_org_id !== org)) continue;
+              counts.set(row.status, (counts.get(row.status) ?? 0) + 1);
+            }
+            return [...counts].map(([status, total]) => ({ source: table === 'shipments' ? 'shipment' : 'manifest', status, total }));
+          });
+        }
         // A handler raises a database error the way plpgsql RAISE EXCEPTION does: { __rpcError: 'message' }
         if (out && typeof out === 'object' && '__rpcError' in (out as object)) {
           return send(400, { code: 'P0001', message: (out as { __rpcError: string }).__rpcError, details: null, hint: null });

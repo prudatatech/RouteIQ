@@ -18,7 +18,7 @@ const router = Router();
 // ── GET /insights ──────────────────────────────────────────
 router.get('/insights', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+    if (!['admin', 'superadmin', 'manager', 'finance'].includes(req.user!.role)) {
       res.status(403).json({ detail: 'Not authorized to view fleet insights' });
       return;
     }
@@ -33,7 +33,7 @@ router.get('/insights', requireAuth, async (req: Request, res: Response) => {
 // Open loads vs available vehicles per origin city, and a 7-day load forecast per corridor.
 router.get('/demand', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+    if (!['admin', 'superadmin', 'manager', 'finance'].includes(req.user!.role)) {
       res.status(403).json({ detail: 'Not authorized to view demand' });
       return;
     }
@@ -46,7 +46,7 @@ router.get('/demand', requireAuth, async (req: Request, res: Response) => {
 // ── GET /metrics ───────────────────────────────────────────
 router.get('/metrics', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+    if (!['admin', 'superadmin', 'manager', 'finance'].includes(req.user!.role)) {
       res.status(403).json({ detail: 'Not authorized to view fleet metrics' });
       return;
     }
@@ -62,7 +62,7 @@ router.get('/metrics', requireAuth, async (req: Request, res: Response) => {
 // report on a different range, e.g. from the shared DateRangeControl.
 router.get('/fleet-overview', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+    if (!['admin', 'superadmin', 'manager', 'finance'].includes(req.user!.role)) {
       res.status(403).json({ detail: 'Not authorized to view fleet overview' });
       return;
     }
@@ -80,7 +80,7 @@ router.get('/fleet-overview', requireAuth, async (req: Request, res: Response) =
 // calendar days) range; from/to takes priority when both are given.
 router.get('/daily-activity', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+    if (!['admin', 'superadmin', 'manager', 'finance'].includes(req.user!.role)) {
       res.status(403).json({ detail: 'Not authorized' });
       return;
     }
@@ -97,7 +97,7 @@ router.get('/daily-activity', requireAuth, async (req: Request, res: Response) =
 // ── GET /active-missions ───────────────────────────────────
 router.get('/active-missions', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+    if (!['admin', 'superadmin', 'manager', 'finance'].includes(req.user!.role)) {
       res.status(403).json({ detail: 'Not authorized to view mission incubator' });
       return;
     }
@@ -190,7 +190,7 @@ router.get('/audit-logs', requireAuth, async (req: Request, res: Response) => {
 // ── GET /driver-performance ──────────────────────────────────
 router.get('/driver-performance', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+    if (!['admin', 'superadmin', 'manager', 'finance'].includes(req.user!.role)) {
       res.status(403).json({ detail: 'Not authorized' });
       return;
     }
@@ -204,7 +204,7 @@ router.get('/driver-performance', requireAuth, async (req: Request, res: Respons
 // ── GET /vendor-performance ──────────────────────────────────
 router.get('/vendor-performance', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (!['admin', 'superadmin', 'manager'].includes(req.user!.role)) {
+    if (!['admin', 'superadmin', 'manager', 'finance'].includes(req.user!.role)) {
       res.status(403).json({ detail: 'Not authorized' });
       return;
     }

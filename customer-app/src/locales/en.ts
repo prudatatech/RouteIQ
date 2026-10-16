@@ -53,7 +53,6 @@ const en = {
   home_choose_drop: 'Choose drop-off location',
   home_choose_pickup: 'Choose pickup location',
   home_close_map: 'Close map',
-  home_find_truck: 'Find a truck',
   home_need_both: 'Choose pickup and drop-off first',
   home_opens_search: 'Opens location search',
   home_search_pickup: 'Search pickup location',

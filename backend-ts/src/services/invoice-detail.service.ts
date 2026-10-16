@@ -165,8 +165,8 @@ export async function invoiceOwnerId(inv: Pick<InvoiceRecord, 'shipment_id' | 'm
 }
 
 /**
- * Loads an invoice a user may open: admin and superadmin any; a vendor or customer only their own.
- * Anyone else gets the same 404 as a missing invoice, so ids cannot be probed.
+ * Loads an invoice a user may open: admin, superadmin and the finance role any; a vendor or customer only
+ * their own. Anyone else gets the same 404 as a missing invoice, so ids cannot be probed.
  */
 export async function loadInvoiceFor(id: string, user: TokenData): Promise<InvoiceRecord> {
   if (!isUuid(id)) throw new HttpError(404, 'Invoice not found');
@@ -176,8 +176,8 @@ export async function loadInvoiceFor(id: string, user: TokenData): Promise<Invoi
   if (!data) throw new HttpError(404, 'Invoice not found');
   const inv = data as InvoiceRecord;
 
-  const finance = user.role === 'superadmin' || user.role === 'admin';
-  if (finance) return inv;
+  const canSeeAny = user.role === 'superadmin' || user.role === 'admin' || user.role === 'finance';
+  if (canSeeAny) return inv;
   if (isStaff(user)) throw new HttpError(403, 'Invoices are for admins');
   if ((user.role === 'vendor' || user.role === 'customer') && (await invoiceOwnerId(inv)) === user.user_id) return inv;
   throw new HttpError(404, 'Invoice not found');

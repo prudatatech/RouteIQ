@@ -1,13 +1,14 @@
 import { Card, Skeleton } from '@/components/ui'
 import type { AssistResult } from '@/types/load'
 import { inr } from './logic'
+import PriceRecommendationModal from './PriceRecommendationModal'
 
 /**
  * The recommended freight for the route, from the server's estimate. There is nothing to type: logistic companies can
  * book the load at any price in the range. While the estimate is being worked out: a skeleton; with none: a plain line.
  */
 export default function FreightCard({ assist, loading }: { assist: AssistResult | null; loading?: boolean }) {
-  const est = assist?.estimate ?? null
+  const est = loading ? null : assist?.estimate ?? null
   const market = est?.market_benchmark
   const isMarket = !!(market && market.available)
 
@@ -33,6 +34,8 @@ export default function FreightCard({ assist, loading }: { assist: AssistResult 
               ? 'Trucks can be assigned instantly within this market price range with guaranteed carrier capacity.'
               : 'Logistic companies can book your load at any price in this range.'}
           </p>
+          {est.suggested !== undefined && <p className="text-sm text-text">Suggested midpoint: {inr(est.suggested)}</p>}
+          <PriceRecommendationModal estimate={est} />
         </>
       ) : loading ? (
         <div data-testid="freight-skeleton" className="space-y-2" aria-busy="true">
