@@ -81,6 +81,7 @@ export default function TplOnboardingPage() {
   
   // Step 1
   const [ownerName, setOwnerName] = useState('')
+  const [email, setEmail] = useState('')
   const [mobile, setMobile] = useState('')
   const [location, setLocation] = useState('')
   
@@ -156,12 +157,16 @@ export default function TplOnboardingPage() {
     return () => { isMounted = false }
   }, [navigate])
 
-  // Prefills what Google already told us (verified email, name) so there is less to type by hand.
+  // Prefills what the sign-in already told us (verified email, and Google's name when available) so
+  // there is less to type by hand. Both stay editable: the sign-in email may differ from the company's
+  // preferred contact address.
   useEffect(() => {
-    if (session?.user && !ownerName) {
+    if (!session?.user) return
+    if (!ownerName) {
       const name = session.user.user_metadata?.full_name || session.user.user_metadata?.name
       if (typeof name === 'string' && name.trim()) setOwnerName(name.trim())
     }
+    if (!email && session.user.email) setEmail(session.user.email)
     // Runs once per new session, to prefill an empty form without overwriting what the applicant typed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session])
@@ -218,11 +223,11 @@ export default function TplOnboardingPage() {
   // Return to step 1 if state is lost (e.g. after a refresh)
   useEffect(() => {
     if (step > 0 && !submitted) {
-      if (!ownerName || !mobile || !location) {
+      if (!ownerName || !email || !mobile || !location) {
         setSearchParams({ step: '0' }, { replace: true })
       }
     }
-  }, [step, ownerName, mobile, location, submitted, setSearchParams])
+  }, [step, ownerName, email, mobile, location, submitted, setSearchParams])
 
   if (userLoading) {
     return <div className="min-h-screen bg-bg flex items-center justify-center">Loading...</div>
@@ -285,8 +290,12 @@ export default function TplOnboardingPage() {
   const next = async () => {
     setDirection('forward')
     if (step === 0) {
-      if (!ownerName || !mobile || !location) {
+      if (!ownerName || !email || !mobile || !location) {
         toast.error('Please fill all fields.')
+        return
+      }
+      if (!EMAIL_PATTERN.test(email.trim())) {
+        toast.error('Please enter a valid email address.')
         return
       }
       const digits = mobile.replace(/\D/g, '')
@@ -310,7 +319,7 @@ export default function TplOnboardingPage() {
         const res = await tplAPI.onboard({
           companyName: ownerName,
           phone: mobile,
-          email: session?.user?.email || '',
+          email: email.trim() || session?.user?.email || '',
           operatingFrom: location,
           fleetSize,
           truckType: fleetSize === 'single' ? truckType : JSON.stringify(multipleTruckCounts),
@@ -413,13 +422,25 @@ export default function TplOnboardingPage() {
             {step === 0 && (
               <div className="space-y-6">
                 <Input
-                  label="Owner / Contact Person Name *"
-                  placeholder="Enter full name"
+                  label="Contact person"
+                  required
+                  placeholder="Full name"
                   value={ownerName}
                   onChange={(e) => setOwnerName(e.target.value)}
                 />
                 <Input
-                  label="Mobile Number *"
+                  label="Email"
+                  required
+                  type="email"
+                  autoComplete="email"
+                  placeholder="you@company.com"
+                  hint="This is where we'll send your application status and, once approved, your partner portal access."
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+                <Input
+                  label="Mobile number"
+                  required
                   placeholder="10-digit mobile number"
                   type="tel"
                   maxLength={10}
@@ -427,8 +448,10 @@ export default function TplOnboardingPage() {
                   onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
                 />
                 <Input
-                  label="Operating From (Base Location) *"
+                  label="Operating from"
+                  required
                   placeholder="E.g., Mumbai, MH"
+                  hint="Your base location"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
                 />
@@ -518,11 +541,19 @@ export default function TplOnboardingPage() {
                   
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                      <span className="text-muted block mb-1">Owner Name</span>
+                      <span className="text-muted block mb-1">Contact person</span>
                       <span className="font-medium text-text">{ownerName}</span>
                     </div>
                     <div>
-                      <span className="text-muted block mb-1">Operating From</span>
+                      <span className="text-muted block mb-1">Email</span>
+                      <span className="font-medium text-text">{email}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted block mb-1">Mobile number</span>
+                      <span className="font-medium text-text">{mobile}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted block mb-1">Operating from</span>
                       <span className="font-medium text-text">{location}</span>
                     </div>
                     
@@ -546,8 +577,8 @@ export default function TplOnboardingPage() {
                 </div>
                 
                 <p className="text-sm text-muted text-center">
-                  Please review your details above. If everything is correct, submit your application. 
-                  These trucks are requested for our active load tracking system.
+                  Review your details above, then submit. You can add PAN, GST and other documents from
+                  your partner portal once your application is approved.
                 </p>
               </div>
             )}
@@ -555,16 +586,25 @@ export default function TplOnboardingPage() {
         </div>
 
         <div className="hidden space-y-4 lg:block lg:col-span-4">
-          <Card className="overflow-hidden">
-            <div className="h-32 bg-surface-subtle flex items-center justify-center border-b border-border">
-              <span className="text-muted text-xs">Image placeholder</span>
-            </div>
-            <div className="p-4">
-              <h3 className="font-semibold text-text text-sm mb-1">A few details, then you're ready.</h3>
-              <p className="text-xs text-muted leading-relaxed">
-                We collect just the essentials so you can start browsing relevant loads immediately.
-              </p>
-            </div>
+          <Card padded className="bg-text">
+            <h3 className="text-sm font-semibold text-white">What happens after you apply</h3>
+            <ol className="mt-4 space-y-4">
+              {[
+                ['Submit your application', 'Takes under a minute — you can add documents later.'],
+                ['Our team reviews it', 'Usually within one business day.'],
+                ["You're in", "We'll email you, and you can start getting load offers."],
+              ].map(([title, body], i) => (
+                <li key={title} className="flex gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-fill text-xs font-semibold text-on-brand">
+                    {i + 1}
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium text-white">{title}</p>
+                    <p className="mt-0.5 text-xs text-white/60">{body}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
           </Card>
 
           <Card padded>
