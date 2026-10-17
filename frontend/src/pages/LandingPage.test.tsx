@@ -7,6 +7,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const stats = vi.hoisted(() => vi.fn())
 vi.mock('@/services/api', () => ({ publicAPI: { stats } }))
 
+// Some @/components/ui export pulls in @/services/supabase at module scope; CI has no
+// VITE_SUPABASE_URL (unlike a local .env), so createClient('') throws unless this is mocked.
+vi.mock('@/services/supabase', () => ({ supabase: {}, openChannel: vi.fn() }))
+
 window.scrollTo = vi.fn() as unknown as typeof window.scrollTo
 
 import LandingPage from './LandingPage'
