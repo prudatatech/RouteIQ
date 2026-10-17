@@ -24,15 +24,24 @@ const ORG: OrgRow = {
   id: 'org-1', kind: 'logistic_company', name: 'Phoned-in Carriers', status: 'pending',
 }
 
+// A company left stuck mid-registration (staff-entered or self-serve): the org row exists,
+// `kyc_submitted_at` is still null, and it already has some - but not all - of its KYC filled in.
+const RESUME_ORG: OrgRow = {
+  id: 'org-2', kind: 'logistic_company', name: 'Unfinished Carriers', status: 'pending',
+  email: 'unfinished@example.test', entity_type: 'Proprietorship', authorized_signatory_name: 'Existing Owner',
+  profile: { bank_name: 'Existing Bank', bank_account_no: '999888777666', bank_ifsc: 'ICIC0005678' },
+  kyc_documents: { docUrls: { gstRegistration: 'org-2/gstRegistration_1.pdf' } },
+}
+
 // Field labels add a trailing " *" when required, and getByLabelText's default fuzzy match can
 // also catch unrelated text containing the same substring (e.g. "PAN" inside "Company") via
 // aria-labelledby on the dialog itself - anchor to the exact label, with or without the asterisk,
 // and restrict to actual form controls.
 const field = (name: string) => screen.getByLabelText(new RegExp(`^${name}( \\*)?$`), { selector: 'input,select,textarea' })
 
-const show = (onRegistered = vi.fn()) => render(
+const show = (onRegistered = vi.fn(), resumeOrg?: OrgRow | null) => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <RegisterCompanyModal open onClose={vi.fn()} onRegistered={onRegistered} />
+    <RegisterCompanyModal open onClose={vi.fn()} onRegistered={onRegistered} resumeOrg={resumeOrg} />
   </QueryClientProvider>,
 )
 
@@ -141,5 +150,59 @@ describe('RegisterCompanyModal', () => {
     // Still on the KYC step with everything the staff member entered - nothing was lost.
     expect((field('Authorized signatory name') as HTMLInputElement).value).toBe('Phoned-in Owner')
     expect(screen.queryByText('Submitted for review')).toBeNull()
+  })
+})
+
+describe('RegisterCompanyModal resuming an existing company', () => {
+  it('opens directly at step 2, pre-filled from the org, and never calls create-on-behalf', () => {
+    show(vi.fn(), RESUME_ORG)
+
+    expect(screen.getByText('Finish registering Unfinished Carriers')).toBeTruthy()
+    expect(screen.queryByLabelText('Applicant email', { selector: 'input,select,textarea' })).toBeNull()
+
+    expect((field('Company email') as HTMLInputElement).value).toBe('unfinished@example.test')
+    expect((field('Entity type') as HTMLSelectElement).value).toBe('Proprietorship')
+    expect((field('Authorized signatory name') as HTMLInputElement).value).toBe('Existing Owner')
+    expect((field('Bank account number') as HTMLInputElement).value).toBe('999888777666')
+    expect((field('IFSC code') as HTMLInputElement).value).toBe('ICIC0005678')
+    expect((field('Bank name') as HTMLInputElement).value).toBe('Existing Bank')
+
+    // The one document the org already has shows as uploaded (View/Remove); the rest still need uploading.
+    expect(screen.getByRole('button', { name: 'View' })).toBeTruthy()
+    expect(document.querySelectorAll('input[type=file]').length).toBe(REQUIRED_DOC_KEYS.length - 1)
+
+    expect(api.createOnBehalf).not.toHaveBeenCalled()
+  })
+
+  it('saves, uploads the remaining documents and submits for review, same as a fresh registration', async () => {
+    const onRegistered = vi.fn()
+    show(onRegistered, RESUME_ORG)
+
+    const remainingKeys = REQUIRED_DOC_KEYS.filter(k => k !== 'gstRegistration')
+    const inputs = document.querySelectorAll('input[type=file]')
+    expect(inputs.length).toBe(remainingKeys.length)
+    for (let i = 0; i < inputs.length; i++) {
+      const key = remainingKeys[i]
+      uploadAdminOrgKycDocument.mockResolvedValueOnce(`org-2/${key}_1.pdf`)
+      const file = new File(['x'], `${key}.pdf`, { type: 'application/pdf' })
+      fireEvent.change(inputs[i], { target: { files: [file] } })
+      await waitFor(() => expect(uploadAdminOrgKycDocument).toHaveBeenCalledWith('org-2', key, file))
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit for review' }))
+
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith('org-2', {
+      email: 'unfinished@example.test',
+      entity_type: 'Proprietorship',
+      cin: undefined,
+      authorized_signatory_name: 'Existing Owner',
+      profile: { bank_name: 'Existing Bank', bank_account_no: '999888777666', bank_ifsc: 'ICIC0005678' },
+    }))
+    await waitFor(() => expect(api.submitKyc).toHaveBeenCalledWith('org-2'))
+
+    expect(await screen.findByText('Submitted for review')).toBeTruthy()
+    // No applicant was freshly invited in this flow, so there is nothing to tell staff about an invite.
+    expect(screen.queryByText(/invite to set a password/)).toBeNull()
+    expect(onRegistered).toHaveBeenCalled()
   })
 })

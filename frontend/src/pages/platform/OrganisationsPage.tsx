@@ -40,20 +40,28 @@ function Detail({ label, value }: { label: string; value?: string | null }) {
 }
 
 /** A logistic company's uploaded KYC documents, each flaggable with its own reason. Platform only. */
-function OrgDocumentsSection({ org, onFlag, viewer }: {
+function OrgDocumentsSection({ org, onFlag, onResume, viewer }: {
   org: OrgRow
   onFlag: () => void
+  /** Reopens RegisterCompanyModal to finish this company's registration (staff-entered or self-serve). */
+  onResume: () => void
   viewer: ReturnType<typeof useDocumentViewer>
 }) {
   const docUrls = org.kyc_documents?.docUrls ?? {}
   const issues = org.kyc_document_issues ?? {}
   const canFlag = org.status === 'pending' && !!org.kyc_submitted_at
+  // Not yet submitted: whoever started this registration (staff on someone's behalf, or the
+  // applicant self-serve) never finished it. Staff can always step in and finish it for them.
+  const canResume = org.status === 'pending' && !org.kyc_submitted_at
   const hasAnyDoc = Object.keys(docUrls).length > 0
   return (
     <section aria-label="Documents">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Documents</h3>
-        {canFlag && <Button variant="ghost" size="sm" icon={<FlagTriangleRight size={14} />} onClick={onFlag}>Flag documents</Button>}
+        <div className="flex gap-2">
+          {canFlag && <Button variant="ghost" size="sm" icon={<FlagTriangleRight size={14} />} onClick={onFlag}>Flag documents</Button>}
+          {canResume && <Button variant="ghost" size="sm" icon={<UserPlus size={14} />} onClick={onResume}>Finish registration</Button>}
+        </div>
       </div>
       {org.status === 'pending' && (
         <p className="mb-2 text-xs text-muted">
@@ -90,12 +98,13 @@ function OrgDocumentsSection({ org, onFlag, viewer }: {
   )
 }
 
-function OrgDrawer({ org, onClose, onDecide, deciding, onFlag, viewer }: {
+function OrgDrawer({ org, onClose, onDecide, deciding, onFlag, onResume, viewer }: {
   org: OrgRow | null
   onClose: () => void
   onDecide: (org: OrgRow, decision: Decision) => void
   deciding: boolean
   onFlag: () => void
+  onResume: (org: OrgRow) => void
   viewer: ReturnType<typeof useDocumentViewer>
 }) {
   const reason = org ? decisionReason(org) : null
@@ -145,7 +154,7 @@ function OrgDrawer({ org, onClose, onDecide, deciding, onFlag, viewer }: {
               </dl>
             </section>
           )}
-          {org.kind === 'logistic_company' && <OrgDocumentsSection org={org} onFlag={onFlag} viewer={viewer} />}
+          {org.kind === 'logistic_company' && <OrgDocumentsSection org={org} onFlag={onFlag} onResume={() => onResume(org)} viewer={viewer} />}
           <section aria-label="History">
             <h3 className="mb-2 text-sm font-semibold">History</h3>
             <ul className="space-y-2 text-sm">
@@ -174,6 +183,8 @@ export default function PlatformOrganisationsPage() {
   const [openId, setOpenId] = useState<string | null>(null)
   const [flagOpen, setFlagOpen] = useState(false)
   const [registerOpen, setRegisterOpen] = useState(false)
+  /** A not-yet-submitted company whose registration staff is finishing on its behalf, or null when the modal is closed or is creating a brand-new company (`registerOpen`). */
+  const [resumeOrg, setResumeOrg] = useState<OrgRow | null>(null)
   const viewer = useDocumentViewer()
 
   const list = useQuery({
@@ -313,7 +324,15 @@ export default function PlatformOrganisationsPage() {
           </div>
         )}
       </TabPanel>
-      <OrgDrawer org={open} onClose={() => setOpenId(null)} onDecide={onDecide} deciding={decide.isPending} onFlag={() => setFlagOpen(true)} viewer={viewer} />
+      <OrgDrawer
+        org={open}
+        onClose={() => setOpenId(null)}
+        onDecide={onDecide}
+        deciding={decide.isPending}
+        onFlag={() => setFlagOpen(true)}
+        onResume={org => { setOpenId(null); setResumeOrg(org) }}
+        viewer={viewer}
+      />
       {flagOpen && open && (
         <FlagDocumentsModal
           open entityName={open.name} documents={ORG_KYC_DOCUMENTS.filter(d => open.kyc_documents?.docUrls?.[d.key])}
@@ -324,10 +343,11 @@ export default function PlatformOrganisationsPage() {
         />
       )}
       {viewer.modal}
-      {registerOpen && (
+      {(registerOpen || resumeOrg) && (
         <RegisterCompanyModal
           open
-          onClose={() => setRegisterOpen(false)}
+          resumeOrg={resumeOrg}
+          onClose={() => { setRegisterOpen(false); setResumeOrg(null) }}
           onRegistered={() => void queryClient.invalidateQueries({ queryKey: ['platform-orgs'] })}
         />
       )}

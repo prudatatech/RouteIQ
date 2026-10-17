@@ -29,44 +29,57 @@ const EMPTY_DETAILS: DetailsForm = {
   applicantEmail: '', applicantFullName: '', name: '', legal_name: '', gstin: '', pan: '', state: '', city: '', address: '', pincode: '', phone: '',
 }
 
+/** A string field out of an org's free-form `profile` JSON, or '' if it is missing or not a string. */
+function profileString(org: OrgRow | null | undefined, key: string): string {
+  const value = org?.profile?.[key]
+  return typeof value === 'string' ? value : ''
+}
+
 /**
- * Staff registers a logistic company for an applicant who called or WhatsApp'd their details in
- * instead of using the self-serve sign-up form. Walks the same two calls self-service makes
- * (register, then complete KYC) through POST /admin/orgs/create-on-behalf and the admin KYC routes,
- * so the company lands in the normal review queue unchanged - no auto-approval.
+ * Staff registers a logistic company for an applicant who called or WhatsApp'd their details in,
+ * or finishes a registration (staff-entered or self-serve) that was left incomplete before KYC was
+ * submitted. Walks the same calls self-service makes (register, then complete KYC) through
+ * POST /admin/orgs/create-on-behalf and the admin KYC routes, so the company lands in the normal
+ * review queue unchanged - no auto-approval.
+ *
+ * Pass `resumeOrg` to skip step 0 (and the create-on-behalf call) and open directly at step 2,
+ * pre-filled with whatever the company already has. Without it, the modal creates a brand-new company.
  */
-export default function RegisterCompanyModal({ open, onClose, onRegistered }: {
+export default function RegisterCompanyModal({ open, onClose, onRegistered, resumeOrg }: {
   open: boolean
   onClose: () => void
   /** Called once the company has been created (so the list can refresh), and again after a successful submit. */
   onRegistered: () => void
+  /** An existing, not-yet-submitted company to resume instead of creating a new one. */
+  resumeOrg?: OrgRow | null
 }) {
   const viewer = useDocumentViewer()
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(resumeOrg ? 1 : 0)
   const [details, setDetails] = useState<DetailsForm>(EMPTY_DETAILS)
   const [detailErrors, setDetailErrors] = useState<DetailsErrors>({})
   const [detailFormError, setDetailFormError] = useState<string | null>(null)
 
-  const [org, setOrg] = useState<OrgRow | null>(null)
-  const [companyEmail, setCompanyEmail] = useState('')
-  const [entityType, setEntityType] = useState('')
-  const [cin, setCin] = useState('')
-  const [authorizedSignatoryName, setAuthorizedSignatoryName] = useState('')
-  const [bankName, setBankName] = useState('')
-  const [bankAccountNo, setBankAccountNo] = useState('')
-  const [bankIfsc, setBankIfsc] = useState('')
+  const [org, setOrg] = useState<OrgRow | null>(resumeOrg ?? null)
+  const [companyEmail, setCompanyEmail] = useState(resumeOrg?.email ?? '')
+  const [entityType, setEntityType] = useState(resumeOrg?.entity_type ?? '')
+  const [cin, setCin] = useState(resumeOrg?.cin ?? '')
+  const [authorizedSignatoryName, setAuthorizedSignatoryName] = useState(resumeOrg?.authorized_signatory_name ?? '')
+  const [bankName, setBankName] = useState(profileString(resumeOrg, 'bank_name'))
+  const [bankAccountNo, setBankAccountNo] = useState(profileString(resumeOrg, 'bank_account_no'))
+  const [bankIfsc, setBankIfsc] = useState(profileString(resumeOrg, 'bank_ifsc'))
   const [, setIfscInfo] = useState<IfscDetails | null>(null)
-  const [docUrls, setDocUrls] = useState<Record<string, string>>({})
+  const [docUrls, setDocUrls] = useState<Record<string, string>>(resumeOrg?.kyc_documents?.docUrls ?? {})
   const [uploadingKey, setUploadingKey] = useState<string | null>(null)
   const [attemptedSubmit, setAttemptedSubmit] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
 
   const reset = () => {
-    setStep(0); setDetails(EMPTY_DETAILS); setDetailErrors({}); setDetailFormError(null)
-    setOrg(null); setCompanyEmail(''); setEntityType(''); setCin(''); setAuthorizedSignatoryName('')
-    setBankName(''); setBankAccountNo(''); setBankIfsc(''); setIfscInfo(null)
-    setDocUrls({}); setUploadingKey(null); setAttemptedSubmit(false); setSubmitError(null); setDone(false)
+    setStep(resumeOrg ? 1 : 0); setDetails(EMPTY_DETAILS); setDetailErrors({}); setDetailFormError(null)
+    setOrg(resumeOrg ?? null); setCompanyEmail(resumeOrg?.email ?? ''); setEntityType(resumeOrg?.entity_type ?? ''); setCin(resumeOrg?.cin ?? '')
+    setAuthorizedSignatoryName(resumeOrg?.authorized_signatory_name ?? '')
+    setBankName(profileString(resumeOrg, 'bank_name')); setBankAccountNo(profileString(resumeOrg, 'bank_account_no')); setBankIfsc(profileString(resumeOrg, 'bank_ifsc')); setIfscInfo(null)
+    setDocUrls(resumeOrg?.kyc_documents?.docUrls ?? {}); setUploadingKey(null); setAttemptedSubmit(false); setSubmitError(null); setDone(false)
   }
 
   const close = () => { onClose(); reset() }
@@ -192,14 +205,16 @@ export default function RegisterCompanyModal({ open, onClose, onRegistered }: {
   }
 
   return (
-    <Modal open={open} onClose={close} size="lg" title="Register a company for someone" closeOnBackdrop={!create.isPending && !submit.isPending}>
+    <Modal open={open} onClose={close} size="lg" title={resumeOrg ? `Finish registering ${resumeOrg.name}` : 'Register a company for someone'} closeOnBackdrop={!create.isPending && !submit.isPending}>
       <div className="space-y-5">
         <Stepper steps={STEPS} current={done ? 2 : step} variant="inline" />
 
         {done ? (
           <Alert tone="success" title="Submitted for review">
             <p>{org?.name} is now waiting in the normal review queue, exactly like a self-serve registration.</p>
-            <p className="mt-1">An invite to set a password was sent to {details.applicantEmail.trim()}; once they sign in they own this company and can see or fix anything flagged during review.</p>
+            {!resumeOrg && (
+              <p className="mt-1">An invite to set a password was sent to {details.applicantEmail.trim()}; once they sign in they own this company and can see or fix anything flagged during review.</p>
+            )}
             <Button className="mt-3" size="sm" onClick={close}>Done</Button>
           </Alert>
         ) : step === 0 ? (
@@ -228,7 +243,9 @@ export default function RegisterCompanyModal({ open, onClose, onRegistered }: {
           </div>
         ) : (
           <div className="space-y-5">
-            <Alert tone="info" title={org?.name ?? ''}>The applicant already got an invite to set a password. Fill in the rest before submitting for review.</Alert>
+            <Alert tone="info" title={org?.name ?? ''}>
+              {resumeOrg ? 'Finish the bank details and documents below, then submit for review.' : 'The applicant already got an invite to set a password. Fill in the rest before submitting for review.'}
+            </Alert>
             <div>
               <p className="mb-3 text-sm font-medium text-text">Company details</p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
