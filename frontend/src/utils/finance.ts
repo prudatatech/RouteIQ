@@ -56,10 +56,12 @@ export interface InvoicePage {
   offset: number
 }
 
-/** A page of GET /finance/expenses (same envelope as GET /admin/orgs). */
+/** A page of GET /finance/expenses (same envelope as GET /admin/orgs, plus the whole filtered range's total). */
 export interface ExpensePage {
   items: Expense[]
   total: number
+  /** The sum of every expense matching the date/category/vehicle filters, not just this page. */
+  total_amount: number
   limit: number
   offset: number
 }

@@ -431,23 +431,33 @@ router.get('/expenses', async (req: Request, res: Response) => {
     const fromKey = indianDateKey(start);
     const toKey = indianDateKey(new Date(end.getTime() - 1));
     const { limit, offset } = parsePaging(req);
-    let query = scopeQuery(supabase
-      .from('expenses')
-      .select('id, vehicle_id, route_id, category, amount, expense_date, litres, note, receipt_path, created_at', { count: 'exact' })
-      .gte('expense_date', fromKey)
-      .lte('expense_date', toKey), OWNED.carrier)
-      .order('expense_date', { ascending: false });
-    if (typeof req.query.category === 'string' && (EXPENSE_CATEGORIES as readonly string[]).includes(req.query.category)) {
-      query = query.eq('category', req.query.category);
-    }
-    if (typeof req.query.vehicle_id === 'string' && req.query.vehicle_id) query = query.eq('vehicle_id', req.query.vehicle_id);
-    const { data, error, count } = await query.range(offset, offset + limit - 1);
+    const category = typeof req.query.category === 'string' && (EXPENSE_CATEGORIES as readonly string[]).includes(req.query.category)
+      ? req.query.category : undefined;
+    const vehicleId = typeof req.query.vehicle_id === 'string' && req.query.vehicle_id ? req.query.vehicle_id : undefined;
+    // Same date/category/vehicle filters as the list below, selecting only `amount` - cheap even over a
+    // long range - so the page's total for the whole filtered range survives being paginated.
+    const withFilters = (q: any) => {
+      let filtered = q.gte('expense_date', fromKey).lte('expense_date', toKey);
+      if (category) filtered = filtered.eq('category', category);
+      if (vehicleId) filtered = filtered.eq('vehicle_id', vehicleId);
+      return filtered;
+    };
+    const { data: sumRows, error: sumError } = await withFilters(scopeQuery(supabase.from('expenses').select('amount'), OWNED.carrier));
+    if (sumError) throw new Error(`Failed to total expenses: ${sumError.message}`);
+    const totalAmount = (sumRows ?? []).reduce((s: number, r: any) => s + (r.amount ?? 0), 0);
+
+    const listQuery = withFilters(scopeQuery(
+      supabase.from('expenses')
+        .select('id, vehicle_id, route_id, category, amount, expense_date, litres, note, receipt_path, created_at', { count: 'exact' }),
+      OWNED.carrier,
+    )).order('expense_date', { ascending: false });
+    const { data, error, count } = await listQuery.range(offset, offset + limit - 1);
     if (error) throw new Error(`Failed to list expenses: ${error.message}`);
     const rows = data ?? [];
     const vehicles = await selectIn<{ id: string; plate_number: string }>('vehicles', 'id', rows.map((r: any) => r.vehicle_id), 'id, plate_number');
     const plates = new Map(vehicles.map(v => [v.id, v.plate_number]));
     const items = rows.map((r: any) => ({ ...r, plate_number: r.vehicle_id ? (plates.get(r.vehicle_id) ?? null) : null }));
-    res.json({ items, total: count ?? items.length, limit, offset });
+    res.json({ items, total: count ?? items.length, total_amount: totalAmount, limit, offset });
   } catch (e) {
     sendError(req, res, e);
   }

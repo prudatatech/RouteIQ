@@ -38,11 +38,15 @@ export default function ExpensesTab({ range }: { range: DateRangeValue }) {
     onError: err => toast.error(errorMessage(err, 'We could not delete this expense. Try again.')),
   })
 
+  const searching = search.trim().length > 0
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
     return (list.data?.items ?? []).filter(e => !q || [e.plate_number, e.note, categoryLabel(e.category)].some(v => (v ?? '').toLowerCase().includes(q)))
   }, [list.data, search])
-  const total = rows.reduce((s, e) => s + e.amount, 0)
+  // The server totals the whole filtered date range/category, not just this page - but `search` only
+  // ever filters the current page client-side, so a search in progress can only honestly total what's
+  // actually shown, not the server's broader figure.
+  const total = searching ? rows.reduce((s, e) => s + e.amount, 0) : (list.data?.total_amount ?? rows.reduce((s, e) => s + e.amount, 0))
   const pageRangeInfo = pageRange(list.data?.total ?? 0, list.data?.limit ?? FINANCE_PAGE_SIZE, list.data?.offset ?? 0)
   const filtered = !!(category || search)
   const changeCategory = (v: string) => { setCategory(v); setPage(0) }
@@ -119,8 +123,7 @@ export default function ExpensesTab({ range }: { range: DateRangeValue }) {
 
       <div className="grid grid-cols-2 gap-3 sm:max-w-lg">
         <Stat label="Expenses shown" loading={list.isLoading} value={rows.length.toLocaleString('en-IN')} />
-        {/* The page is server-paginated now, so this adds only what is on screen - not the whole date range. */}
-        <Stat label="Total shown" loading={list.isLoading} value={formatRupees(total)} />
+        <Stat label={searching ? 'Total shown' : 'Total'} loading={list.isLoading} value={formatRupees(total)} />
       </div>
 
       <DataTable

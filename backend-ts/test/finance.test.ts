@@ -228,6 +228,18 @@ describe('expenses', () => {
     expect(ids).toEqual(supabaseMock.rows('expenses').map(e => e.id).sort());
   });
 
+  it('totals every matching expense, not just the current page', async () => {
+    await post({ category: 'fuel', amount: 100, expense_date: TODAY });
+    await post({ category: 'toll', amount: 200, expense_date: TODAY });
+    await post({ category: 'other', amount: 300, expense_date: TODAY });
+    const page1 = await request(app).get('/api/v1/finance/expenses?limit=1&offset=0').set(admin());
+    // The page itself holds only one row (amount 300, newest first), but the total spans all three
+    expect(page1.body.items).toHaveLength(1);
+    expect(page1.body.total_amount).toBe(600);
+    const fuelOnly = await request(app).get('/api/v1/finance/expenses?category=fuel').set(admin());
+    expect(fuelOnly.body.total_amount).toBe(100);
+  });
+
   it.each([
     [{ category: 'lunch', amount: 10, expense_date: TODAY }, /category/],
     [{ category: 'fuel', amount: 0, expense_date: TODAY }, /amount/],
