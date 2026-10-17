@@ -132,7 +132,7 @@ export default function VendorLoadsPage() {
 
       <BulkUpload />
 
-      {total > 6 && <SearchInput value={search} onChange={setSearch} placeholder="Search by code, place or truck" className="max-w-sm" />}
+      <SearchInput value={search} onChange={setSearch} placeholder="Search by code, place or truck" className="max-w-sm" />
 
       {loads.isLoading ? (
         <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}</div>
