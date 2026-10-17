@@ -21,6 +21,14 @@ import {
 const TAB_IDS = PLATFORM_ORG_TABS.map(t => t.id)
 const STATUS_TONE = { pending: 'warning', active: 'success', suspended: 'danger', rejected: 'danger' } as const
 
+/** The KYC state shown in the list column: flagged beats submitted beats not-submitted. Logistic companies only. */
+function kycState(org: OrgRow): { label: string; tone: 'warning' | 'success' | 'neutral' } | null {
+  if (org.kind !== 'logistic_company') return null
+  if (Object.keys(org.kyc_document_issues ?? {}).length > 0) return { label: 'Flagged', tone: 'warning' }
+  if (org.kyc_submitted_at) return { label: 'Submitted', tone: 'success' }
+  return { label: 'Not submitted', tone: 'neutral' }
+}
+
 function Detail({ label, value }: { label: string; value?: string | null }) {
   return (
     <div>
@@ -90,8 +98,7 @@ function OrgDrawer({ org, onClose, onDecide, deciding, onFlag, viewer }: {
   viewer: ReturnType<typeof useDocumentViewer>
 }) {
   const reason = org ? decisionReason(org) : null
-  const notSubmitted = org?.kind === 'logistic_company' && org.status === 'pending' && !org.kyc_submitted_at
-  const actions = org ? decisionsFor(org.status, org.kind).filter(a => !(notSubmitted && a.decision === 'approve')) : []
+  const actions = org ? decisionsFor(org.status, org.kind, !!org.kyc_submitted_at) : []
   return (
     <Drawer
       open={!!org}
@@ -230,6 +237,13 @@ export default function PlatformOrganisationsPage() {
       ),
     },
     { key: 'status', header: 'Status', sortValue: r => r.status, cell: r => <StatusPill status={r.status} tone={STATUS_TONE[r.status]}>{ORG_STATUS_LABELS[r.status]}</StatusPill> },
+    {
+      key: 'kyc', header: 'KYC',
+      cell: r => {
+        const k = kycState(r)
+        return k ? <StatusPill tone={k.tone} dot={false}>{k.label}</StatusPill> : '–'
+      },
+    },
     { key: 'gstin', header: 'GSTIN', hideBelow: 'lg', cell: r => r.gstin ?? '–' },
     { key: 'city', header: 'City', hideBelow: 'md', sortValue: r => r.city, cell: r => [r.city, r.state].filter(Boolean).join(', ') || '–' },
     { key: 'registered', header: 'Registered', hideBelow: 'md', sortValue: r => r.created_at, cell: r => (r.created_at ? formatDate(r.created_at) : '–') },

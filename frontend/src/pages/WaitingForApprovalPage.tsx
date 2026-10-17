@@ -5,7 +5,7 @@ import { orgAPI } from '@/services/api'
 import { supabase } from '@/services/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { selectActiveMembership, useOrgStore } from '@/store/orgStore'
-import { Button, buttonClasses, Card, LoadingState, StatusPill } from '@/components/ui'
+import { Alert, Button, buttonClasses, Card, LoadingState, StatusPill } from '@/components/ui'
 import { OrgSwitcher } from '@/components/ui/OrgSwitcher'
 import { gateFor, waitingCopy } from '@/utils/orgAccess'
 import { decisionReason, ORG_STATUS_LABELS } from '@/utils/platformOrgs'
@@ -73,6 +73,11 @@ export default function WaitingForApprovalPage() {
               )}
               {status === 'pending' && isCompany && !submitted && (
                 <>
+                  {issueCount > 0 && (
+                    <Alert tone="warning" title="A document needs fixing">
+                      MargixIndia flagged {issueCount > 1 ? `${issueCount} documents` : 'a document'} on your KYC submission. Fix and resubmit them below - this is not a fresh request, it is a re-submission.
+                    </Alert>
+                  )}
                   <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
                     <li>Submit your GSTIN, PAN, bank details and documents.</li>
                     <li>We check them and notify you once your company is approved.</li>

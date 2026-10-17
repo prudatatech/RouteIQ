@@ -19,15 +19,36 @@ interface TplPartner {
   custom_id: string | null
   company_name: string
   gstin: string | null
+  pan_number?: string | null
+  bank_account_no?: string | null
+  bank_ifsc?: string | null
   status: string
   created_at: string
   tpl_corridors?: { corridor_name: string }[]
+  tpl_documents?: unknown[]
+  document_issues?: Record<string, string> | null
+  pending_updates?: Record<string, unknown> | null
 }
 
 const TABS = ['pending', 'active', 'paused', 'rejected', 'all'] as const
 type StatusTab = typeof TABS[number]
 
 const isPending = (p: TplPartner) => p.status === 'pending'
+
+/**
+ * Mirrors tpl.service.ts's `approve()` compliance gate client-side, so staff see the same thing the
+ * backend will enforce before they open the detail page: flagged beats missing-compliance-data beats ready.
+ * Only meaningful for a pending application reviewed by a decider (superadmin) - a company admin's view of
+ * another partner has its PAN/bank/documents redacted by the server, so `canDecide` must be checked by the caller.
+ */
+function tplReadiness(p: TplPartner): { label: string; tone: 'warning' | 'success' | 'neutral' } | null {
+  if (p.status !== 'pending') return null
+  if (p.document_issues && Object.keys(p.document_issues).length > 0) return { label: 'Flagged', tone: 'warning' }
+  // A profile-update approval (pending_updates set) does not require PAN/GST/bank/documents again.
+  if (p.pending_updates) return { label: 'Ready', tone: 'success' }
+  const hasCompliance = !!p.pan_number && !!p.gstin && !!p.bank_account_no && !!p.bank_ifsc && !!p.tpl_documents?.length
+  return hasCompliance ? { label: 'Ready', tone: 'success' } : { label: 'Incomplete', tone: 'neutral' }
+}
 
 /**
  * The 3PL partners tab of Return trips: every application and partner, grouped by status. Selecting a row opens
@@ -190,6 +211,14 @@ export default function PartnersTab() {
       cell: p => <span className="text-sm text-muted">{formatDate(p.created_at)}</span>,
     },
     { key: 'status', header: 'Status', cell: p => <StatusPill status={p.status} /> },
+    {
+      key: 'kyc', header: 'KYC', hideBelow: 'lg',
+      cell: p => {
+        if (!canDecide) return '—'
+        const r = tplReadiness(p)
+        return r ? <StatusPill tone={r.tone} dot={false}>{r.label}</StatusPill> : '—'
+      },
+    },
     {
       key: 'actions', header: 'Actions', align: 'right', cell: p => (
         canDecide && isPending(p) ? (

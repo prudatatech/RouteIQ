@@ -37,6 +37,13 @@ describe('decisionsFor', () => {
     expect(decisionsFor('rejected', 'logistic_company')).toEqual([])
     expect(decisionsFor('active', 'platform')).toEqual([])
   })
+  it('omits approve for a pending logistic company that has not submitted its KYC', () => {
+    expect(decisionsFor('pending', 'logistic_company', false).map(d => d.label)).toEqual(['Reject'])
+    expect(decisionsFor('pending', 'logistic_company', true).map(d => d.label)).toEqual(['Approve', 'Reject'])
+  })
+  it('ignores kycReady for other kinds - a pending vendor can always be approved', () => {
+    expect(decisionsFor('pending', 'vendor', false).map(d => d.label)).toEqual(['Approve', 'Reject'])
+  })
 })
 
 describe('pageRange', () => {

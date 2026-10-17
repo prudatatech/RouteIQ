@@ -49,10 +49,17 @@ export function pendingFirst(rows: OrgRow[]): OrgRow[] {
 
 export type Decision = 'approve' | 'reject' | 'suspend'
 
-/** The decisions the API accepts for a status (reinstate is approve on a suspended organisation). */
-export function decisionsFor(status: OrgStatus, kind: OrgKind): { decision: Decision; label: string }[] {
+/**
+ * The decisions the API accepts for a status (reinstate is approve on a suspended organisation).
+ * A pending logistic company cannot be approved until it has submitted its KYC - pass `kycReady: false`
+ * to omit `approve` in that case (default true, so other kinds are unaffected).
+ */
+export function decisionsFor(status: OrgStatus, kind: OrgKind, kycReady = true): { decision: Decision; label: string }[] {
   if (kind === 'platform') return []
-  if (status === 'pending') return [{ decision: 'approve', label: 'Approve' }, { decision: 'reject', label: 'Reject' }]
+  if (status === 'pending') {
+    const notReady = kind === 'logistic_company' && !kycReady
+    return [...(notReady ? [] : [{ decision: 'approve' as Decision, label: 'Approve' }]), { decision: 'reject', label: 'Reject' }]
+  }
   if (status === 'active') return [{ decision: 'suspend', label: 'Suspend' }]
   if (status === 'suspended') return [{ decision: 'approve', label: 'Reinstate' }]
   return []
