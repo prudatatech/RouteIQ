@@ -58,13 +58,21 @@ describe('a new driver signs up', () => {
 
 describe('a driver has no vehicle after a day', () => {
   const day = 86_400_000;
+  const COMPANY = 'company-1';
   const driver = (id: string, hoursOld: number) => ({ id, role: 'driver', is_active: true, full_name: `Driver ${id}`, created_at: new Date(Date.now() - hoursOld * 3_600_000).toISOString() });
+  const DRIVER_IDS = ['d-new', 'd-old', 'd-placeholder', 'd-real', 'd-ancient'];
   beforeEach(() => {
     supabaseMock.reset({
-      users: [...STAFF, driver('d-new', 2), driver('d-old', 30), driver('d-placeholder', 30), driver('d-real', 30), driver('d-ancient', 24 * 90)],
+      users: [...STAFF, ...DRIVER_IDS.map(id => driver(id, { 'd-new': 2, 'd-ancient': 24 * 90 }[id] ?? 30))],
       vehicles: [
         { id: 'v-temp', driver_id: 'd-placeholder', plate_number: 'TEMP-ABC123', status: 'idle' },
         { id: 'v-real', driver_id: 'd-real', plate_number: 'MH12AB1234', status: 'available' },
+      ],
+      organizations: [{ id: COMPANY, kind: 'logistic_company', name: 'Alpha Logistics', status: 'active' }],
+      org_members: [
+        ...DRIVER_IDS.map(id => ({ org_id: COMPANY, user_id: id, role: 'driver', status: 'active' })),
+        { org_id: COMPANY, user_id: 'admin-1', role: 'admin', status: 'active' },
+        { org_id: COMPANY, user_id: 'mgr-1', role: 'ops', status: 'active' },
       ],
       notifications: [], user_documents: [], user_profiles: [], user_status_history: [], user_activity: [], system_settings: [], capacity_windows: [], capacity_bids: [],
     });
@@ -80,6 +88,15 @@ describe('a driver has no vehicle after a day', () => {
 
     await runPeopleDailyJob();
     expect(of('driver_needs_vehicle')).toHaveLength(first.length);
+  });
+
+  it('never tells another company\'s staff about this driver', async () => {
+    const otherAdmin = { id: 'admin-b', role: 'admin', is_active: true, full_name: 'Beena Beta' };
+    supabaseMock.rows('users').push(otherAdmin);
+    supabaseMock.rows('organizations').push({ id: 'company-b', kind: 'logistic_company', name: 'Beta Freight', status: 'active' });
+    supabaseMock.rows('org_members').push({ org_id: 'company-b', user_id: 'admin-b', role: 'admin', status: 'active' });
+    await runPeopleDailyJob();
+    expect(of('driver_needs_vehicle', 'admin-b')).toHaveLength(0);
   });
 });
 

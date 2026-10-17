@@ -9,6 +9,7 @@ import { purgeDocumentsAfterRetention, returnFromLeaveAndSuspension, runPeopleDa
 const app = testApp();
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const SUPER = id(1), ADMIN = id(2), MGR = id(3), DRV = id(4), DRV2 = id(5), VEH = id(10);
+const COMPANY = id(20), PLATFORM_ORG = id(21);
 const as = (sub: string, role: string) => ({ Authorization: `Bearer ${createAccessToken({ sub, role })}` });
 const superadmin = as(SUPER, 'superadmin');
 const admin = as(ADMIN, 'admin');
@@ -36,6 +37,17 @@ function fixtures(extra: Record<string, any[]> = {}) {
     user_documents: [], user_activity: [], user_status_history: [], user_phone_history: [], user_bank_accounts: [],
     user_emergency_contacts: [], user_notes: [], notifications: [], vehicles: [], routes: [], system_settings: [],
     driver_vehicle_assignments: [], route_stops: [], shipments: [], depots: [], tpl_partners: [], driver_confirmations: [],
+    organizations: [
+      { id: COMPANY, kind: 'logistic_company', name: 'Alpha Logistics', status: 'active' },
+      { id: PLATFORM_ORG, kind: 'platform', name: 'MargixIndia', status: 'active' },
+    ],
+    org_members: [
+      { org_id: COMPANY, user_id: DRV, role: 'driver', status: 'active' },
+      { org_id: COMPANY, user_id: DRV2, role: 'driver', status: 'active' },
+      { org_id: COMPANY, user_id: ADMIN, role: 'admin', status: 'active' },
+      { org_id: COMPANY, user_id: MGR, role: 'ops', status: 'active' },
+      { org_id: PLATFORM_ORG, user_id: SUPER, role: 'owner', status: 'active' },
+    ],
     ...extra,
   };
 }

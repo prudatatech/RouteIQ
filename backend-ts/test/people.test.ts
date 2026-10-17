@@ -10,6 +10,7 @@ import { assertDriverDispatchable } from '../src/services/people-docs.service';
 const app = testApp();
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const SUPER = id(1), ADMIN = id(2), MGR = id(3), DRV = id(4), DRV2 = id(5), VEH = id(10);
+const COMPANY = id(20), PLATFORM_ORG = id(21);
 const as = (sub: string, role: string) => ({ Authorization: `Bearer ${createAccessToken({ sub, role })}` });
 const superadmin = as(SUPER, 'superadmin');
 const admin = as(ADMIN, 'admin');
@@ -38,6 +39,17 @@ function fixtures(extra: Record<string, any[]> = {}) {
     user_documents: [], user_activity: [], user_status_history: [], user_phone_history: [], user_bank_accounts: [],
     user_emergency_contacts: [], user_notes: [], notifications: [], vehicles: [], routes: [], system_settings: [],
     driver_vehicle_assignments: [], route_stops: [], shipments: [], depots: [], tpl_partners: [],
+    organizations: [
+      { id: COMPANY, kind: 'logistic_company', name: 'Alpha Logistics', status: 'active' },
+      { id: PLATFORM_ORG, kind: 'platform', name: 'MargixIndia', status: 'active' },
+    ],
+    org_members: [
+      { org_id: COMPANY, user_id: DRV, role: 'driver', status: 'active' },
+      { org_id: COMPANY, user_id: DRV2, role: 'driver', status: 'active' },
+      { org_id: COMPANY, user_id: ADMIN, role: 'admin', status: 'active' },
+      { org_id: COMPANY, user_id: MGR, role: 'ops', status: 'active' },
+      { org_id: PLATFORM_ORG, user_id: SUPER, role: 'owner', status: 'active' },
+    ],
     ...extra,
   };
 }
@@ -396,5 +408,43 @@ describe('daily expiry job', () => {
     const second = await runDocumentExpiryJob();
     expect(second).toMatchObject({ expired: 0, reminders: 0, digest_sent: false });
     expect(supabaseMock.rows('notifications')).toHaveLength(5);
+  });
+
+  it('never tells one company about another company\'s driver', async () => {
+    const COMPANY_B = id(22), ADMIN_B = id(23), DRV_B = id(24);
+    supabaseMock.reset(fixtures({
+      users: [
+        { id: SUPER, role: 'superadmin', is_active: true, status: 'active', full_name: 'Sue Super' },
+        { id: ADMIN, role: 'admin', is_active: true, status: 'active', full_name: 'Adam Admin' },
+        { id: DRV, role: 'driver', is_active: true, status: 'active', full_name: 'Ravi Kumar' },
+        { id: ADMIN_B, role: 'admin', is_active: true, status: 'active', full_name: 'Beena Beta' },
+        { id: DRV_B, role: 'driver', is_active: true, status: 'active', full_name: 'Deepak Beta' },
+      ],
+      organizations: [
+        { id: COMPANY, kind: 'logistic_company', name: 'Alpha Logistics', status: 'active' },
+        { id: COMPANY_B, kind: 'logistic_company', name: 'Beta Freight', status: 'active' },
+        { id: PLATFORM_ORG, kind: 'platform', name: 'MargixIndia', status: 'active' },
+      ],
+      org_members: [
+        { org_id: COMPANY, user_id: DRV, role: 'driver', status: 'active' },
+        { org_id: COMPANY, user_id: ADMIN, role: 'admin', status: 'active' },
+        { org_id: COMPANY_B, user_id: DRV_B, role: 'driver', status: 'active' },
+        { org_id: COMPANY_B, user_id: ADMIN_B, role: 'admin', status: 'active' },
+        { org_id: PLATFORM_ORG, user_id: SUPER, role: 'owner', status: 'active' },
+      ],
+      user_documents: [
+        { id: 'da', user_id: DRV, doc_type: 'driving_licence', status: 'verified', expires_on: inDays(-1), archived_at: null, metadata: {} },
+        { id: 'db', user_id: DRV_B, doc_type: 'driving_licence', status: 'verified', expires_on: inDays(-1), archived_at: null, metadata: {} },
+      ],
+    }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await runDocumentExpiryJob();
+
+    const notes = supabaseMock.rows('notifications').filter(n => n.type === 'document_expiring');
+    // Alpha's admin hears only about its own driver; Beta's admin hears only about its own
+    expect(notes.find(n => n.user_id === ADMIN)!.data.items).toEqual([{ user_id: DRV, doc_id: 'da' }]);
+    expect(notes.find(n => n.user_id === ADMIN_B)!.data.items).toEqual([{ user_id: DRV_B, doc_id: 'db' }]);
+    // The platform owner legitimately hears about every company - everyone else does not
+    expect(notes.filter(n => n.user_id === SUPER)).toHaveLength(2);
   });
 });
