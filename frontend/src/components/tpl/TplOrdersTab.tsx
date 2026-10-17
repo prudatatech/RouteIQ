@@ -293,16 +293,14 @@ export function TplOrdersTab({ partnerId, canAccept }: { partnerId: string; canA
     },
   ]
 
-  if (offers.error || orders.error) {
-    return <ErrorState description="We could not load your orders. Check your connection and try again." onRetry={() => { offers.refetch(); orders.refetch() }} />
-  }
-
   return (
     <div className="space-y-8">
       <section className="space-y-3">
         <SectionHeader title="Load offers" description="Accept before another partner does: the first partner to accept gets the load." />
         {!canAccept && <Alert tone="warning">Your account is not active, so you cannot accept loads until it is approved again.</Alert>}
-        {offers.isLoading ? (
+        {offers.error ? (
+          <ErrorState compact description="We could not load your offers. Check your connection and try again." onRetry={() => offers.refetch()} />
+        ) : offers.isLoading ? (
           <Skeleton className="h-24 w-full" />
         ) : openSections.length === 0 ? (
           <Card padded>
@@ -346,7 +344,9 @@ export function TplOrdersTab({ partnerId, canAccept }: { partnerId: string; canA
 
       <section className="space-y-3">
         <SectionHeader title="Active orders" description="Loads you accepted. Do the next step as each one moves." />
-        {orders.isLoading ? (
+        {orders.error ? (
+          <ErrorState compact description="We could not load your orders. Check your connection and try again." onRetry={() => orders.refetch()} />
+        ) : orders.isLoading ? (
           <Skeleton className="h-24 w-full" />
         ) : liveSections.length === 0 ? (
           <Card padded>
