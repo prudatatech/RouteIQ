@@ -220,9 +220,14 @@ registry `margixacr7m52h4t5it6og`.
 - Owner configuration still missing: Twilio + Redis (SMS OTP), WhatsApp, TomTom key (route optimisation returns
   502; traffic calls get 401), telematics webhook secret, negotiated company per-km rate card, CA review of GST 2.0 rates (507 rows
   flagged needs_review).
-- Product gaps: a real finance role (finance/dispatcher/ops map to one role); `/capacity/nearby-vendors` lists all
-  vendors to any company; `/public/companies` caps at 200; finance lists unpaginated; vendor company details are
-  asked three times (sign-up, business profile, KYC form); no consignee GSTIN on loads (needed for e-way bills).
+- Product gaps: a real finance role (finance/dispatcher/ops map to one role); `/public/companies` caps at 200;
+  finance lists unpaginated; vendor company details are asked three times (sign-up, business profile, KYC form);
+  no consignee GSTIN on loads (needed for e-way bills).
+  (Checked 17 Oct 2026: `/capacity/nearby-vendors` "lists all vendors to any company" is NOT a tenant-isolation
+  bug - vendors aren't company-scoped by design (`docs/platform-model.md`: any company can solicit bids from any
+  approved vendor), and only name/city/coordinates are returned, already pared down with a comment explaining why.
+  The real gap was performance - it fetched every approved vendor nationwide before filtering by radius in memory.
+  Fixed: a lat/lng bounding box is applied in the query itself before the exact haversine filter runs.)
 - Not yet walked: scheduler jobs (document expiry, driver-without-vehicle, quote escalation), customer-app OTP,
   driver app on a device, a browser walkthrough of every screen, load testing.
 - UI complexity/duplication audit (owner asked to "think on" this; fixed the KYC-review page's duplicate
