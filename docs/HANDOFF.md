@@ -234,14 +234,12 @@ registry `margixacr7m52h4t5it6og`.
   `LoginPage.tsx` (previously one 636-line component) is now a thin 238-line container over
   `frontend/src/components/auth/` - one form component per flow (sign-in/sign-up/forgot/reset), a shared
   `useLoginFlow` hook holding all the logic, same behaviour and tests unchanged.
-  Still open, needs the owner's steer before touching them (bigger blast radius, not done unilaterally):
-  logistic-company registration still has no step indicator at all, unlike vendor/3PL onboarding - converging it
-  into a stepped wizard is a separate, bigger product decision, not just a dedup; eleven top-level nav sections
-  (`config/navigation.ts` says so in a comment) could likely merge Shipments into Dispatch and Reports into Money;
-  Reports (Analytics vs Insights) and Dispatch (Optimize vs Plan a trip) give a new admin four similarly-named
-  trip-planning destinations. (Nav-section consolidation was deliberately left alone this round: it reshapes a
-  structure every user relies on daily and there is no way to visually verify a restructured sidebar in this
-  environment - do this one with the owner looking at a real screen, not blind.)
+  Since also fixed (17 Oct 2026, owner asked to continue past the first round): `CompanyKycPage.tsx` now has the
+  same `Stepper` vendor/3PL onboarding already had (see §3 above); the eleven-section menu is now nine (Shipments
+  folded into Dispatch, Reports into Money); Dispatch's "Optimize"/"Plan a trip" renamed to "Auto-assign
+  trips"/"Plan a trip by hand" so a new admin can tell the automatic and manual tools apart by name. Nothing
+  product-shaped is left open here - any further nav changes (e.g. fewer than nine sections, different grouping)
+  are a fresh owner request, not a continuation of this audit.
 - Next phase when the owner says go: N2 matching intelligence (carrier scores, ranked matching, auto-allocation,
   price learning).
 
