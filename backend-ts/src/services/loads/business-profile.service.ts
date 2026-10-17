@@ -121,16 +121,22 @@ export async function saveBusinessProfile(c: Caller, input: BusinessProfileInput
   }).eq('id', orgId);
   if (error) throw new Error(`Failed to save the business profile: ${error.message}`);
 
-  await mirrorToVendorProfile(c.userId, input, name);
+  const stateName = stateCode ? (GST_STATES[stateCode] ?? null) : null;
+  await mirrorToVendorProfile(c.userId, input, name, stateName);
   return getBusinessProfile(c);
 }
 
 /**
  * The same business on vendor_profiles. A change to the legal name, GSTIN or address of an approved profile sends it
  * back to KYC review, exactly as vendorService.upsertProfile does.
+ *
+ * vendor_profiles has no pincode/state columns, so the pincode and state the vendor just typed are merged into the
+ * KYC draft blob (kyc_data.data) instead, under the names the KYC form's own fields use (postalCode/state) - the
+ * same blob VendorDocumentsPage's pre-fill loader reads first when present. This only fills in postalCode/state
+ * when the draft does not already have its own value there, so an in-progress KYC draft is never clobbered.
  */
-async function mirrorToVendorProfile(userId: string, input: BusinessProfileInput, companyName: string): Promise<void> {
-  const { data: existing, error: readErr } = await supabase.from('vendor_profiles').select('kyc_status, company_name, gst_number, address, city').eq('id', userId).maybeSingle();
+async function mirrorToVendorProfile(userId: string, input: BusinessProfileInput, companyName: string, stateName: string | null): Promise<void> {
+  const { data: existing, error: readErr } = await supabase.from('vendor_profiles').select('kyc_status, company_name, gst_number, address, city, kyc_data').eq('id', userId).maybeSingle();
   if (readErr) throw new Error(`Failed to read the vendor profile: ${readErr.message}`);
   const changes: Record<string, unknown> = {
     company_name: companyName,
@@ -138,6 +144,12 @@ async function mirrorToVendorProfile(userId: string, input: BusinessProfileInput
     address: input.address,
     updated_at: new Date().toISOString(),
   };
+  const kycData = (existing?.kyc_data ?? null) as { data?: Record<string, unknown>; otherDocs?: unknown[] } | null;
+  const draftData = { ...(kycData?.data ?? {}) };
+  let draftChanged = false;
+  if (!draftData.postalCode && input.pincode) { draftData.postalCode = input.pincode; draftChanged = true; }
+  if (!draftData.state && stateName) { draftData.state = stateName; draftChanged = true; }
+  if (draftChanged) changes.kyc_data = { ...(kycData ?? {}), data: draftData };
   let backToReview = false;
   if (existing?.kyc_status === 'approved'
       && (['company_name', 'gst_number', 'address'] as const).some(f => (changes[f] ?? null) !== (existing[f] ?? null))) {

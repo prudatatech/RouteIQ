@@ -145,4 +145,26 @@ describe('PUT /vendor/business-profile', () => {
     await put(body());
     expect((await get()).body).toMatchObject({ complete: true, gstin });
   });
+
+  describe('mirrors pincode/state into the KYC draft (kyc_data.data), without overwriting what the vendor already typed there', () => {
+    it('fills postalCode/state into a fresh kyc_data.data when the vendor has no draft yet', async () => {
+      await put(body());
+      const vp = supabaseMock.rows('vendor_profiles').find(v => v.id === uid('vendor-1'))!;
+      expect(vp.kyc_data).toMatchObject({ data: { postalCode: '400093', state: 'Maharashtra' } });
+    });
+
+    it('does not overwrite a state/postalCode the vendor already typed differently in an in-progress KYC draft', async () => {
+      supabaseMock.rows('vendor_profiles')[0].kyc_data = { data: { postalCode: '110001', state: 'Delhi', contactPerson: 'Someone Else' } };
+      await put(body());
+      const vp = supabaseMock.rows('vendor_profiles').find(v => v.id === uid('vendor-1'))!;
+      expect(vp.kyc_data).toMatchObject({ data: { postalCode: '110001', state: 'Delhi', contactPerson: 'Someone Else' } });
+    });
+
+    it('fills in only the missing postalCode/state of an existing draft, touching nothing else in it', async () => {
+      supabaseMock.rows('vendor_profiles')[0].kyc_data = { data: { contactPerson: 'Vik Vendor', bankName: 'HDFC Bank' } };
+      await put(body());
+      const vp = supabaseMock.rows('vendor_profiles').find(v => v.id === uid('vendor-1'))!;
+      expect(vp.kyc_data).toMatchObject({ data: { postalCode: '400093', state: 'Maharashtra', contactPerson: 'Vik Vendor', bankName: 'HDFC Bank' } });
+    });
+  });
 });
