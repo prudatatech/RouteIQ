@@ -97,7 +97,7 @@ describe('GSTIN is checked where it is saved', () => {
     supabaseMock.reset({ users: [{ id: 'vendor-1', role: 'vendor', is_active: true }, { id: 'admin-1', role: 'admin', is_active: true }], vendor_profiles: [], notifications: [] });
     const submit = (gstNumber: string) => request(app).post('/api/v1/vendor/kyc/submit')
       .set('Authorization', `Bearer ${supabaseMock.signUserToken('vendor-1')}`)
-      .send({ companyName: 'Acme', gstNumber, city: 'Pune', address: '1 MG Road', lat: 18.5, lng: 73.8, kycData: {} });
+      .send({ companyName: 'Acme', gstNumber, city: 'Pune', address: '1 MG Road', lat: 18.5, lng: 73.8, kycData: { data: { entityType: 'Proprietorship', authorizedSignatoryName: 'Owner Name' } } });
     const bad = await submit('27AAPFU0939F1Z5');
     expect(bad.status).toBe(400);
     expect(supabaseMock.rows('vendor_profiles')).toEqual([]);

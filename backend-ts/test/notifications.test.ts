@@ -139,6 +139,8 @@ describe('staff notifications (D2)', () => {
         email: 'ops@northline.example',
         pan: 'ABCDE1234F',
         gst: '27ABCDE1234F1Z0',
+        entityType: 'Proprietorship',
+        authorizedSignatoryName: 'Priya Rao',
       });
       expect(res.status).toBe(200);
 

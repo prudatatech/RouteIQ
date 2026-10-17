@@ -5,8 +5,9 @@ import { Search, CheckCircle2, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { uploadTplDocument } from '@/services/tplDocuments'
-import { Alert, Button, Card, FileButton, Input, StatusPill } from '@/components/ui'
+import { Alert, Button, Card, FileButton, Input, Select, StatusPill } from '@/components/ui'
 import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
+import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
 
 interface TplApplication {
   id: string
@@ -25,6 +26,9 @@ interface TplApplicationFull extends TplApplication {
   contact_name?: string | null
   pan_number?: string | null
   gstin?: string | null
+  entity_type?: string | null
+  cin?: string | null
+  authorized_signatory_name?: string | null
   bank_account_no?: string | null
   bank_ifsc?: string | null
   sla_commitment?: string | null
@@ -43,6 +47,9 @@ function FixDetails({ applicationId, pan, full, onSaved }: { applicationId: stri
   const [contactName, setContactName] = useState(full.contact_name || '')
   const [panNumber, setPanNumber] = useState(full.pan_number || '')
   const [gst, setGst] = useState(full.gstin || '')
+  const [entityType, setEntityType] = useState(full.entity_type || '')
+  const [cin, setCin] = useState(full.cin || '')
+  const [authorizedSignatoryName, setAuthorizedSignatoryName] = useState(full.authorized_signatory_name || '')
   const [bankAccount, setBankAccount] = useState(full.bank_account_no || '')
   const [bankIfsc, setBankIfsc] = useState(full.bank_ifsc || '')
   const [slaCommitment, setSlaCommitment] = useState(full.sla_commitment || '2 Hours')
@@ -54,14 +61,33 @@ function FixDetails({ applicationId, pan, full, onSaved }: { applicationId: stri
       toast.error('Company name and contact person are required.')
       return
     }
+    if (!entityType.trim()) {
+      toast.error('Choose the entity type.')
+      return
+    }
+    if (!authorizedSignatoryName.trim()) {
+      toast.error('Enter the authorized signatory name.')
+      return
+    }
+    if (entityTypeRequiresCin(entityType) && !cin.trim()) {
+      toast.error('CIN is required for this entity type.')
+      return
+    }
+    if (cin.trim() && !isCinFormat(cin)) {
+      toast.error('CIN looks incorrect (21 letters and digits, e.g. U74999DL2019PTC123456).')
+      return
+    }
     setSaving(true)
     try {
       await tplAPI.updateApplication(applicationId, {
         verify_pan: pan,
         companyName: companyName.trim(),
         contactName: contactName.trim(),
+        entityType,
+        authorizedSignatoryName: authorizedSignatoryName.trim(),
         ...(panNumber.trim() ? { pan: panNumber.trim().toUpperCase() } : {}),
         ...(gst.trim() ? { gst: gst.trim().toUpperCase() } : {}),
+        ...(cin.trim() ? { cin: cin.trim().toUpperCase() } : {}),
         ...(bankAccount.trim() ? { bankAccount: bankAccount.trim() } : {}),
         ...(bankIfsc.trim() ? { bankIfsc: bankIfsc.trim().toUpperCase() } : {}),
         slaCommitment,
@@ -83,6 +109,11 @@ function FixDetails({ applicationId, pan, full, onSaved }: { applicationId: stri
         <Input label="Contact person" required value={contactName} onChange={e => setContactName(e.target.value)} />
         <Input label="PAN" value={panNumber} onChange={e => setPanNumber(e.target.value.toUpperCase())} placeholder="ABCDE1234F" maxLength={10} className="font-mono" />
         <Input label="GSTIN" value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="07ABCDE1234F1Z5" maxLength={15} className="font-mono" />
+        <Select label="Entity type" required value={entityType} onChange={e => setEntityType(e.target.value)} options={ENTITY_TYPE_OPTIONS} placeholder="Choose the entity type" />
+        {entityTypeRequiresCin(entityType) && (
+          <Input label="CIN" required value={cin} onChange={e => setCin(e.target.value.toUpperCase())} placeholder="U74999DL2019PTC123456" maxLength={21} className="font-mono" />
+        )}
+        <Input label="Authorized signatory name" required value={authorizedSignatoryName} onChange={e => setAuthorizedSignatoryName(e.target.value)} />
         <Input label="Bank account number" value={bankAccount} onChange={e => setBankAccount(e.target.value)} className="font-mono" />
         <Input label="Bank IFSC" value={bankIfsc} onChange={e => setBankIfsc(e.target.value.toUpperCase())} placeholder="HDFC0001234" maxLength={11} className="font-mono" />
       </div>

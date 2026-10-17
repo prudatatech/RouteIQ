@@ -195,7 +195,7 @@ describe('PUT /vendor/kyc/:id/flag-documents', () => {
     await send({ panScan: 'Blurry' });
     const resubmit = await request(app).post('/api/v1/vendor/kyc/submit').set(bearer(V1)).send({
       companyName: 'Acme Traders', gstNumber: '27ABCDE1234F1Z0', city: 'Pune', address: '1 Main Rd', lat: 18.5, lng: 73.8, companyLogo: null,
-      kycData: { data: { panNumber: 'AAAAA0000A', docUrls: { panScan: `${V1}/pan_2.pdf` } }, otherDocs: [] },
+      kycData: { data: { panNumber: 'AAAAA0000A', entityType: 'Proprietorship', authorizedSignatoryName: 'Owner Name', docUrls: { panScan: `${V1}/pan_2.pdf` } }, otherDocs: [] },
     });
     expect(resubmit.status).toBe(200);
     expect(supabaseMock.rows('vendor_profiles')[0].kyc_document_issues).toBeNull();

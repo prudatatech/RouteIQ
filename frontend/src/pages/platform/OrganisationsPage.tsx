@@ -121,8 +121,11 @@ function OrgDrawer({ org, onClose, onDecide, deciding, onFlag, viewer }: {
             <h3 className="mb-2 text-sm font-semibold">Profile</h3>
             <dl className="grid gap-3 sm:grid-cols-2">
               <Detail label="Legal name" value={org.legal_name} />
+              <Detail label="Entity type" value={org.entity_type} />
               <Detail label="GSTIN" value={org.gstin} />
               <Detail label="PAN" value={org.pan} />
+              <Detail label="CIN" value={org.cin} />
+              <Detail label="Authorized signatory" value={org.authorized_signatory_name} />
               <Detail label="Phone" value={org.phone} />
               <Detail label="Email" value={org.email} />
               <Detail label="City" value={org.city} />

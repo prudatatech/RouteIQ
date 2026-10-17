@@ -51,6 +51,9 @@ export interface KycFormView {
   reasonNoGst?: string
   msmeStatus?: string
   msmeRegNumber?: string
+  entityType?: string
+  cin?: string
+  authorizedSignatoryName?: string
   /** Answers to questions the review team asked, by label. */
   extra?: Record<string, string>
 }

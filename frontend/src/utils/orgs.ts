@@ -59,6 +59,9 @@ export interface OrgProfileInput {
   pan: string
   state: string
   address: string
+  entity_type: string
+  cin: string
+  authorized_signatory_name: string
 }
 
 export interface OrgProfile extends Partial<OrgProfileInput> {
@@ -113,6 +116,9 @@ export interface OrgRow {
   pincode?: string | null
   phone?: string | null
   email?: string | null
+  entity_type?: string | null
+  cin?: string | null
+  authorized_signatory_name?: string | null
   status: OrgStatus
   profile?: Record<string, unknown> | null
   approved_at?: string | null

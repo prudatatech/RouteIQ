@@ -21,7 +21,10 @@ const REQUIRED_DOCS: Record<string, string> = {
   addressProof: `${PCO}/addressProof_1.pdf`,
 };
 
-function reset(over: { status?: string; gstin?: string | null; pan?: string | null; profile?: Record<string, unknown>; kyc_documents?: unknown; kyc_document_issues?: unknown; kyc_submitted_at?: string | null } = {}) {
+function reset(over: {
+  status?: string; gstin?: string | null; pan?: string | null; profile?: Record<string, unknown>; kyc_documents?: unknown; kyc_document_issues?: unknown;
+  kyc_submitted_at?: string | null; entity_type?: string | null; cin?: string | null; authorized_signatory_name?: string | null;
+} = {}) {
   const world = orgWorld();
   world.organizations.push({
     id: PCO,
@@ -34,6 +37,9 @@ function reset(over: { status?: string; gstin?: string | null; pan?: string | nu
     kyc_documents: over.kyc_documents ?? null,
     kyc_document_issues: over.kyc_document_issues ?? null,
     kyc_submitted_at: 'kyc_submitted_at' in over ? over.kyc_submitted_at : null,
+    entity_type: 'entity_type' in over ? over.entity_type : 'Proprietorship',
+    cin: 'cin' in over ? over.cin : null,
+    authorized_signatory_name: 'authorized_signatory_name' in over ? over.authorized_signatory_name : 'Priya Owner',
     created_at: '2026-10-02T00:00:00Z',
   });
   world.org_members.push({ org_id: PCO, user_id: uid('pco-owner'), role: 'owner', status: 'active', created_at: '2026-10-02T00:00:00Z', organizations: world.organizations.find(o => o.id === PCO) });
@@ -104,6 +110,20 @@ describe('POST /org/kyc/submit', () => {
     expect((await request(app).post(api('/org/kyc/submit')).set(owner())).status).toBe(400);
   });
 
+  it('refuses when the entity type or the authorized signatory name is missing', async () => {
+    reset({ kyc_documents: { docUrls: REQUIRED_DOCS }, entity_type: null });
+    expect((await request(app).post(api('/org/kyc/submit')).set(owner())).status).toBe(400);
+    reset({ kyc_documents: { docUrls: REQUIRED_DOCS }, authorized_signatory_name: null });
+    expect((await request(app).post(api('/org/kyc/submit')).set(owner())).status).toBe(400);
+  });
+
+  it('refuses a Private Limited company with no CIN, and accepts one with a well-formed CIN', async () => {
+    reset({ kyc_documents: { docUrls: REQUIRED_DOCS }, entity_type: 'Private Limited', cin: null });
+    expect((await request(app).post(api('/org/kyc/submit')).set(owner())).status).toBe(400);
+    reset({ kyc_documents: { docUrls: REQUIRED_DOCS }, entity_type: 'Private Limited', cin: 'U74999DL2019PTC123456' });
+    expect((await request(app).post(api('/org/kyc/submit')).set(owner())).status).toBe(200);
+  });
+
   it('resubmitting after a rejection goes back to pending and clears the rejection reason', async () => {
     reset({ status: 'rejected', profile: { bank_account_no: '123456789012', bank_ifsc: 'HDFC0001234', reject_reason: 'GSTIN mismatch' }, kyc_documents: { docUrls: REQUIRED_DOCS } });
     const res = await request(app).post(api('/org/kyc/submit')).set(owner());
@@ -111,6 +131,13 @@ describe('POST /org/kyc/submit', () => {
     const row = supabaseMock.rows('organizations').find(o => o.id === PCO)!;
     expect(row.status).toBe('pending');
     expect(row.profile.reject_reason).toBeNull();
+  });
+
+  it('never retroactively blocks an already-active company that predates this field (no backfill gate)', async () => {
+    reset({ status: 'active', entity_type: null, authorized_signatory_name: null });
+    const res = await request(app).get(api('/org')).set(owner());
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('active');
   });
 });
 

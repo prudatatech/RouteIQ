@@ -363,7 +363,10 @@
     "updated_at",
     "kyc_documents",
     "kyc_document_issues",
-    "kyc_submitted_at"
+    "kyc_submitted_at",
+    "entity_type",
+    "cin",
+    "authorized_signatory_name"
   ],
   "parcels": [
     "id",
@@ -664,7 +667,15 @@
     "bank_name",
     "bank_branch",
     "bank_ifsc_details",
-    "bank_ifsc_verified_at", "operating_from", "fleet_size", "truck_type", "document_issues", "contact_name"
+    "bank_ifsc_verified_at",
+    "operating_from",
+    "fleet_size",
+    "truck_type",
+    "document_issues",
+    "contact_name",
+    "entity_type",
+    "cin",
+    "authorized_signatory_name"
   ],
   "traffic_incidents": [
     "id",
@@ -828,7 +839,10 @@
     "kyc_reviewed_at",
     "kyc_reviewed_by",
     "kyc_rejection_reason",
-    "kyc_document_issues"
+    "kyc_document_issues",
+    "entity_type",
+    "cin",
+    "authorized_signatory_name"
   ],
   "vendor_route_opportunities": [
     "id",

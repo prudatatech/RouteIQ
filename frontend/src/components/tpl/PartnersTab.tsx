@@ -13,6 +13,7 @@ import MyNetwork from './MyNetwork'
 import { useEffectiveRole } from '@/store/effectiveRole'
 import type { Column } from '@/components/ui'
 import { errorMessage, formatDate, formatMinutes } from '@/utils/display'
+import { entityTypeRequiresCin } from '@/utils/entityType'
 
 interface TplPartner {
   id: string
@@ -22,6 +23,9 @@ interface TplPartner {
   pan_number?: string | null
   bank_account_no?: string | null
   bank_ifsc?: string | null
+  entity_type?: string | null
+  cin?: string | null
+  authorized_signatory_name?: string | null
   status: string
   created_at: string
   tpl_corridors?: { corridor_name: string }[]
@@ -46,7 +50,9 @@ function tplReadiness(p: TplPartner): { label: string; tone: 'warning' | 'succes
   if (p.document_issues && Object.keys(p.document_issues).length > 0) return { label: 'Flagged', tone: 'warning' }
   // A profile-update approval (pending_updates set) does not require PAN/GST/bank/documents again.
   if (p.pending_updates) return { label: 'Ready', tone: 'success' }
+  const cinOk = !entityTypeRequiresCin(p.entity_type) || !!p.cin
   const hasCompliance = !!p.pan_number && !!p.gstin && !!p.bank_account_no && !!p.bank_ifsc && !!p.tpl_documents?.length
+    && !!p.entity_type && !!p.authorized_signatory_name && cinOk
   return hasCompliance ? { label: 'Ready', tone: 'success' } : { label: 'Incomplete', tone: 'neutral' }
 }
 

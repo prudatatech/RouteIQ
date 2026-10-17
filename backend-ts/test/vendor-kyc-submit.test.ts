@@ -14,7 +14,7 @@ const PAYLOAD = {
   lat: 18.5,
   lng: 73.8,
   companyLogo: null,
-  kycData: { data: { name: 'Acme Logistics' }, otherDocs: [] },
+  kycData: { data: { name: 'Acme Logistics', entityType: 'Proprietorship', authorizedSignatoryName: 'Owner Name' }, otherDocs: [] },
 };
 
 const submit = (body: Record<string, unknown> = PAYLOAD) =>
@@ -74,5 +74,46 @@ describe('POST /vendor/kyc/submit', () => {
     const res = await submit();
     expect(res.status).toBe(200);
     expect(supabaseMock.writes('notifications', 'POST')).toHaveLength(0);
+  });
+
+  it('refuses a submission missing the entity type or the authorized signatory name', async () => {
+    supabaseMock.reset({
+      users: [{ id: VENDOR, role: 'vendor', is_active: true }],
+      vendor_profiles: [],
+      notifications: [],
+    });
+    const noEntityType = await submit({ ...PAYLOAD, kycData: { data: { name: 'Acme Logistics', authorizedSignatoryName: 'Owner Name' }, otherDocs: [] } });
+    expect(noEntityType.status).toBe(400);
+    const noSignatory = await submit({ ...PAYLOAD, kycData: { data: { name: 'Acme Logistics', entityType: 'Proprietorship' }, otherDocs: [] } });
+    expect(noSignatory.status).toBe(400);
+  });
+
+  it('refuses a Private Limited vendor with no CIN, and accepts one with a well-formed CIN', async () => {
+    supabaseMock.reset({
+      users: [{ id: VENDOR, role: 'vendor', is_active: true }],
+      vendor_profiles: [],
+      notifications: [],
+    });
+    const noCin = await submit({
+      ...PAYLOAD,
+      kycData: { data: { name: 'Acme Logistics', entityType: 'Private Limited', authorizedSignatoryName: 'Owner Name' }, otherDocs: [] },
+    });
+    expect(noCin.status).toBe(400);
+    const withCin = await submit({
+      ...PAYLOAD,
+      kycData: { data: { name: 'Acme Logistics', entityType: 'Private Limited', authorizedSignatoryName: 'Owner Name', cin: 'U74999DL2019PTC123456' }, otherDocs: [] },
+    });
+    expect(withCin.status).toBe(200);
+  });
+
+  it('never retroactively blocks an already-approved profile that predates this field (no backfill gate)', async () => {
+    supabaseMock.reset({
+      users: [{ id: VENDOR, role: 'vendor', is_active: true }],
+      vendor_profiles: [{ id: VENDOR, company_name: 'Acme Logistics', kyc_status: 'approved', kyc_data: { data: { name: 'Acme Logistics' }, otherDocs: [] } }],
+      notifications: [],
+    });
+    const res = await request(app).get('/api/v1/vendor/profile').set('Authorization', `Bearer ${supabaseMock.signUserToken(VENDOR)}`);
+    expect(res.status).toBe(200);
+    expect(res.body.kyc_status).toBe('approved');
   });
 });

@@ -14,6 +14,7 @@ import { formatRate, type RateUnit } from '../utils/corridor-match';
 import { isUuid } from '../core/validate';
 import { findAuthUserByEmail } from '../core/auth-users';
 import { invalidateRoleCache } from '../core/auth';
+import { entityTypeRequiresCin } from '../utils/entity-type';
 
 const OTP_TTL_SECONDS = 300;
 const OTP_MAX_ATTEMPTS = 5;
@@ -109,7 +110,10 @@ export const tplService = {
    * Submit a new 3PL onboarding application
    */
   async onboard(data: any) {
-    const { custom_id, companyName, contactName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents, operatingFrom, fleetSize, truckType, user_id } = data;
+    const {
+      custom_id, companyName, contactName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents,
+      operatingFrom, fleetSize, truckType, user_id, entityType, cin, authorizedSignatoryName,
+    } = data;
     const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
     const isQuick = !!fleetSize;
     if (!companyName || !contactName || !email || (!isQuick && !pan)) throw new HttpError(400, 'Company name, contact person, email and PAN are required');
@@ -148,6 +152,9 @@ export const tplService = {
         phone,
         pan_number: pan,
         gstin: normalizeGstin(gst),
+        entity_type: entityType || null,
+        cin: cin ? String(cin).trim().toUpperCase() : null,
+        authorized_signatory_name: authorizedSignatoryName || null,
         msme_status: msmeStatus || 'Not Registered',
         bank_account_no: bankAccount || null,
         bank_ifsc: bankIfsc ? String(bankIfsc).trim().toUpperCase() : null,
@@ -311,7 +318,7 @@ export const tplService = {
    * Update an existing 3PL partner application (only if pending)
    */
   async updateApplication(id: string, data: any) {
-    const { custom_id, companyName, contactName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
+    const { custom_id, companyName, contactName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents, entityType, cin, authorizedSignatoryName } = data;
     if (data.email !== undefined && !EMAIL_PATTERN.test(String(data.email).trim())) throw new HttpError(400, 'Enter a valid email address, for example name@company.in');
     assertApplicationFields(data ?? {}, true);
 
@@ -342,6 +349,9 @@ export const tplService = {
         ...(data.phone !== undefined ? { phone: parseMobile(data.phone) } : {}),
         ...(pan !== undefined ? { pan_number: pan } : {}),
         ...(gst !== undefined ? { gstin: normalizeGstin(gst) } : {}),
+        ...(entityType !== undefined ? { entity_type: entityType || null } : {}),
+        ...(cin !== undefined ? { cin: cin ? String(cin).trim().toUpperCase() : null } : {}),
+        ...(authorizedSignatoryName !== undefined ? { authorized_signatory_name: authorizedSignatoryName || null } : {}),
         ...(msmeStatus !== undefined ? { msme_status: msmeStatus || 'Not Registered' } : {}),
         ...(bankAccount !== undefined ? { bank_account_no: bankAccount || null } : {}),
         ...(bankIfsc !== undefined ? { bank_ifsc: bankIfsc ? String(bankIfsc).trim().toUpperCase() : null } : {}),
@@ -502,6 +512,9 @@ export const tplService = {
       if (!partner.pan_number) missing.push('PAN');
       if (!partner.gstin) missing.push('GSTIN');
       if (!partner.bank_account_no || !partner.bank_ifsc) missing.push('bank details');
+      if (!partner.entity_type) missing.push('entity type');
+      if (!partner.authorized_signatory_name) missing.push('authorized signatory name');
+      if (entityTypeRequiresCin(partner.entity_type) && !partner.cin) missing.push('CIN');
       const { count: docCount, error: docCountErr } = await supabase.from('tpl_documents').select('id', { count: 'exact', head: true }).eq('partner_id', id);
       if (docCountErr) throw new Error(`Failed to count documents: ${docCountErr.message}`);
       if (!docCount) missing.push('documents');

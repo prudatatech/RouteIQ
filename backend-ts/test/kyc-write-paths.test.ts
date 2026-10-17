@@ -238,7 +238,7 @@ describe('vendor form validation', () => {
     expect((await submit({ data: { panNumber: 'nope' }, otherDocs: [] })).status).toBe(400);
     expect((await submit({ data: {}, otherDocs: [] }, 'vendor-2/logo.png')).status).toBe(400);
     expect((await submit('not an object')).status).toBe(400);
-    expect((await submit({ data: { panNumber: 'ABCDE1234F', docUrls: { panCard: `${VENDOR}/p.pdf` } }, otherDocs: [] })).status).toBe(200);
+    expect((await submit({ data: { panNumber: 'ABCDE1234F', entityType: 'Proprietorship', authorizedSignatoryName: 'Owner Name', docUrls: { panCard: `${VENDOR}/p.pdf` } }, otherDocs: [] })).status).toBe(200);
   });
 
   it('will not take a shipment request before KYC is approved, or with a nonsense body', async () => {

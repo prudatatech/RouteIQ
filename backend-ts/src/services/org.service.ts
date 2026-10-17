@@ -17,8 +17,9 @@ import type { MemberInvite, MemberUpdate, OrgCreate, OrgDocumentsInput, OrgUpdat
 import { assertOwnOrgDocumentPaths, ORG_DOC_LABELS, REQUIRED_ORG_DOC_KEYS } from '../schemas/org';
 import { PROFILE_INVOICING_KEYS, saveCompanyProfile } from './company.service';
 import { assertAffiliated, legacyPartnerIdOf, readRules, type AffiliationRules } from './tpl-affiliation';
+import { entityTypeRequiresCin } from '../utils/entity-type';
 
-const ORG_COLUMNS = 'id, kind, name, legal_name, gstin, pan, state, city, address, pincode, phone, email, status, profile, approved_by, approved_at, created_by, created_at, updated_at, kyc_documents, kyc_document_issues, kyc_submitted_at';
+const ORG_COLUMNS = 'id, kind, name, legal_name, gstin, pan, state, city, address, pincode, phone, email, status, profile, approved_by, approved_at, created_by, created_at, updated_at, kyc_documents, kyc_document_issues, kyc_submitted_at, entity_type, cin, authorized_signatory_name';
 const MEMBER_ROLES_WHO_MANAGE: OrgRole[] = ['owner', 'admin'];
 
 /** Formats a KYC document may be uploaded in, and the extension each is stored under (vendor.service.ts keeps its own copy). */
@@ -194,6 +195,9 @@ export async function submitOrgKyc(actor: AuditActor, orgId: string): Promise<Or
     throw new HttpError(409, 'This company is not waiting to submit KYC');
   }
   if (!org.gstin || !org.pan) throw new HttpError(400, 'Add the company GSTIN and PAN before submitting');
+  if (!org.entity_type) throw new HttpError(400, 'Choose the entity type before submitting');
+  if (!org.authorized_signatory_name) throw new HttpError(400, 'Add the authorized signatory name before submitting');
+  if (entityTypeRequiresCin(org.entity_type) && !org.cin) throw new HttpError(400, 'Add the company CIN before submitting');
   const profile = (org.profile ?? {}) as Record<string, unknown>;
   if (!profile.bank_account_no || !profile.bank_ifsc) throw new HttpError(400, 'Add the company bank account and IFSC before submitting');
   const docUrls = org.kyc_documents?.docUrls ?? {};

@@ -94,6 +94,7 @@ export function KycFormSection({ form, ifscVerifiedAt }: { form: KycFormView; if
           { label: 'Registered name', value: given(f.name) },
           { label: 'Vendor number', value: mono(f.number) },
           { label: 'Vendor type', value: given(f.vendorType) },
+          { label: 'Entity type', value: given(f.entityType) },
           { label: 'Address', value: given(address) },
           { label: 'Pickup location', value: f.latitude && f.longitude ? <span className="font-mono">{f.latitude}, {f.longitude}</span> : given(undefined) },
           { label: 'Declaration', value: f.declaration ? 'Accepted' : given(undefined) },
@@ -117,6 +118,8 @@ export function KycFormSection({ form, ifscVerifiedAt }: { form: KycFormView; if
           { label: 'TAN', value: mono(f.tanNumber) },
           { label: 'GST number', value: f.gstNumber ? <div>{mono(f.gstNumber)}<GstinStatus gstin={f.gstNumber} pan={f.panNumber} /></div> : given(f.reasonNoGst ? `None: ${f.reasonNoGst}` : undefined) },
           { label: 'MSME', value: given([f.msmeStatus, f.msmeRegNumber].filter(Boolean).join(', ')) },
+          { label: 'CIN', value: mono(f.cin) },
+          { label: 'Authorized signatory', value: given(f.authorizedSignatoryName) },
         ])}
         {extra.length > 0 && group('Extra details the vendor sent', extra.map(([label, value]) => ({ label, value })))}
       </div>

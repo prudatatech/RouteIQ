@@ -107,7 +107,10 @@ describe('3PL applications (ROL-13, ROL-14)', () => {
   });
 
   it('ROL-14: onboarding refuses a malformed email', async () => {
-    const body = { custom_id: 'fresh_3pl', companyName: 'Fresh', contactName: 'Fresh Contact', pan: 'FGHIJ5678K', gst: '27FGHIJ5678K1Z1' };
+    const body = {
+      custom_id: 'fresh_3pl', companyName: 'Fresh', contactName: 'Fresh Contact', pan: 'FGHIJ5678K', gst: '27FGHIJ5678K1Z1',
+      entityType: 'Proprietorship', authorizedSignatoryName: 'Fresh Contact',
+    };
     for (const email of ['not-an-email', 'a@b', 'a b@c.in']) {
       const res = await request(app).post(api('/tpl/onboard')).send({ ...body, email });
       expect(res.status).toBe(400);

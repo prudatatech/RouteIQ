@@ -11,10 +11,13 @@ import { selectActiveMembership, useOrgStore } from '@/store/orgStore'
 import {
   canManageOrg, ORG_ROLE_LABELS, type OrgMember, type OrgProfileInput, type OrgRole,
 } from '@/utils/orgs'
+import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin } from '@/utils/entityType'
 
 const ROLE_OPTIONS = (Object.keys(ORG_ROLE_LABELS) as OrgRole[]).map(r => ({ value: r, label: ORG_ROLE_LABELS[r] }))
 
-const EMPTY_PROFILE: OrgProfileInput = { name: '', legal_name: '', gstin: '', pan: '', state: '', address: '' }
+const EMPTY_PROFILE: OrgProfileInput = {
+  name: '', legal_name: '', gstin: '', pan: '', state: '', address: '', entity_type: '', cin: '', authorized_signatory_name: '',
+}
 
 function ProfileCard({ orgId }: { orgId: string }) {
   const queryClient = useQueryClient()
@@ -25,7 +28,12 @@ function ProfileCard({ orgId }: { orgId: string }) {
 
   useEffect(() => {
     const p = profile.data
-    if (p) setForm({ name: p.name ?? '', legal_name: p.legal_name ?? '', gstin: p.gstin ?? '', pan: p.pan ?? '', state: p.state ?? '', address: p.address ?? '' })
+    if (p) {
+      setForm({
+        name: p.name ?? '', legal_name: p.legal_name ?? '', gstin: p.gstin ?? '', pan: p.pan ?? '', state: p.state ?? '', address: p.address ?? '',
+        entity_type: p.entity_type ?? '', cin: p.cin ?? '', authorized_signatory_name: p.authorized_signatory_name ?? '',
+      })
+    }
   }, [profile.data])
 
   const save = useMutation({
@@ -71,6 +79,11 @@ function ProfileCard({ orgId }: { orgId: string }) {
             <Input label="Legal name" value={form.legal_name} error={errors.legal_name} onChange={e => set('legal_name')(e.target.value)} />
             <Input label="GSTIN" value={form.gstin} error={errors.gstin} onChange={e => set('gstin')(e.target.value.toUpperCase())} />
             <Input label="PAN" value={form.pan} error={errors.pan} onChange={e => set('pan')(e.target.value.toUpperCase())} />
+            <Select label="Entity type" value={form.entity_type} error={errors.entity_type} options={ENTITY_TYPE_OPTIONS} placeholder="Choose the entity type" onChange={e => set('entity_type')(e.target.value)} />
+            {entityTypeRequiresCin(form.entity_type) && (
+              <Input label="CIN" value={form.cin} error={errors.cin} onChange={e => set('cin')(e.target.value.toUpperCase())} hint="21-character Corporate Identity Number" />
+            )}
+            <Input label="Authorized signatory name" value={form.authorized_signatory_name} error={errors.authorized_signatory_name} onChange={e => set('authorized_signatory_name')(e.target.value)} />
             <Input label="State" value={form.state} error={errors.state} onChange={e => set('state')(e.target.value)} />
             <Textarea label="Address" className="sm:col-span-2" value={form.address} error={errors.address} onChange={e => set('address')(e.target.value)} />
             {formError && <p role="alert" className="text-sm text-danger sm:col-span-2">{formError}</p>}

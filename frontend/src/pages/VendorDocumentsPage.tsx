@@ -18,6 +18,7 @@ import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { gstinError } from '@/utils/gstin'
 import { KycInfoRequests } from '@/components/vendor/KycInfoRequests'
 import { useKycRequests } from '@/components/vendor/kycRequests'
+import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
 
 type KycStatus = 'pending' | 'submitted' | 'info_requested' | 'approved' | 'rejected'
 
@@ -48,6 +49,9 @@ interface KycFormData {
   vendorType: string
   msmeStatus: string
   msmeRegNumber: string
+  entityType: string
+  cin: string
+  authorizedSignatoryName: string
   declaration: boolean
   docUrls: Record<string, string>
 }
@@ -59,6 +63,7 @@ const EMPTY_FORM: KycFormData = {
   beneficiaryAccountName: '', bankAccountNumber: '', bankName: '', bankBranchName: '', bankIfscCode: '', accountType: 'Current',
   panNumber: '', gstNumber: '', vendorType: 'Service provider',
   msmeStatus: 'Not applicable', msmeRegNumber: '',
+  entityType: '', cin: '', authorizedSignatoryName: '',
   declaration: false,
   docUrls: {},
 }
@@ -228,6 +233,14 @@ export default function VendorDocumentsPage() {
     if (form.gstNumber.trim()) {
       const gstProblem = gstinError(form.gstNumber, form.panNumber)
       if (gstProblem) errors[0].gstNumber = gstProblem
+    }
+    if (!form.entityType.trim()) errors[0].entityType = 'Choose the entity type'
+    if (!form.authorizedSignatoryName.trim()) errors[0].authorizedSignatoryName = 'Enter the authorized signatory name'
+    if (entityTypeRequiresCin(form.entityType)) {
+      if (!form.cin.trim()) errors[0].cin = 'CIN is required for this entity type'
+      else if (!isCinFormat(form.cin)) errors[0].cin = 'CIN looks incorrect (21 letters and digits, e.g. U74999DL2019PTC123456)'
+    } else if (form.cin.trim() && !isCinFormat(form.cin)) {
+      errors[0].cin = 'CIN looks incorrect (21 letters and digits, e.g. U74999DL2019PTC123456)'
     }
 
     if (!form.contactPerson.trim()) errors[1].contactPerson = 'Enter a contact person'
@@ -533,6 +546,11 @@ export default function VendorDocumentsPage() {
                 {form.msmeStatus !== 'Not applicable' && (
                   <Input label="MSME registration number" value={form.msmeRegNumber} onChange={e => setField('msmeRegNumber', e.target.value)} />
                 )}
+                <Select label="Entity type" required options={ENTITY_TYPE_OPTIONS} value={form.entityType} onChange={e => setField('entityType', e.target.value)} error={err(0, 'entityType')} placeholder="Choose the entity type" />
+                {entityTypeRequiresCin(form.entityType) && (
+                  <Input label="CIN" required value={form.cin} onChange={e => setField('cin', e.target.value.toUpperCase())} error={err(0, 'cin')} inputClassName="uppercase" hint="21-character Corporate Identity Number" />
+                )}
+                <Input label="Authorized signatory name" required value={form.authorizedSignatoryName} onChange={e => setField('authorizedSignatoryName', e.target.value)} error={err(0, 'authorizedSignatoryName')} />
               </div>
             </div>
           )}
@@ -739,8 +757,11 @@ function ReadOnlySummary({ form, otherDocs, issues, onView, onAdd, compact }: {
   const rows: [string, string | null][] = [
     ['Company name', form.name || null],
     ['Vendor type', form.vendorType || null],
+    ['Entity type', form.entityType || null],
     ['PAN', form.panNumber || null],
     ['GST number', form.gstNumber || null],
+    ['CIN', form.cin || null],
+    ['Authorized signatory', form.authorizedSignatoryName || null],
     ['Contact', [form.contactPerson, form.mobileNumber, form.emailAddress].filter(Boolean).join(' · ') || null],
     ['Registered address', [form.addressLine1, form.city, form.state, form.postalCode].filter(Boolean).join(', ') || null],
     ['Bank account', form.bankAccountNumber ? `${form.bankName || ''} · ${form.bankAccountNumber}` : null],

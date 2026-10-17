@@ -4,13 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { orgAPI } from '@/services/api'
 import { selectActiveMembership, useOrgStore } from '@/store/orgStore'
-import { Alert, Button, Card, IfscField, Input, LoadingState, Page, PageHeader } from '@/components/ui'
+import { Alert, Button, Card, IfscField, Input, LoadingState, Page, PageHeader, Select } from '@/components/ui'
 import { DocUploadField } from '@/components/kyc/DocUploadField'
 import { errorMessage } from '@/utils/display'
 import { getKycDocumentUrl, uploadOrgKycDocument } from '@/services/kycDocuments'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { ORG_KYC_DOCUMENTS } from '@/utils/platformOrgs'
 import { gstinError } from '@/utils/gstin'
+import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
 import type { IfscDetails } from '@/services/api'
 
 const PAN_PATTERN = /^[A-Z]{5}\d{4}[A-Z]$/
@@ -27,6 +28,9 @@ export default function CompanyKycPage() {
 
   const [gstin, setGstin] = useState('')
   const [pan, setPan] = useState('')
+  const [entityType, setEntityType] = useState('')
+  const [cin, setCin] = useState('')
+  const [authorizedSignatoryName, setAuthorizedSignatoryName] = useState('')
   const [bankName, setBankName] = useState('')
   const [bankAccountNo, setBankAccountNo] = useState('')
   const [bankIfsc, setBankIfsc] = useState('')
@@ -43,6 +47,9 @@ export default function CompanyKycPage() {
     const bank = (p.profile ?? {}) as Record<string, unknown>
     setGstin(p.gstin ?? '')
     setPan(p.pan ?? '')
+    setEntityType(p.entity_type ?? '')
+    setCin(p.cin ?? '')
+    setAuthorizedSignatoryName(p.authorized_signatory_name ?? '')
     setBankName(typeof bank.bank_name === 'string' ? bank.bank_name : '')
     setBankAccountNo(typeof bank.bank_account_no === 'string' ? bank.bank_account_no : '')
     setBankIfsc(typeof bank.bank_ifsc === 'string' ? bank.bank_ifsc : '')
@@ -54,6 +61,9 @@ export default function CompanyKycPage() {
     mutationFn: () => orgAPI.update({
       gstin: gstin.trim().toUpperCase() || undefined,
       pan: pan.trim().toUpperCase() || undefined,
+      entity_type: entityType || undefined,
+      cin: cin.trim().toUpperCase() || undefined,
+      authorized_signatory_name: authorizedSignatoryName.trim() || undefined,
       profile: { bank_name: bankName.trim() || null, bank_account_no: bankAccountNo.trim() || null, bank_ifsc: bankIfsc.trim().toUpperCase() || null },
     }),
     onSuccess: () => { toast.success('Details saved'); void queryClient.invalidateQueries({ queryKey: ['org-kyc'] }) },
@@ -116,6 +126,14 @@ export default function CompanyKycPage() {
   else { const g = gstinError(gstin, pan); if (g) fieldErrors.gstin = g }
   if (!pan.trim()) fieldErrors.pan = 'Enter the company PAN'
   else if (!PAN_PATTERN.test(pan.trim())) fieldErrors.pan = 'PAN looks incorrect (e.g. AAAAA0000A)'
+  if (!entityType.trim()) fieldErrors.entityType = 'Choose the entity type'
+  if (!authorizedSignatoryName.trim()) fieldErrors.authorizedSignatoryName = 'Enter the authorized signatory name'
+  if (entityTypeRequiresCin(entityType)) {
+    if (!cin.trim()) fieldErrors.cin = 'CIN is required for this entity type'
+    else if (!isCinFormat(cin)) fieldErrors.cin = 'CIN looks incorrect (21 letters and digits, e.g. U74999DL2019PTC123456)'
+  } else if (cin.trim() && !isCinFormat(cin)) {
+    fieldErrors.cin = 'CIN looks incorrect (21 letters and digits, e.g. U74999DL2019PTC123456)'
+  }
   if (!bankAccountNo.trim()) fieldErrors.bankAccountNo = 'Enter the bank account number'
   else if (!ACCOUNT_PATTERN.test(bankAccountNo.trim())) fieldErrors.bankAccountNo = 'Account number must be 9 to 18 digits'
   if (!bankIfsc.trim()) fieldErrors.bankIfsc = 'Enter the IFSC code'
@@ -152,6 +170,11 @@ export default function CompanyKycPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input label="GSTIN" value={gstin} onChange={e => setGstin(e.target.value.toUpperCase())} maxLength={15} inputClassName="uppercase" error={err('gstin')} />
             <Input label="PAN" value={pan} onChange={e => setPan(e.target.value.toUpperCase())} maxLength={10} inputClassName="uppercase" error={err('pan')} />
+            <Select label="Entity type" value={entityType} onChange={e => setEntityType(e.target.value)} options={ENTITY_TYPE_OPTIONS} placeholder="Choose the entity type" error={err('entityType')} />
+            {entityTypeRequiresCin(entityType) && (
+              <Input label="CIN" value={cin} onChange={e => setCin(e.target.value.toUpperCase())} maxLength={21} inputClassName="uppercase" error={err('cin')} hint="21-character Corporate Identity Number" />
+            )}
+            <Input label="Authorized signatory name" value={authorizedSignatoryName} onChange={e => setAuthorizedSignatoryName(e.target.value)} error={err('authorizedSignatoryName')} />
           </div>
         </div>
 

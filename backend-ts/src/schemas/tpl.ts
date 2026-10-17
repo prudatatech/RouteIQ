@@ -4,6 +4,7 @@
  */
 import { HttpError } from '../core/errors';
 import { RATE_UNITS } from '../utils/corridor-match';
+import { ENTITY_TYPES, entityTypeRequiresCin, isCinFormat } from '../utils/entity-type';
 
 export const TPL_SLA_OPTIONS = ['2 Hours', '4 Hours', '6 Hours', '12 Hours'] as const;
 export const TPL_TAX_OPTIONS = ['12% GTA (With ITC) - Forward Charge', '5% GTA (No ITC) - Reverse Charge'] as const;
@@ -107,6 +108,24 @@ export function assertApplicationFields(data: Record<string, unknown>, partial =
   }
   if (!(partial && data.pan === undefined) && (typeof data.pan !== 'string' || !PAN_PATTERN.test(data.pan.trim()))) {
     throw new HttpError(400, 'PAN looks incorrect (for example ABCDE1234F)');
+  }
+  if (!(partial && data.entityType === undefined) && (typeof data.entityType !== 'string' || !(ENTITY_TYPES as readonly string[]).includes(data.entityType))) {
+    throw new HttpError(400, `Entity type is required (one of: ${ENTITY_TYPES.join(', ')})`);
+  }
+  if (!(partial && data.authorizedSignatoryName === undefined) && !isText(data.authorizedSignatoryName, 200)) {
+    throw new HttpError(400, 'The authorized signatory name is required (up to 200 characters)');
+  }
+  // The CIN requirement depends on the entity type on record for a partial edit, so this function (which
+  // sees only the fields being changed) checks CIN's format when given, and leaves "is it required"
+  // to the caller, which knows the partner's current entity type (see tpl.service.ts).
+  if (!blank(data.cin) && !isCinFormat(data.cin)) {
+    throw new HttpError(400, 'CIN looks incorrect (21 letters and digits, for example U74999DL2019PTC123456)');
+  }
+  if (!partial) {
+    const entityType = data.entityType as string | undefined;
+    if (entityTypeRequiresCin(entityType) && blank(data.cin)) {
+      throw new HttpError(400, 'CIN is required for this entity type');
+    }
   }
   if (!blank(data.gst) && (typeof data.gst !== 'string' || !GST_PATTERN.test(data.gst.trim()))) {
     throw new HttpError(400, 'GSTIN looks incorrect (for example 07ABCDE1234F1Z5)');

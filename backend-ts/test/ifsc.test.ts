@@ -137,7 +137,7 @@ describe('saving an IFSC', () => {
   it('vendor KYC: refuses an unknown IFSC, and keeps the branch inside kyc_data when found', async () => {
     const VENDOR = 'vendor-1';
     const submit = () => request(app).post('/api/v1/vendor/kyc/submit').set('Authorization', `Bearer ${supabaseMock.signUserToken(VENDOR)}`)
-      .send({ companyName: 'Acme', gstNumber: '', city: 'Pune', address: '1 MG Road', lat: 18.5, lng: 73.8, companyLogo: null, kycData: { data: { bankIfscCode: 'hdfc0001234' }, otherDocs: [] } });
+      .send({ companyName: 'Acme', gstNumber: '', city: 'Pune', address: '1 MG Road', lat: 18.5, lng: 73.8, companyLogo: null, kycData: { data: { bankIfscCode: 'hdfc0001234', entityType: 'Proprietorship', authorizedSignatoryName: 'Owner Name' }, otherDocs: [] } });
     const reset = () => supabaseMock.reset({ users: [{ id: VENDOR, role: 'vendor', is_active: true }], vendor_profiles: [], notifications: [] });
 
     reset();
@@ -163,7 +163,10 @@ describe('saving an IFSC', () => {
   });
 
   it('3PL onboarding: refuses an unknown IFSC, warns when the service is down', async () => {
-    const onboard = () => request(app).post('/api/v1/tpl/onboard').send({ companyName: 'Northline', contactName: 'Priya Rao', email: 'ops@northline.example', pan: 'ABCDE1234F', gst: '27ABCDE1234F1Z0', bankIfsc: 'HDFC0001234' });
+    const onboard = () => request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Northline', contactName: 'Priya Rao', email: 'ops@northline.example', pan: 'ABCDE1234F', gst: '27ABCDE1234F1Z0', bankIfsc: 'HDFC0001234',
+      entityType: 'Proprietorship', authorizedSignatoryName: 'Priya Rao',
+    });
     const reset = () => supabaseMock.reset({ users: [], tpl_partners: [], tpl_corridors: [], tpl_documents: [], notifications: [] });
 
     reset();

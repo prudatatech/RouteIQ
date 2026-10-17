@@ -38,6 +38,9 @@ interface TplPartnerDetail {
   created_at: string
   pan_number: string | null
   gstin: string | null
+  entity_type?: string | null
+  cin?: string | null
+  authorized_signatory_name?: string | null
   tax_treatment: string | null
   msme_status: string | null
   sla_commitment: string | null
@@ -299,6 +302,9 @@ export default function TplPartnerDetailPage() {
                 { label: 'Company PAN', value: partner.pan_number ? <span className="font-mono">{partner.pan_number}</span> : '—' },
                 { label: '3PL ID', value: <span className="font-mono">{partner.custom_id || 'Not assigned yet'}</span> },
                 { label: 'GSTIN', value: partner.gstin ? <div><span className="font-mono">{partner.gstin}</span><GstinStatus gstin={partner.gstin} pan={partner.pan_number ?? undefined} /></div> : '—' },
+                { label: 'Entity type', value: partner.entity_type || '—' },
+                { label: 'CIN', value: partner.cin ? <span className="font-mono">{partner.cin}</span> : '—' },
+                { label: 'Authorized signatory', value: partner.authorized_signatory_name || '—' },
                 { label: 'GTA tax treatment', value: partner.tax_treatment || '—' },
                 { label: 'MSME status', value: partner.msme_status || '—' },
                 { label: 'Bank account', value: partner.bank_account_no ? <span className="font-mono">{partner.bank_account_no}</span> : '—' },

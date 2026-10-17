@@ -17,6 +17,8 @@ function partner(status: string, extra: Record<string, unknown> = {}) {
     email: 'ops@acme.in',
     pan_number: 'ABCDE1234F',
     gstin: '27ABCDE1234F1Z5',
+    entity_type: 'Proprietorship',
+    authorized_signatory_name: 'Priya Rao',
     bank_account_no: '123456789012',
     bank_ifsc: 'HDFC0001234',
     user_id: 'partner-user',
@@ -162,12 +164,34 @@ describe('staff decisions on partners', () => {
     ['GSTIN', { gstin: null }, 'GSTIN'],
     ['bank account', { bank_account_no: null }, 'bank details'],
     ['IFSC', { bank_ifsc: null }, 'bank details'],
+    ['entity type', { entity_type: null }, 'entity type'],
+    ['authorized signatory name', { authorized_signatory_name: null }, 'authorized signatory name'],
   ])('refuses to approve a quick-onboarded application missing its %s', async (_name, extra, expectedWord) => {
     reset('pending', extra);
     const res = await act(`approve/${PID}`);
     expect(res.status).toBe(409);
     expect(res.body.detail ?? res.body.error).toContain(expectedWord);
     expect(supabaseMock.rows('tpl_partners')[0].status).toBe('pending');
+  });
+
+  it('refuses to approve a quick-onboarded application whose entity type needs a CIN but has none', async () => {
+    reset('pending', { entity_type: 'Private Limited', cin: null });
+    const res = await act(`approve/${PID}`);
+    expect(res.status).toBe(409);
+    expect(res.body.detail ?? res.body.error).toContain('CIN');
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('pending');
+  });
+
+  it('approves a partner whose entity type needs a CIN once one is on file', async () => {
+    reset('pending', { entity_type: 'Private Limited', cin: 'U74999DL2019PTC123456' });
+    expect((await act(`approve/${PID}`)).status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('active');
+  });
+
+  it('never retroactively blocks an already-active partner that predates this field (no backfill gate)', async () => {
+    reset('active', { entity_type: null, authorized_signatory_name: null, cin: null });
+    expect((await act(`${PID}/pause`)).status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('paused');
   });
 
   it('refuses to approve a quick-onboarded application with no documents', async () => {
@@ -344,7 +368,10 @@ describe('PUT /tpl/:id/flag-documents', () => {
 
 describe('application field checks', () => {
   const onboard = (change: Record<string, unknown>) =>
-    request(app).post('/api/v1/tpl/onboard').send({ companyName: 'Northline', contactName: 'Priya Rao', email: 'ops@northline.example', pan: 'ABCDE1234F', ...change });
+    request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Northline', contactName: 'Priya Rao', email: 'ops@northline.example', pan: 'ABCDE1234F',
+      entityType: 'Proprietorship', authorizedSignatoryName: 'Priya Rao', ...change,
+    });
 
   it.each([
     ['a bad PAN', { pan: 'nope' }],
@@ -354,11 +381,24 @@ describe('application field checks', () => {
     ['a negative corridor rate', { corridors: [{ name: 'DEL-BOM', rate: '-1' }] }],
     ['no contact person', { contactName: undefined }],
     ['no company name', { companyName: undefined }],
+    ['no entity type', { entityType: undefined }],
+    ['an unknown entity type', { entityType: 'Sole Trader' }],
+    ['no authorized signatory name', { authorizedSignatoryName: undefined }],
+    ['a Private Limited entity with no CIN', { entityType: 'Private Limited' }],
+    ['a bad CIN', { entityType: 'Private Limited', cin: 'not-a-cin' }],
   ])('refuses %s', async (_name, change) => {
     reset('pending');
     const res = await onboard(change);
     expect(res.status).toBe(400);
     expect(supabaseMock.writes('tpl_partners', 'POST')).toHaveLength(0);
+  });
+
+  it('accepts a full (non-quick) application with entity type, CIN and the authorized signatory', async () => {
+    reset('pending');
+    const res = await onboard({ email: 'full@northline.example', gst: '27ABCDE1234F1Z0', entityType: 'Private Limited', cin: 'U74999DL2019PTC123456' });
+    expect(res.status).toBe(200);
+    const written = supabaseMock.writes('tpl_partners', 'POST')[0].body;
+    expect(written).toMatchObject({ entity_type: 'Private Limited', cin: 'U74999DL2019PTC123456', authorized_signatory_name: 'Priya Rao' });
   });
 
   it('stores the company name and the contact person under their own columns', async () => {
@@ -371,6 +411,16 @@ describe('application field checks', () => {
     expect(written).toMatchObject({ company_name: 'Acme Logistics Pvt Ltd', contact_name: 'Priya Rao' });
   });
 
+  it('does not require entity type, CIN or the authorized signatory for a quick (fleet-size) application', async () => {
+    reset('pending');
+    const res = await request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Acme Logistics Pvt Ltd', contactName: 'Priya Rao', email: 'quick2@northline.example', fleetSize: 'single', truckType: '32ft_sxl',
+    });
+    expect(res.status).toBe(200);
+    const written = supabaseMock.writes('tpl_partners', 'POST')[0].body;
+    expect(written).toMatchObject({ entity_type: null, cin: null, authorized_signatory_name: null });
+  });
+
   it('refuses a quick application missing the contact person even with no PAN yet', async () => {
     reset('pending');
     const res = await request(app).post('/api/v1/tpl/onboard').send({
@@ -378,5 +428,16 @@ describe('application field checks', () => {
     });
     expect(res.status).toBe(400);
     expect(supabaseMock.writes('tpl_partners', 'POST')).toHaveLength(0);
+  });
+
+  it('updateApplication accepts and stores entity type, CIN and the authorized signatory', async () => {
+    reset('pending');
+    const res = await request(app).patch(`/api/v1/tpl/${PID}`).send({
+      verify_pan: 'ABCDE1234F', entityType: 'LLP', cin: 'U74999DL2019PTC654321', authorizedSignatoryName: 'New Signatory',
+    });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0]).toMatchObject({
+      entity_type: 'LLP', cin: 'U74999DL2019PTC654321', authorized_signatory_name: 'New Signatory',
+    });
   });
 });

@@ -3,6 +3,7 @@
  */
 import { z } from 'zod';
 import { ORG_ROLES } from '../core/org-context';
+import { ENTITY_TYPES, isCinFormat } from '../utils/entity-type';
 
 const text = (max: number) => z.string().trim().max(max);
 const optionalText = (max: number) => text(max).transform(v => (v === '' ? null : v)).nullable().optional();
@@ -20,6 +21,9 @@ const details = {
   pincode: z.string().trim().regex(/^[1-9][0-9]{5}$/, 'Pincode must be 6 digits').nullable().optional(),
   phone: optionalText(30),
   email: z.string().trim().toLowerCase().email('Email is not valid').max(255).nullable().optional(),
+  entity_type: z.enum(ENTITY_TYPES).nullable().optional(),
+  cin: z.string().trim().toUpperCase().refine(v => v === '' || isCinFormat(v), 'CIN is not valid (21 letters and digits, for example U74999DL2019PTC123456)').transform(v => (v === '' ? null : v)).nullable().optional(),
+  authorized_signatory_name: optionalText(200),
 };
 
 /** PATCH /org: the details an owner or admin may change. Type and approval are never here. */
