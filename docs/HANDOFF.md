@@ -220,7 +220,8 @@ registry `margixacr7m52h4t5it6og`.
 - Owner configuration still missing: Twilio + Redis (SMS OTP), WhatsApp, TomTom key (route optimisation returns
   502; traffic calls get 401), telematics webhook secret, negotiated company per-km rate card, CA review of GST 2.0 rates (507 rows
   flagged needs_review).
-- Product gaps: a real finance role (finance/dispatcher/ops map to one role) is the only one left open.
+- Product gaps: a real finance/dispatcher/ops split is the only one left open - see `docs/finance-role-options.md`
+  for what each currently does and the options; owner is discussing with the team before deciding.
   Since fixed (17 Oct 2026): `/public/companies`' 200-row scan ran alphabetically BEFORE the city/vehicle_type
   filter, so a company sorting late could be invisible to a real search even if it was the only match - the
   filter now runs in the query itself, before the row cap, not after. `/finance/invoices` and `/finance/expenses`
@@ -247,8 +248,20 @@ registry `margixacr7m52h4t5it6og`.
   approved vendor), and only name/city/coordinates are returned, already pared down with a comment explaining why.
   The real gap was performance - it fetched every approved vendor nationwide before filtering by radius in memory.
   Fixed: a lat/lng bounding box is applied in the query itself before the exact haversine filter runs.)
-- Not yet walked: scheduler jobs (document expiry, driver-without-vehicle, quote escalation), customer-app OTP,
-  driver app on a device, a browser walkthrough of every screen, load testing.
+- Not yet walked (no live/manual walkthrough): customer-app OTP, driver app on a device, a browser walkthrough of
+  every screen, load testing.
+  (Checked 17 Oct 2026: the three scheduler jobs - document expiry, driver-without-vehicle, quote escalation - are
+  NOT an open QA gap the way this line used to imply. All three run from one in-process 60s `setInterval`
+  (`scheduler.service.ts`, started unconditionally in `index.ts` - confirmed wired, not dead code) and all three
+  have real logic-level test coverage, not smoke tests: exact reminder-marker/digest-count assertions, idempotency
+  on a second run, and (for quote escalation) a fast-forwarded scheduler-tick integration test. What the check DID
+  find and fix: `runDocumentExpiryJob`'s staff digest and `promptDriversWithoutVehicle`'s notice both ran outside
+  a request, where `org-scope.ts` has always deliberately left nothing scoped - a pre-multi-tenancy trade-off that
+  became a real cross-tenant leak once there were multiple real companies: both notified every admin/superadmin/
+  manager platform-wide, naming one company's specific driver and documents to every OTHER company's staff too.
+  `escalateQuietLoads` already did this correctly (passes `PLATFORM` to `notifyStaff` explicitly). Fixed the other
+  two the same way - each notified company now gets its own correctly-scoped notification, resolved via the new
+  `operatorOrgsOf` helper (`people-common.ts`) since there's no request context to infer it from outside one.)
 - UI complexity/duplication audit (owner asked to "think on" this; fixed the KYC-review page's duplicate
   `tpl_partners` pending-count query, now sharing `usePendingPartnersCount` with the sidebar badge). Also since
   fixed, as pure visual/structural refactors with zero behaviour change: the vendor (4-step) and 3PL (3-step)
