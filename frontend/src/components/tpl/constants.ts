@@ -9,6 +9,9 @@ export const TAX_TREATMENT_OPTIONS = [
   '5% GTA (No ITC) - Reverse Charge',
 ]
 
+/** MSME registration status on a 3PL application; matches backend TPL_MSME_OPTIONS. */
+export const TPL_MSME_OPTIONS = ['Not Registered', 'Micro', 'Small', 'Medium']
+
 export const CORRIDOR_PRIORITY_OPTIONS = [
   { value: '1', label: 'Priority 1 (first)' },
   { value: '2', label: 'Priority 2' },

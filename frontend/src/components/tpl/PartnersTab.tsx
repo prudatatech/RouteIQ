@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Check, Plus, X } from 'lucide-react'
+import { Check, Plus, UserPlus, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { tplAPI, tplNetworkAPI } from '@/services/api'
@@ -10,6 +10,7 @@ import {
   parseSort, serializeSort, statusToLabel, useConfirm, useRowSelection, useTabParam, useUrlState,
 } from '@/components/ui'
 import MyNetwork from './MyNetwork'
+import { StaffCreateApplicationDrawer } from './StaffCreateApplicationDrawer'
 import { useEffectiveRole } from '@/store/effectiveRole'
 import type { Column } from '@/components/ui'
 import { errorMessage, formatDate, formatMinutes } from '@/utils/display'
@@ -77,6 +78,7 @@ export default function PartnersTab() {
   const [sortParam, setSortParam] = useUrlState('sort')
   const sort = parseSort(sortParam)
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [creatingApplication, setCreatingApplication] = useState(false)
 
   const { data: partners = [], isLoading, error, refetch } = useQuery<TplPartner[]>({
     queryKey: ['tpl-queue', 'all'],
@@ -277,6 +279,11 @@ export default function PartnersTab() {
             ]}
           />
           <Button variant="secondary" icon={<Plus size={16} />} onClick={() => navigate('/3pl/onboard')}>Invite a partner</Button>
+          {canDecide && (
+            <Button variant="secondary" icon={<UserPlus size={16} />} onClick={() => setCreatingApplication(true)}>
+              Enter application for someone
+            </Button>
+          )}
         </div>
       </div>
 
@@ -306,6 +313,14 @@ export default function PartnersTab() {
         <BulkActionBar count={selection.count} onClear={selection.clear}>
           <Button size="sm" disabled={bulkBusy} loading={bulkBusy} onClick={bulkApprove}>Approve selected</Button>
         </BulkActionBar>
+      )}
+
+      {canDecide && (
+        <StaffCreateApplicationDrawer
+          open={creatingApplication}
+          onClose={() => setCreatingApplication(false)}
+          onCreated={refresh}
+        />
       )}
     </div>
   )

@@ -1069,6 +1069,8 @@ export const tplAPI = {
   checkPartner: (data: { user_id?: string; email?: string }): Promise<{ id: string; status: string } | null> =>
     api.post('/tpl/check-partner', data).then(r => r.data),
   onboard: (data: Record<string, unknown>) => api.post('/tpl/onboard', data).then(r => r.data),
+  /** Superadmin only: enters a 3PL application on behalf of someone who phoned/WhatsApp'd their details in, instead of using the public wizard themselves. Same fields as onboard(); no account is linked yet. */
+  adminCreate: (data: Record<string, unknown>) => api.post('/tpl/admin/create', data).then(r => r.data),
   queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),
   /** The partner record linked to this sign-in (the caller's own, or any for staff). */
   byUser: (userId: string) => api.get(`/tpl/by-user/${encodeURIComponent(userId)}`).then(r => r.data),
