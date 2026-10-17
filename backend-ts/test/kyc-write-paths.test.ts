@@ -215,6 +215,42 @@ describe('PUT /vendor/kyc/documents', () => {
   });
 });
 
+describe('PUT /vendor/admin/kyc/applicants/:vendorUserId/documents', () => {
+  // The gap this closes: a KYC entered on an applicant's behalf (POST /vendor/admin/kyc/applicants/create)
+  // can be submitted without every document attached. Approval then fails document validation, and there
+  // is no way back in through self-service upload (it needs the vendor's own session) - this route lets
+  // staff add the missing document directly, reusing the same saveKycDocuments the vendor's own
+  // PUT /vendor/kyc/documents calls, just without the ownership check that scopes that route to the caller.
+  const save = (body: Record<string, unknown>, token = bearer('super-1')) =>
+    request(app).put(`/api/v1/vendor/admin/kyc/applicants/${VENDOR}/documents`).set(token).send(body);
+
+  it('saves a document path for a vendor that is not the caller', async () => {
+    const res = await save({ docUrls: { panCard: `${VENDOR}/panCard_1.pdf` } });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_data).toMatchObject({
+      data: { name: 'Acme', docUrls: { panCard: `${VENDOR}/panCard_1.pdf` } },
+    });
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_status).toBe('submitted');
+  });
+
+  it('still refuses a path outside that vendor folder', async () => {
+    const res = await save({ docUrls: { panCard: 'vendor-2/panCard_1.pdf' } });
+    expect(res.status).toBe(400);
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_data).toMatchObject({ data: { name: 'Acme' } });
+  });
+
+  it('reports an unknown vendor as not found', async () => {
+    const res = await request(app).put('/api/v1/vendor/admin/kyc/applicants/nobody/documents').set(bearer('super-1')).send({ docUrls: {} });
+    expect(res.status).toBe(404);
+  });
+
+  it('is superadmin only', async () => {
+    expect((await request(app).put(`/api/v1/vendor/admin/kyc/applicants/${VENDOR}/documents`).send({ docUrls: {} })).status).toBe(401);
+    expect((await save({ docUrls: {} }, bearer('admin-1'))).status).toBe(403);
+    expect((await save({ docUrls: {} }, bearer(VENDOR))).status).toBe(403);
+  });
+});
+
 describe('vendor form validation', () => {
   const profile = (body: Record<string, unknown>) =>
     request(app).post('/api/v1/vendor/profile').set(bearer(VENDOR)).send(body);

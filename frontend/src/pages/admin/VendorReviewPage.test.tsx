@@ -7,13 +7,22 @@ import type { VendorReview } from '@/components/admin/vendor-review/types'
 
 const api = vi.hoisted(() => ({
   review: vi.fn(), approveKyc: vi.fn(), rejectKyc: vi.fn(), requestKycInfo: vi.fn(), flagKycDocuments: vi.fn(),
+  adminKycUploadUrlFor: vi.fn(), adminSaveKycDocumentsFor: vi.fn(),
 }))
 vi.mock('@/services/api', () => ({ vendorAPI: api }))
 const channel = vi.hoisted(() => ({ on: vi.fn(), subscribe: vi.fn() }))
 channel.on.mockReturnValue(channel)
 channel.subscribe.mockReturnValue(channel)
-vi.mock('@/services/supabase', () => ({ supabase: { removeChannel: vi.fn() }, openChannel: vi.fn(() => channel) }))
-vi.mock('@/services/kycDocuments', () => ({ getKycDocumentUrl: vi.fn().mockResolvedValue('https://signed/doc.pdf') }))
+vi.mock('@/services/supabase', () => ({
+  supabase: { removeChannel: vi.fn(), storage: { from: () => ({ uploadToSignedUrl: vi.fn().mockResolvedValue({ error: null }) }) } },
+  openChannel: vi.fn(() => channel),
+}))
+// uploadKycDocumentFor's own job is to call vendorAPI.adminKycUploadUrlFor with the vendor's id - kept
+// real here (not stubbed) so the test proves that call happens, as EnterVendorKycPage's test does.
+vi.mock('@/services/kycDocuments', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/services/kycDocuments')>()
+  return { ...actual, getKycDocumentUrl: vi.fn().mockResolvedValue('https://signed/doc.pdf') }
+})
 vi.mock('@/components/tpl/GstinStatus', () => ({ GstinStatus: () => null }))
 vi.mock('@/components/ui/DocumentViewerModal', () => ({
   default: ({ isOpen, fileName }: { isOpen: boolean; fileName: string }) => (isOpen ? <div data-testid="viewer">{fileName}</div> : null),
@@ -55,9 +64,13 @@ const show = () => render(
   </QueryClientProvider>,
 )
 
+const file = (name: string) => new File(['x'], name, { type: 'application/pdf' })
+
 beforeEach(() => {
   Object.values(api).forEach(m => m.mockReset())
   api.approveKyc.mockResolvedValue({}); api.rejectKyc.mockResolvedValue({}); api.requestKycInfo.mockResolvedValue({ success: true })
+  api.adminKycUploadUrlFor.mockResolvedValue({ path: 'v1/cancelledCheque_1.pdf', token: 't', signed_url: 'https://signed' })
+  api.adminSaveKycDocumentsFor.mockResolvedValue({})
 })
 afterEach(() => cleanup())
 
@@ -127,6 +140,31 @@ describe('VendorReviewPage', () => {
       expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true)
     }
     expect(screen.getAllByText(/./).some(e => /can decide once|already approved|rejected/i.test(e.textContent ?? ''))).toBe(true)
+  })
+
+  it('lets staff add a document the vendor never uploaded', async () => {
+    api.review.mockResolvedValue(fixture())
+    show()
+    await screen.findByRole('heading', { name: /Acme Traders/ })
+    expect(screen.getByText('Add a missing document')).toBeTruthy()
+
+    const field = screen.getByText('Cancelled cheque').closest('.rounded-card')!
+    const input = field.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [file('cheque.pdf')] } })
+
+    await waitFor(() => expect(api.adminKycUploadUrlFor).toHaveBeenCalledWith('v1', {
+      key: 'cancelledCheque', content_type: 'application/pdf', size: expect.any(Number),
+    }))
+    await waitFor(() => expect(api.adminSaveKycDocumentsFor).toHaveBeenCalledWith('v1', {
+      docUrls: { panScan: 'v1/pan.pdf', cancelledCheque: 'v1/cancelledCheque_1.pdf' },
+    }))
+  })
+
+  it('does not offer the missing-document control once the KYC is approved', async () => {
+    api.review.mockResolvedValue(fixture({ status: 'approved' }))
+    show()
+    await screen.findByRole('heading', { name: /Acme Traders/ })
+    expect(screen.queryByText('Add a missing document')).toBeFalsy()
   })
 
   it('shows a not-found state and an error with retry', async () => {

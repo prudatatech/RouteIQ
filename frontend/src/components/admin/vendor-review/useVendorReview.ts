@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { vendorAPI } from '@/services/api'
+import { uploadKycDocumentFor } from '@/services/kycDocuments'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, isNotFoundError } from '@/utils/display'
 import type { InfoRequestInput } from './types'
@@ -52,5 +53,19 @@ export function useReviewActions(id: string, onDone?: () => void) {
     onError: fail('We could not flag these documents. Try again.'),
     onSettled: refresh,
   })
-  return { approve, reject, askInfo, flagDocuments }
+  // Staff add a document the vendor never uploaded, so an application entered on their behalf
+  // without every document is not stuck forever (approval fails document validation, and
+  // self-service upload needs the vendor's own session). `docUrls` is every currently-uploaded
+  // named document's path - sent back in full since the save endpoint replaces, not merges.
+  const uploadDocument = useMutation({
+    mutationFn: async ({ key, file, docUrls }: { key: string; file: File; docUrls: Record<string, string> }) => {
+      const path = await uploadKycDocumentFor(id, key, file)
+      await vendorAPI.adminSaveKycDocumentsFor(id, { docUrls: { ...docUrls, [key]: path } })
+      return path
+    },
+    onSuccess: () => toast.success('Document uploaded'),
+    onError: fail('We could not upload this document. Try again.'),
+    onSettled: refresh,
+  })
+  return { approve, reject, askInfo, flagDocuments, uploadDocument }
 }

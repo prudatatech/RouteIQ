@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { FileText } from 'lucide-react'
 import { Alert, Button, Card, DetailList, IfscVerifiedHint, StatusPill, Timeline, type TimelineEvent } from '@/components/ui'
+import { DocUploadField } from '@/components/kyc/DocUploadField'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { formatDateTime } from '@/utils/display'
 import { auditActionLabel } from '@/utils/auditLabels'
@@ -137,7 +138,20 @@ function DocButton({ viewer, label, path, id }: { viewer: Viewer; label: string;
   )
 }
 
-export function DocumentsSection({ documents, issues, viewer }: { documents: VendorReview['kyc']['documents']; issues: Record<string, string> | null; viewer: Viewer }) {
+export function DocumentsSection({ documents, issues, viewer, missingNamed, uploadingKey, onUpload }: {
+  documents: VendorReview['kyc']['documents']
+  issues: Record<string, string> | null
+  viewer: Viewer
+  /**
+   * Named documents the vendor never uploaded, that staff can add directly instead of leaving the
+   * KYC permanently stuck (approval fails document validation with no way back in to fix it, since
+   * self-service document upload requires the vendor's own session). Omit (or leave empty) once the
+   * KYC is approved - this is only for getting a stalled application unstuck.
+   */
+  missingNamed?: { key: string; label: string }[]
+  uploadingKey?: string | null
+  onUpload?: (key: string, file: File) => void
+}) {
   return (
     <Section title="Documents">
       {documents.length === 0 ? (
@@ -161,6 +175,29 @@ export function DocumentsSection({ documents, issues, viewer }: { documents: Ven
             )
           })}
         </ul>
+      )}
+      {!!missingNamed?.length && onUpload && (
+        <div className="space-y-3 border-t border-border pt-4">
+          <div>
+            <p className="text-sm font-medium text-text">Add a missing document</p>
+            <p className="text-xs text-muted">
+              Upload it on the vendor&rsquo;s behalf if they could not finish uploading it themselves - e.g. an
+              application entered for them that was submitted before every document was attached.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {missingNamed.map(m => (
+              <DocUploadField
+                key={m.key}
+                label={m.label}
+                busy={uploadingKey === m.key}
+                onUpload={file => onUpload(m.key, file)}
+                onRemove={() => {}}
+                onView={() => {}}
+              />
+            ))}
+          </div>
+        </div>
       )}
     </Section>
   )

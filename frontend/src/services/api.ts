@@ -725,6 +725,11 @@ export const vendorAPI = {
    * (already resolved) account id rather than the caller's. */
   adminKycUploadUrlFor: (vendorUserId: string, data: { key: string; content_type: string; size: number }): Promise<{ path: string; token: string; signed_url: string }> =>
     api.post(`/vendor/admin/kyc/applicants/${encodeURIComponent(vendorUserId)}/upload-url`, data).then(r => r.data),
+  /** Staff only: saves a document path uploaded for a vendor whose KYC is already submitted (or
+   * rejected/info-requested) but missing a document - e.g. one skipped mid-wizard by whoever entered
+   * it on the applicant's behalf. Same shape as the self-service saveKycDocuments above. */
+  adminSaveKycDocumentsFor: (vendorUserId: string, data: { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] }) =>
+    api.put(`/vendor/admin/kyc/applicants/${encodeURIComponent(vendorUserId)}/documents`, data).then(r => r.data),
   /** Staff only: submits a phoned-in applicant's KYC, in the same shape as submitKyc, plus the
    * applicant's email (and optional name) so their account can be found or invited. */
   adminCreateKycOnBehalf: (data: Record<string, unknown> & { email: string; full_name?: string }) =>

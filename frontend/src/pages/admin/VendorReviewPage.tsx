@@ -70,7 +70,7 @@ function ReviewView({ id, data }: { id: string; data: VendorReview }) {
   const [askOpen, setAskOpen] = useState(false)
   const [flagOpen, setFlagOpen] = useState(false)
   const viewer = useDocumentViewer()
-  const { approve, reject, askInfo, flagDocuments } = useReviewActions(id, () => { setAskOpen(false); setFlagOpen(false) })
+  const { approve, reject, askInfo, flagDocuments, uploadDocument } = useReviewActions(id, () => { setAskOpen(false); setFlagOpen(false) })
   const { account, business, kyc } = data
   const name = business?.business_name || kyc.form?.name || account.full_name || 'Unnamed vendor'
   const canDecide = kyc.status === 'submitted'
@@ -82,6 +82,13 @@ function ReviewView({ id, data }: { id: string; data: VendorReview }) {
   const flaggableDocuments = Object.entries(NAMED_DOCUMENT_LABELS).map(([key, label]) => (
     uploadedByKey.get(key) ?? { key, label: `${label} (not uploaded)` }
   ))
+  // Named documents never uploaded, offered for staff to add directly once the KYC is anything but
+  // approved - the gap that otherwise leaves an application permanently stuck (e.g. one entered on
+  // the applicant's behalf without every document attached).
+  const missingNamedDocuments = kyc.status === 'approved'
+    ? []
+    : Object.entries(NAMED_DOCUMENT_LABELS).filter(([key]) => !uploadedByKey.has(key)).map(([key, label]) => ({ key, label }))
+  const existingDocUrls = Object.fromEntries(namedDocuments.map(d => [d.key, d.path]))
 
   const doApprove = async () => {
     const ok = await confirm({
@@ -134,7 +141,14 @@ function ReviewView({ id, data }: { id: string; data: VendorReview }) {
         <BusinessSection business={business} />
       </div>
       <KycFormSection form={kyc.form} ifscVerifiedAt={kyc.ifsc_verified_at} />
-      <DocumentsSection documents={kyc.documents} issues={kyc.document_issues} viewer={viewer} />
+      <DocumentsSection
+        documents={kyc.documents}
+        issues={kyc.document_issues}
+        viewer={viewer}
+        missingNamed={missingNamedDocuments}
+        uploadingKey={uploadDocument.isPending ? uploadDocument.variables?.key ?? null : null}
+        onUpload={(key, file) => uploadDocument.mutate({ key, file, docUrls: existingDocUrls })}
+      />
       <RequestsSection requests={data.info_requests} viewer={viewer} />
       <ActivitySection activity={data.activity} />
       <HistorySection history={data.history} />

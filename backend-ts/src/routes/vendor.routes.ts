@@ -426,6 +426,18 @@ router.post('/admin/kyc/applicants/:vendorUserId/upload-url', requireAuth, requi
   }
 });
 
+// Saves a document path staff uploaded for an applicant whose KYC is already stuck mid-review (e.g.
+// it was submitted without every required document) - reuses the exact self-service saveKycDocuments,
+// just without the ownership check self-service's PUT /vendor/kyc/documents applies.
+router.put('/admin/kyc/applicants/:vendorUserId/documents', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
+  try {
+    const input = parseBody(KycDocumentsSchema, req.body);
+    res.json(await vendorService.saveKycDocuments(req.params.vendorUserId, input));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // Staff enters a vendor's KYC on behalf of an applicant who phoned/WhatsApp'd their details in; goes through the same review queue
 router.post('/admin/kyc/applicants/create', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
   try {
