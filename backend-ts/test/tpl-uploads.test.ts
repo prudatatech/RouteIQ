@@ -99,9 +99,16 @@ describe('POST /tpl/applications/upload-url', () => {
       expect(supabaseMock.signedUploads).toEqual([]);
     });
 
-    it('refuses PAN-only uploads once the application is no longer pending', async () => {
+    it('refuses PAN-only uploads once the application is no longer pending or rejected', async () => {
       supabaseMock.rows('tpl_partners')[0].status = 'approved';
       expect((await uploadUrl({ ...existing, verify_pan: 'ABCDE1234F' })).status).toBe(409);
+    });
+
+    it('lets the applicant upload a replacement while the application is rejected, to fix and resubmit', async () => {
+      supabaseMock.rows('tpl_partners')[0].status = 'rejected';
+      const res = await uploadUrl({ ...existing, verify_pan: 'ABCDE1234F' });
+      expect(res.status).toBe(200);
+      expect(res.body.path.startsWith(`${PARTNER.id}/`)).toBe(true);
     });
   });
 });
@@ -207,17 +214,19 @@ describe('attaching uploaded documents', () => {
 
   it('resubmitting a rejected application puts it back to pending and clears the reason and every flag', async () => {
     supabaseMock.reset({
-      users: [{ id: 'partner-user', role: 'vendor', is_active: true }],
+      users: [{ id: 'partner-user', role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
       vendor_profiles: [],
       tpl_partners: [{ ...PARTNER, status: 'rejected', rejection_reason: 'PAN mismatch', document_issues: { 'PAN Card': 'Blurry scan' } }],
       tpl_documents: [{ id: 'doc-1', partner_id: PARTNER.id, file_url: 'acme_3pl/pan_card_old.pdf', doc_type: 'PAN Card' }],
       tpl_corridors: [],
     });
-    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`).send({
-      verify_pan: 'ABCDE1234F',
-      companyName: 'Acme',
-      documents: [{ type: 'PAN Card', url: `${PARTNER.id}/pan_card_new.pdf` }],
-    });
+    // Staff auth, not verify_pan: the PAN check has its own rate limit, already exercised above in this file.
+    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`)
+      .set('Authorization', `Bearer ${supabaseMock.signUserToken('super-1')}`)
+      .send({
+        companyName: 'Acme',
+        documents: [{ type: 'PAN Card', url: `${PARTNER.id}/pan_card_new.pdf` }],
+      });
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('tpl_partners')[0]).toMatchObject({ status: 'pending', rejection_reason: null, document_issues: null });
   });

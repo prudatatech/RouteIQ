@@ -704,14 +704,22 @@ export const vendorService = {
     // Re-uploading a document clears its own flag, even without a full resubmit:
     // the vendor should not have to redo every field just to fix one flagged document.
     const existingIssues = (profile.kyc_document_issues ?? null) as Record<string, string> | null;
+    let allFlagsCleared = false;
     if (existingIssues && input.docUrls) {
       const changedKeys = Object.keys(input.docUrls).filter(k => input.docUrls![k] !== previousUrls[k]);
       if (changedKeys.some(k => existingIssues[k])) {
         const remaining = { ...existingIssues };
         for (const k of changedKeys) delete remaining[k];
-        changes.kyc_document_issues = Object.keys(remaining).length > 0 ? remaining : null;
+        const stillOutstanding = Object.keys(remaining).length > 0;
+        changes.kyc_document_issues = stillOutstanding ? remaining : null;
+        allFlagsCleared = !stillOutstanding;
       }
     }
+    // Every flagged document is now fixed: back to the review queue, the same way answering
+    // the last open "more info" request does. Without this the KYC is stuck in info_requested
+    // forever - respond() only clears a kyc_info_requests row, which flagDocumentIssues never makes.
+    const returnsToReview = allFlagsCleared && profile.kyc_status === 'info_requested';
+    if (returnsToReview) Object.assign(changes, { kyc_status: 'submitted' });
 
     const { data, error } = await supabase
       .from('vendor_profiles')
@@ -721,7 +729,7 @@ export const vendorService = {
       .single();
     if (error) throw new Error(error.message);
 
-    if (backToReview) {
+    if (backToReview || returnsToReview) {
       try {
         await notificationService.notifySuperAdmins(
           'KYC submitted',

@@ -10,7 +10,12 @@ import { errorMessage } from '@/utils/display'
 import { getKycDocumentUrl, uploadOrgKycDocument } from '@/services/kycDocuments'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { ORG_KYC_DOCUMENTS } from '@/utils/platformOrgs'
+import { gstinError } from '@/utils/gstin'
 import type { IfscDetails } from '@/services/api'
+
+const PAN_PATTERN = /^[A-Z]{5}\d{4}[A-Z]$/
+const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/
+const ACCOUNT_PATTERN = /^\d{9,18}$/
 
 /** A pending logistic company completes its KYC: GSTIN/PAN, bank account and the documents a reviewer checks. */
 export default function CompanyKycPage() {
@@ -30,6 +35,7 @@ export default function CompanyKycPage() {
   const [uploadingKey, setUploadingKey] = useState<string | null>(null)
   const [viewer, setViewer] = useState<{ url: string; name: string } | null>(null)
   const [loadedOnce, setLoadedOnce] = useState(false)
+  const [attemptedSubmit, setAttemptedSubmit] = useState(false)
 
   useEffect(() => {
     if (!profile.data || loadedOnce) return
@@ -105,6 +111,23 @@ export default function CompanyKycPage() {
   const submitted = !!profile.data?.kyc_submitted_at
   const missingDocs = ORG_KYC_DOCUMENTS.filter(d => !docUrls[d.key])
 
+  const fieldErrors: Record<string, string> = {}
+  if (!gstin.trim()) fieldErrors.gstin = 'Enter the company GSTIN'
+  else { const g = gstinError(gstin, pan); if (g) fieldErrors.gstin = g }
+  if (!pan.trim()) fieldErrors.pan = 'Enter the company PAN'
+  else if (!PAN_PATTERN.test(pan.trim())) fieldErrors.pan = 'PAN looks incorrect (e.g. AAAAA0000A)'
+  if (!bankAccountNo.trim()) fieldErrors.bankAccountNo = 'Enter the bank account number'
+  else if (!ACCOUNT_PATTERN.test(bankAccountNo.trim())) fieldErrors.bankAccountNo = 'Account number must be 9 to 18 digits'
+  if (!bankIfsc.trim()) fieldErrors.bankIfsc = 'Enter the IFSC code'
+  else if (!IFSC_PATTERN.test(bankIfsc.trim())) fieldErrors.bankIfsc = 'IFSC has 11 characters: 4 letters, a 0, then 6 letters or digits'
+  const canSubmit = Object.keys(fieldErrors).length === 0 && missingDocs.length === 0
+  const err = (key: string) => (attemptedSubmit ? fieldErrors[key] : undefined)
+
+  const trySubmit = () => {
+    setAttemptedSubmit(true)
+    if (canSubmit) submit.mutate()
+  }
+
   return (
     <Page width="form">
       <PageHeader
@@ -127,16 +150,16 @@ export default function CompanyKycPage() {
         <div>
           <p className="mb-3 text-sm font-medium text-text">Company details</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input label="GSTIN" value={gstin} onChange={e => setGstin(e.target.value.toUpperCase())} maxLength={15} inputClassName="uppercase" />
-            <Input label="PAN" value={pan} onChange={e => setPan(e.target.value.toUpperCase())} maxLength={10} inputClassName="uppercase" />
+            <Input label="GSTIN" value={gstin} onChange={e => setGstin(e.target.value.toUpperCase())} maxLength={15} inputClassName="uppercase" error={err('gstin')} />
+            <Input label="PAN" value={pan} onChange={e => setPan(e.target.value.toUpperCase())} maxLength={10} inputClassName="uppercase" error={err('pan')} />
           </div>
         </div>
 
         <div>
           <p className="mb-3 text-sm font-medium text-text">Bank details</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input label="Bank account number" value={bankAccountNo} onChange={e => setBankAccountNo(e.target.value.replace(/\D/g, '').slice(0, 18))} inputMode="numeric" hint="9 to 18 digits" />
-            <IfscField label="IFSC code" value={bankIfsc} onChange={setBankIfsc} onResolved={setIfscInfo} className="sm:col-span-2" />
+            <Input label="Bank account number" value={bankAccountNo} onChange={e => setBankAccountNo(e.target.value.replace(/\D/g, '').slice(0, 18))} inputMode="numeric" hint="9 to 18 digits" error={err('bankAccountNo')} />
+            <IfscField label="IFSC code" value={bankIfsc} onChange={setBankIfsc} onResolved={setIfscInfo} error={err('bankIfsc')} className="sm:col-span-2" />
             <Input label="Bank name" value={bankName || ifscInfo?.bank || ''} onChange={e => setBankName(e.target.value)} className="sm:col-span-2" />
           </div>
           <Button className="mt-3" variant="secondary" size="sm" loading={saveDetails.isPending} onClick={() => saveDetails.mutate()}>Save details</Button>
@@ -162,11 +185,14 @@ export default function CompanyKycPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
-          <Button loading={submit.isPending} onClick={() => submit.mutate()}>
+          <Button loading={submit.isPending} onClick={trySubmit}>
             {active.org.status === 'rejected' ? 'Resubmit for review' : 'Submit for review'}
           </Button>
-          {missingDocs.length > 0 && <p className="text-xs text-muted">Still needed: {missingDocs.map(d => d.label).join(', ')}</p>}
+          {missingDocs.length > 0 && <p className="text-xs text-muted">Documents still needed: {missingDocs.map(d => d.label).join(', ')}</p>}
         </div>
+        {attemptedSubmit && !canSubmit && missingDocs.length === 0 && (
+          <Alert tone="danger" title="Fix the highlighted fields before submitting" />
+        )}
       </Card>
 
       {viewer && <DocumentViewerModal isOpen onClose={() => setViewer(null)} fileUrl={viewer.url} fileName={viewer.name} />}

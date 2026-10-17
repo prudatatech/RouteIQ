@@ -156,7 +156,7 @@ router.post('/onboard', rateLimitByIp('tpl-onboard', 20, 60 * 60), async (req, r
 // POST /api/v1/tpl/applications/upload-url — signed URL to upload one document.
 // New application: { custom_id, doc_type, content_type, size }.
 // Existing one: { application_id, doc_type, content_type, size } as staff or the
-// partner, or with verify_pan while the application is pending.
+// partner, or with verify_pan while the application is pending or rejected (fixing a flagged document resubmits it).
 router.post('/applications/upload-url', rateLimitByIp('tpl-upload-url', settings.TPL_UPLOAD_URLS_PER_HOUR, 60 * 60), ...optionalOrgAuth, async (req, res) => {
   try {
     const { application_id, custom_id, doc_type, content_type, size, verify_pan } = req.body ?? {};
@@ -167,7 +167,7 @@ router.post('/applications/upload-url', rateLimitByIp('tpl-upload-url', settings
       const owner = (await actsAsPlatform(req)) || (!!req.user && partner.user_id === req.user.user_id);
       if (!owner) {
         if (!(await panMatches(req, partner, verify_pan))) throw new HttpError(403, 'PAN does not match this application');
-        if (partner.status !== 'pending') throw new HttpError(409, 'Only pending applications can be edited');
+        if (!['pending', 'rejected'].includes(partner.status)) throw new HttpError(409, 'Only a pending or rejected application can be edited');
       }
       partnerId = partner.id;
     }

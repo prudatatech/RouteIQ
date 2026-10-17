@@ -97,6 +97,13 @@ export default function VehicleApprovalScreen({ registration, view, refreshing, 
           </View>
         ) : null}
 
+        {view === 'pending' && vehicle.document_issues && Object.keys(vehicle.document_issues).length > 0 ? (
+          <View style={styles.gap}>
+            <ErrorBanner message={t('vehicle_document_issue_banner')} />
+            <Button title={t('vehicle_edit_details')} onPress={onEdit} />
+          </View>
+        ) : null}
+
         {view !== 'approved' ? (
           <>
             <View style={styles.gap}>

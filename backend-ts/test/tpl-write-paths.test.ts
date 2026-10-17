@@ -154,6 +154,19 @@ describe('staff decisions on partners', () => {
   const act = (verb: string, token = bearer('super-1'), body?: Record<string, unknown>) =>
     request(app).post(`/api/v1/tpl/${verb}`).set(token).send(body ?? {});
 
+  it('refuses to approve an application with an unresolved flagged document', async () => {
+    reset('pending', { document_issues: { 'PAN Card': 'Blurry scan' } });
+    const res = await act(`approve/${PID}`);
+    expect(res.status).toBe(409);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('pending');
+  });
+
+  it('clears document_issues on approval, even if somehow left over', async () => {
+    reset('pending', { document_issues: null });
+    expect((await act(`approve/${PID}`)).status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].document_issues).toBeNull();
+  });
+
   it('approves only a pending partner, tells them and audits it', async () => {
     reset('pending');
     const res = await act(`approve/${PID}`);

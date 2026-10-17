@@ -167,9 +167,13 @@ describe('PUT /vendor/kyc/documents', () => {
     expect(supabaseMock.rows('vendor_profiles')[0].kyc_document_issues).toEqual({ gstRegistration: 'Expired certificate' });
   });
 
-  it('clears kyc_document_issues entirely once every flagged document has been replaced', async () => {
+  it('clears kyc_document_issues entirely once every flagged document has been replaced, and returns to review', async () => {
+    // Regression: info_requested had no way back once every flag was fixed through a per-document
+    // save rather than the full wizard - respond() needs an open kyc_info_requests row (flagDocumentIssues
+    // never makes one) and submitKyc needs the whole form resubmitted. The vendor and staff were both
+    // stuck: no decision button worked for staff, and the vendor had no "this is done" signal either.
     supabaseMock.reset({
-      users: [{ id: VENDOR, role: 'vendor', is_active: true }],
+      users: [{ id: VENDOR, role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
       vendor_profiles: [{
         id: VENDOR,
         company_name: 'Acme Logistics',
@@ -182,7 +186,32 @@ describe('PUT /vendor/kyc/documents', () => {
     });
     const res = await save({ docUrls: { panCard: `${VENDOR}/panCard_new.pdf` } });
     expect(res.status).toBe(200);
-    expect(supabaseMock.rows('vendor_profiles')[0].kyc_document_issues).toBeNull();
+    const row = supabaseMock.rows('vendor_profiles')[0];
+    expect(row.kyc_document_issues).toBeNull();
+    expect(row.kyc_status).toBe('submitted');
+    const notes = supabaseMock.writes('notifications', 'POST').map(w => w.body.user_id);
+    expect(notes).toEqual(['super-1']);
+  });
+
+  it('does not touch kyc_status when a flag is cleared but others remain outstanding', async () => {
+    supabaseMock.reset({
+      users: [{ id: VENDOR, role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
+      vendor_profiles: [{
+        id: VENDOR,
+        company_name: 'Acme Logistics',
+        kyc_status: 'info_requested',
+        kyc_data: { data: { name: 'Acme', docUrls: { panCard: `${VENDOR}/panCard_old.pdf`, gstRegistration: `${VENDOR}/gst_old.pdf` } }, otherDocs: [] },
+        kyc_document_issues: { panCard: 'Blurry scan', gstRegistration: 'Expired certificate' },
+      }],
+      notifications: [],
+      ai_agent_logs: [],
+    });
+    const res = await save({ docUrls: { panCard: `${VENDOR}/panCard_new.pdf`, gstRegistration: `${VENDOR}/gst_old.pdf` } });
+    expect(res.status).toBe(200);
+    const row = supabaseMock.rows('vendor_profiles')[0];
+    expect(row.kyc_status).toBe('info_requested');
+    expect(row.kyc_document_issues).toEqual({ gstRegistration: 'Expired certificate' });
+    expect(supabaseMock.writes('notifications', 'POST')).toHaveLength(0);
   });
 });
 

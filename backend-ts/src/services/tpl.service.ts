@@ -486,9 +486,12 @@ export const tplService = {
       .maybeSingle();
     if (fetchErr) throw new Error(`Failed to fetch partner: ${fetchErr.message}`);
     if (!partner) throw new HttpError(404, 'Partner not found');
+    if (partner.document_issues && Object.keys(partner.document_issues).length > 0) {
+      throw new HttpError(409, 'This application still has a flagged document waiting on the applicant to fix');
+    }
 
     const updates = partner.pending_updates;
-    const partnerUpdates: Record<string, unknown> = { status: 'active', pending_updates: null, rejection_reason: null };
+    const partnerUpdates: Record<string, unknown> = { status: 'active', pending_updates: null, rejection_reason: null, document_issues: null };
     if (updates) {
       if (updates.sla_commitment) partnerUpdates.sla_commitment = updates.sla_commitment;
       if (updates.tax_treatment) partnerUpdates.tax_treatment = updates.tax_treatment;
