@@ -205,7 +205,45 @@ router.get('/companies', rateLimitByIp('public-companies', 60, 60), async (req: 
   try {
     const q = CompaniesQuery.safeParse(req.query);
     if (!q.success) return badRequest(res, q.error);
-    const activeCompanies = (qb: any) => qb.eq('kind', 'logistic_company').eq('status', 'active');
+    const { city, vehicle_type } = q.data;
+
+    // City/vehicle-type have to narrow the candidate ids *before* `.limit(COMPANY_SCAN)` runs below -
+    // otherwise the alphabetical scan can exhaust its 200 rows on companies that don't match before the
+    // filter ever sees them, making a company whose name sorts late invisible for a city (or vehicle type)
+    // it's the only company serving. That means resolving the match against the *whole* active population,
+    // not just the scanned page. PostgREST `ilike` would do this in one query, but the project's mock
+    // Supabase test client doesn't implement it (see services/search.service.ts), so - as elsewhere in this
+    // codebase - the candidate set is fetched in full (id + city only, cheap) and matched with the same
+    // `sameText` normalisation the final response filter uses, then narrowed with `.in('id', ...)`.
+    let candidateIds: string[] | null = null;
+    if (city) {
+      const { data: all, error: cityErr } = await supabase
+        .from('organizations').select('id, city').eq('kind', 'logistic_company').eq('status', 'active');
+      if (cityErr) throw new Error(`Failed to read companies: ${cityErr.message}`);
+      candidateIds = ((all ?? []) as any[]).filter(o => sameText(o.city, city)).map(o => o.id as string);
+    }
+    if (vehicle_type) {
+      let scope: string[] = candidateIds ?? [];
+      if (candidateIds === null) {
+        const { data: all, error: allErr } = await supabase
+          .from('organizations').select('id').eq('kind', 'logistic_company').eq('status', 'active');
+        if (allErr) throw new Error(`Failed to read companies: ${allErr.message}`);
+        scope = ((all ?? []) as any[]).map(o => o.id as string);
+      }
+      const vehicles = await selectIn<any>('vehicles', 'carrier_org_id', scope, 'carrier_org_id, vehicle_type, status');
+      const matching = new Set(vehicles.filter(v => v.status !== 'archived' && v.status !== 'pending_approval' && sameText(v.vehicle_type, vehicle_type)).map(v => v.carrier_org_id));
+      candidateIds = scope.filter(id => matching.has(id));
+    }
+    if (candidateIds && candidateIds.length === 0) {
+      res.set('Cache-Control', PUBLIC_CACHE);
+      return void res.json({ items: [], truncated: false });
+    }
+
+    const activeCompanies = (qb: any) => {
+      let query = qb.eq('kind', 'logistic_company').eq('status', 'active');
+      if (candidateIds) query = query.in('id', candidateIds);
+      return query;
+    };
     const [{ data, error }, totalActive] = await Promise.all([
       activeCompanies(supabase.from('organizations').select('id, name, city')).order('name', { ascending: true }).limit(COMPANY_SCAN),
       count('organizations', activeCompanies),
