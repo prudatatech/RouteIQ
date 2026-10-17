@@ -27,7 +27,7 @@ registry `margixacr7m52h4t5it6og`.
 | API | https://staging-api.margixindia.com/api/v1 | https://api.margixindia.com/api/v1 |
 | Data (auth/rest/storage gateway) | https://staging-data.margixindia.com | https://data.margixindia.com |
 | Container apps | `margix-test-*` | `margix-*` |
-| Postgres Flexible Server | `margix-test-pg` (B1ms) | `margix-pg` (B2s) |
+| Postgres Flexible Server | `margix-test-pg` (B1ms) | `margix-pg` (B1ms) |
 
 - Self-hosted Supabase-style platform per stage (`infra/platform.bicep`, `infra/platform.sh`): gateway (Kong),
   auth (GoTrue), rest (PostgREST), rt (Realtime), storage (storage-api) + s3proxy to Azure Blob.
@@ -116,6 +116,18 @@ registry `margixacr7m52h4t5it6og`.
   companies on the lane; high priority notifies the biggest networks first (own + affiliated 3PL vehicles). N2
   replaces this scorer with carrier scores. (`docs/order-routing.md`)
 - Realtime change feeds cannot run on Azure Postgres (needs a superuser-only setting); the web polls instead.
+- Cost audit (17 Oct 2026): the live Postgres Flexible Server (`margix-pg`) was ~42% of the resource group's
+  monthly Azure bill on its own - almost entirely Burstable B2s compute hours (99% of that line item; storage/IOPS
+  were trivial), not a storage or backup problem. 14-day metrics showed 5% avg CPU, 35% avg memory, ~23 avg
+  connections - well within `Standard_B1MS` (the same SKU the test server already runs on). Resized `margix-pg`
+  from B2s to B1ms (owner ran it; brief restart, verified healthy after with a live `/health` call and a real
+  PostgREST query against the resized server) - expected to cut that line item by roughly 75%. Reserved/savings-plan
+  pricing is not available for the Burstable tier at all (checked Azure's retail pricing API directly), so
+  right-sizing was the only lever. Also found and deleted an orphaned third Postgres server
+  (`margix-pg-922026946`, B1ms/PG16, zero connections for 7+ days, not referenced by any app or IaC file) - almost
+  certainly a leftover from a past major-version upgrade that never got cleaned up. If performance regresses on
+  B1ms under real traffic, the fix is `az postgres flexible-server update -g margix-rg -n margix-pg --sku-name
+  Standard_B2s --tier Burstable` (same brief-restart trade-off in reverse).
 
 ## 4. Azure pitfalls (each broke something once)
 - Staging was reset on 4 Oct at the owner's request: operational test records cleared; six existing demo accounts
