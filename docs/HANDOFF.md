@@ -161,6 +161,29 @@ registry `margixacr7m52h4t5it6og`.
     thin wrapper over the already-generic `saveKycDocuments`); `RegisterCompanyModal.tsx` can now be reopened in a
     "resume" mode for an existing not-yet-submitted company (a "Finish registration" button in `OrganisationsPage.tsx`'s
     `OrgDrawer`), since that modal creates the org before documents, so closing early stranded it the same way.
+- UI/UX pass (owner asked to improve the landing page and "all other screens"; scoped to four buckets, all shipped):
+  - **Landing page**: added a factual "How it works" 3-step section (post a load -> a company books it at the
+    recommended price -> track to delivery) before the audience picker, so a first-time visitor understands the one
+    real flow before choosing which of the four cards is them. No fabricated claims (testimonials/pricing/logos were
+    deliberately not added - this app has none of that to show truthfully, and inventing it would violate the no-
+    mock-data rule).
+  - **Nav/IA**: the eleven-section menu (`config/navigation.ts`) is now nine - Shipments folded into Dispatch as a
+    child link, Reports folded into Money the same way; neither page moved, only where the menu points changed.
+    Also renamed Dispatch's "Optimize"/"Plan a trip" to "Auto-assign trips"/"Plan a trip by hand" so the automatic
+    and manual planning tools read as different things at a glance.
+  - **Onboarding**: `CompanyKycPage.tsx` (self-serve logistic-company KYC) now shows the same `Stepper` vendor/3PL
+    onboarding already had - it was a flat form with no stage concept, so the three stages were named from its own
+    existing section headings (Company details / Bank details / Documents); nothing about validation or field order
+    changed.
+  - **Dashboards**: fixed three concrete issues an audit found (not cosmetic guesses - grounded in the actual
+    conditional-rendering code): `TodayPage.tsx`'s subtitle promises "most urgent first" but the Fleet-attention
+    card sat second-to-last on the page, below stats/queues/Direct Load Allocation - moved up, and five queries
+    (vehicles, fleetAlarms, insights, peopleAttention, driverActions) that had NO loading or error UI (a slow or
+    failed fetch looked exactly like "nothing to show") now get real skeletons and `ErrorState`+retry.
+    `VendorLoadsPage.tsx` hid its search box until more than 6 loads, unlike Fleet/Trips which always show it - now
+    always shown. The 3PL portal's orders tab (`TplOrdersTab.tsx`) showed one combined error screen if EITHER its
+    offers or orders query failed, hiding whichever one actually succeeded - now each section has its own
+    error+retry, independent of the other.
 
 ## 4. Azure pitfalls (each broke something once)
 - PostgREST (`margix-rest` / `margix-test-rest`) caches the database schema at startup and never notices a
