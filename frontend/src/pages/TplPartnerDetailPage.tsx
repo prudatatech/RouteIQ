@@ -2,7 +2,7 @@ import { errorMessage, formatDateTime } from '@/utils/display'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, Download, FileText, ShieldCheck, Zap } from 'lucide-react'
+import { Building2, Download, FileText, FlagTriangleRight, ShieldCheck, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { useEffectiveRole } from '@/store/effectiveRole'
@@ -16,6 +16,7 @@ import { TplPartnerPerformance } from '@/components/tpl/TplPartnerPerformance'
 import { corridorRateText, rateText, type RateUnit } from '@/components/tpl/constants'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
+import { FlagDocumentsModal } from '@/components/admin/FlagDocumentsModal'
 
 interface TplDocument { id: string; doc_type: string; file_url: string }
 interface TplCorridor { id: string; corridor_name: string; vehicle_types: string[] | null; proposed_rate: string | null; rate_amount?: number | null; rate_unit?: RateUnit | null; priority: number | null }
@@ -45,6 +46,7 @@ interface TplPartnerDetail {
   bank_ifsc_verified_at?: string | null
   tpl_documents?: TplDocument[]
   tpl_corridors?: TplCorridor[]
+  document_issues?: Record<string, string> | null
   pending_updates?: PendingUpdates | null
   fleet_size?: string | null
   truck_type?: string | null
@@ -126,6 +128,7 @@ export default function TplPartnerDetailPage() {
   // Admins can view a partner; only a superadmin approves, rejects, pauses or deletes (the API says the same)
   const canDecide = useEffectiveRole().role === 'superadmin'
   const [preview, setPreview] = useState<{ url: string, name: string } | null>(null)
+  const [flagOpen, setFlagOpen] = useState(false)
 
   const { data: partner, isLoading, error, refetch } = useQuery<TplPartnerDetail>({
     queryKey: ['tpl-partner', id],
@@ -153,6 +156,16 @@ export default function TplPartnerDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
     },
     onError: (err: unknown) => toast.error(errorMessage(err, 'We could not reject this application. Try again.')),
+  })
+
+  const flagDocuments = useMutation({
+    mutationFn: (issues: Record<string, string>) => tplAPI.flagDocuments(id!, issues),
+    onSuccess: () => {
+      toast.success('The applicant has been told which documents to fix.')
+      setFlagOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
+    },
+    onError: (err: unknown) => toast.error(errorMessage(err, 'We could not flag these documents. Try again.')),
   })
 
   const togglePause = useMutation({
@@ -296,21 +309,26 @@ export default function TplPartnerDetailPage() {
                 <EmptyState compact title="No documents uploaded" />
               ) : (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {partner.tpl_documents.map(doc => (
-                    <button
-                      key={doc.id}
-                      type="button"
-                      onClick={() => viewDocument(doc)}
-                      className="flex items-center gap-3 rounded-control border border-border p-3 text-left hover:bg-surface-subtle"
-                    >
-                      <FileText size={20} className="shrink-0 text-brand" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-text">{humanize(doc.doc_type)}</span>
-                        <span className="block text-xs text-muted">View document</span>
-                      </span>
-                      <Download size={14} className="shrink-0 text-muted" />
-                    </button>
-                  ))}
+                  {partner.tpl_documents.map(doc => {
+                    const issue = partner.document_issues?.[doc.doc_type]
+                    return (
+                      <div key={doc.id} className={`rounded-control border p-3 ${issue ? 'border-warning bg-warning/5' : 'border-border'}`}>
+                        <button type="button" onClick={() => viewDocument(doc)} className="flex w-full items-center gap-3 text-left">
+                          <FileText size={20} className="shrink-0 text-brand" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-text">{humanize(doc.doc_type)}</span>
+                            <span className="block text-xs text-muted">View document</span>
+                          </span>
+                          <Download size={14} className="shrink-0 text-muted" />
+                        </button>
+                        {issue && (
+                          <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
+                            <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {issue}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -385,6 +403,9 @@ export default function TplPartnerDetailPage() {
               : 'Review the KYC documents and operational terms above before approving or rejecting this application.'}
           </p>
           <div className="flex shrink-0 gap-3">
+            {!partner.pending_updates && (
+              <Button variant="secondary" icon={<FlagTriangleRight size={16} />} disabled={busy} onClick={() => setFlagOpen(true)}>Flag documents</Button>
+            )}
             <Button variant="danger" disabled={busy} onClick={handleReject}>Reject</Button>
             <Button loading={approve.isPending} disabled={busy} onClick={handleApprove}>
               {partner.pending_updates ? 'Approve updates' : 'Approve partner'}
@@ -416,6 +437,16 @@ export default function TplPartnerDetailPage() {
 
       {preview && (
         <DocumentViewerModal isOpen={!!preview} onClose={() => setPreview(null)} fileUrl={preview.url} fileName={preview.name} />
+      )}
+      {flagOpen && (
+        <FlagDocumentsModal
+          open entityName={partner.company_name}
+          documents={(partner.tpl_documents ?? []).map(d => ({ key: d.doc_type, label: humanize(d.doc_type) }))}
+          noneUploadedLabel="This applicant has not uploaded any documents yet."
+          busy={flagDocuments.isPending}
+          onClose={() => setFlagOpen(false)}
+          onSubmit={issues => flagDocuments.mutate(issues)}
+        />
       )}
     </Page>
   )

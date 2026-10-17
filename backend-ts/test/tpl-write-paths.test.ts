@@ -258,6 +258,43 @@ describe('staff decisions on partners', () => {
   });
 });
 
+describe('PUT /tpl/:id/flag-documents', () => {
+  const flag = (issues: Record<string, string>, token = bearer('super-1')) =>
+    request(app).put(`/api/v1/tpl/${PID}/flag-documents`).set(token).send({ issues });
+
+  it('flags a document, notifies the applicant and audits it', async () => {
+    reset('pending');
+    const res = await flag({ 'PAN Card': 'Blurry scan' });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].document_issues).toEqual({ 'PAN Card': 'Blurry scan' });
+    expect(supabaseMock.writes('notifications', 'POST')[0].body).toMatchObject({ user_id: 'partner-user', type: 'tpl_document_flagged' });
+    expect(supabaseMock.writes('ai_agent_logs', 'POST')[0].body).toMatchObject({ action: 'tpl_document_flagged' });
+  });
+
+  it('is additive across calls', async () => {
+    reset('pending', { document_issues: { 'PAN Card': 'Blurry scan' } });
+    expect((await flag({ 'GST Certificate': 'Expired' })).status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].document_issues).toEqual({ 'PAN Card': 'Blurry scan', 'GST Certificate': 'Expired' });
+  });
+
+  it('refuses an application that is not pending', async () => {
+    reset('active');
+    expect((await flag({ 'PAN Card': 'Blurry scan' })).status).toBe(409);
+  });
+
+  it('refuses an unknown document type or a reason that is too short', async () => {
+    reset('pending');
+    expect((await flag({ 'Not A Real Doc': 'bad document' })).status).toBe(400);
+    expect((await flag({ 'PAN Card': 'x' })).status).toBe(400);
+  });
+
+  it('is superadmin only', async () => {
+    reset('pending');
+    expect((await request(app).put(`/api/v1/tpl/${PID}/flag-documents`).send({ issues: { 'PAN Card': 'Blurry scan' } })).status).toBe(401);
+    expect((await flag({ 'PAN Card': 'Blurry scan' }, bearer('admin-1'))).status).toBe(403);
+  });
+});
+
 describe('application field checks', () => {
   const onboard = (change: Record<string, unknown>) =>
     request(app).post('/api/v1/tpl/onboard').send({ companyName: 'Northline', email: 'ops@northline.example', pan: 'ABCDE1234F', ...change });

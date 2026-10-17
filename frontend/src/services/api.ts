@@ -1030,6 +1030,8 @@ export const tplAPI = {
   getPartner: (id: string, pan?: string) => api.get(`/tpl/${id}`, { params: pan ? { pan } : undefined }).then(r => r.data),
   approve: (id: string) => api.post(`/tpl/approve/${id}`).then(r => r.data),
   reject: (id: string, reason: string) => api.post(`/tpl/reject/${id}`, { reason }).then(r => r.data),
+  /** Flags specific documents on a pending application, each with its own reason, instead of rejecting the whole thing. */
+  flagDocuments: (id: string, issues: Record<string, string>) => api.put(`/tpl/${id}/flag-documents`, { issues }).then(r => r.data),
   updateApplication: (id: string, data: Record<string, unknown>) => api.patch(`/tpl/${id}`, data).then(r => r.data),
   /** Signed upload URL for one application document; use uploadTplDocument() from services/tplDocuments. */
   documentUploadUrl: (data: {

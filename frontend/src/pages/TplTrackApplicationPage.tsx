@@ -1,9 +1,11 @@
 import { errorMessage, formatDateTime } from '@/utils/display'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, CheckCircle2 } from 'lucide-react'
+import { Search, CheckCircle2, Upload } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
-import { Alert, Button, buttonClasses, Card, Input, StatusPill } from '@/components/ui'
+import { uploadTplDocument } from '@/services/tplDocuments'
+import { Alert, Button, Card, FileButton, Input, StatusPill } from '@/components/ui'
 
 interface TplApplication {
   id: string
@@ -13,6 +15,72 @@ interface TplApplication {
   document_count?: number
   created_at?: string
   rejection_reason?: string | null
+  document_issues?: Record<string, string> | null
+}
+
+interface TplDocument { id: string; doc_type: string; file_url: string }
+interface TplApplicationFull extends TplApplication { tpl_documents?: TplDocument[] }
+
+/**
+ * Lets the applicant replace a flagged (or any, once resubmitting a rejected application) document
+ * without going through the full onboarding form again. Loaded only once the PAN is verified.
+ */
+function FixDocuments({ applicationId, pan, onDone }: { applicationId: string; pan: string; onDone: () => void }) {
+  const [full, setFull] = useState<TplApplicationFull | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [uploadingType, setUploadingType] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    tplAPI.getPartner(applicationId, pan)
+      .then(data => { if (!cancelled) setFull(data as TplApplicationFull) })
+      .catch(err => { if (!cancelled) setError(errorMessage(err, 'We could not load your application. Check the PAN and try again.')) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const replace = (doc: TplDocument) => async (file: File) => {
+    setUploadingType(doc.doc_type)
+    try {
+      const path = await uploadTplDocument(file, doc.doc_type, { applicationId, verifyPan: pan })
+      const documents = (full?.tpl_documents ?? []).map(d => (d.id === doc.id ? { type: d.doc_type, url: path } : { type: d.doc_type, url: d.file_url }))
+      await tplAPI.updateApplication(applicationId, { verify_pan: pan, documents })
+      toast.success(full?.status === 'rejected' ? 'Document replaced. Your application is back under review.' : 'Document replaced')
+      onDone()
+    } catch (err) {
+      toast.error(errorMessage(err, 'We could not save this document. Try again.'))
+    } finally {
+      setUploadingType(null)
+    }
+  }
+
+  if (loading) return <p className="text-center text-sm text-muted">Loading your application…</p>
+  if (error || !full) return <Alert tone="danger">{error ?? 'Application not found'}</Alert>
+
+  return (
+    <div className="space-y-3">
+      {(full.tpl_documents ?? []).map(doc => {
+        const issue = full.document_issues?.[doc.doc_type]
+        return (
+          <div key={doc.id} className={`rounded-control border p-3 ${issue ? 'border-warning bg-warning/5' : 'border-border'}`}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium text-text">{doc.doc_type}</span>
+              {issue && <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>}
+            </div>
+            {issue && <p className="mt-1 text-xs text-warning">{issue}</p>}
+            <div className="mt-2">
+              <FileButton variant="link" icon={<Upload size={14} />} accept=".pdf,.jpg,.jpeg,.png" disabled={uploadingType === doc.doc_type} onFile={replace(doc)}>
+                {uploadingType === doc.doc_type ? 'Uploading…' : 'Replace this document'}
+              </FileButton>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 export default function TplTrackApplicationPage() {
@@ -21,6 +89,7 @@ export default function TplTrackApplicationPage() {
   const [trackingId, setTrackingId] = useState(searchParams.get('id') ?? '')
   const [lookupError, setLookupError] = useState<string | null>(null)
   const [editPan, setEditPan] = useState('')
+  const [fixingDocs, setFixingDocs] = useState(false)
   const [loading, setLoading] = useState(false)
   const [application, setApplication] = useState<TplApplication | null>(null)
 
@@ -45,6 +114,14 @@ export default function TplTrackApplicationPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const refreshAfterFix = async () => {
+    if (!application) return
+    try {
+      const data = await tplAPI.getPartner(application.id)
+      setApplication(data as TplApplication)
+    } catch { /* keep showing the current state */ }
   }
 
   return (
@@ -113,23 +190,38 @@ export default function TplTrackApplicationPage() {
                   <p className="text-center text-sm text-muted">
                     Your application is under review. We will email you when there is a decision. Until then you can change your details or upload missing documents.
                   </p>
-                  <Input
-                    label="Company PAN"
-                    hint="Enter the PAN from your application to edit it."
-                    value={editPan}
-                    onChange={e => setEditPan(e.target.value.toUpperCase())}
-                    placeholder="ABCDE1234F"
-                    maxLength={10}
-                    className="font-mono"
-                  />
-                  <Button
-                    variant="secondary"
-                    fullWidth
-                    disabled={!editPan.trim()}
-                    onClick={() => navigate(`/3pl/onboard?edit=${application.id}&pan=${encodeURIComponent(editPan.trim())}`)}
-                  >
-                    Edit application details
-                  </Button>
+                  {application.document_issues && Object.keys(application.document_issues).length > 0 && (
+                    <Alert tone="warning" title="Fix these documents">
+                      <ul className="list-disc space-y-0.5 pl-4">
+                        {Object.entries(application.document_issues).map(([type, reason]) => (
+                          <li key={type}><span className="font-medium">{type}</span>: {reason}</li>
+                        ))}
+                      </ul>
+                    </Alert>
+                  )}
+                  {fixingDocs ? (
+                    <FixDocuments applicationId={application.id} pan={editPan.trim()} onDone={refreshAfterFix} />
+                  ) : (
+                    <>
+                      <Input
+                        label="Company PAN"
+                        hint="Enter the PAN from your application to edit it."
+                        value={editPan}
+                        onChange={e => setEditPan(e.target.value.toUpperCase())}
+                        placeholder="ABCDE1234F"
+                        maxLength={10}
+                        className="font-mono"
+                      />
+                      <Button
+                        variant="secondary"
+                        fullWidth
+                        disabled={!editPan.trim()}
+                        onClick={() => setFixingDocs(true)}
+                      >
+                        {application.document_issues && Object.keys(application.document_issues).length > 0 ? 'Fix flagged documents' : 'Replace a document'}
+                      </Button>
+                    </>
+                  )}
                   <Button variant="ghost" fullWidth onClick={() => setApplication(null)}>Check another application</Button>
                 </div>
               ) : (
@@ -140,7 +232,27 @@ export default function TplTrackApplicationPage() {
                       {application.rejection_reason && (
                         <p className="text-sm text-muted">Reason: {application.rejection_reason}</p>
                       )}
-                      <Link to="/3pl/onboard" className={buttonClasses({ variant: 'primary' })}>Apply again</Link>
+                      {fixingDocs ? (
+                        <div className="text-left">
+                          <FixDocuments applicationId={application.id} pan={editPan.trim()} onDone={refreshAfterFix} />
+                        </div>
+                      ) : (
+                        <>
+                          <Input
+                            label="Company PAN"
+                            hint="Enter the PAN from your application to fix it and resubmit."
+                            value={editPan}
+                            onChange={e => setEditPan(e.target.value.toUpperCase())}
+                            placeholder="ABCDE1234F"
+                            maxLength={10}
+                            className="font-mono"
+                          />
+                          <Button fullWidth disabled={!editPan.trim()} onClick={() => setFixingDocs(true)}>
+                            Fix a document and resubmit
+                          </Button>
+                        </>
+                      )}
+                      <Link to="/3pl/onboard" className="block text-sm text-muted hover:text-text">Or start a brand new application</Link>
                     </>
                   ) : (
                     <>

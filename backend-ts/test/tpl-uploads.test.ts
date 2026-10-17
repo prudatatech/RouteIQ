@@ -188,6 +188,54 @@ describe('attaching uploaded documents', () => {
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('tpl_documents').filter(d => d.partner_id === PARTNER.id)).toHaveLength(0);
   });
+
+  it('clears a flagged document the moment it is replaced, without touching other flags', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'partner-user', role: 'vendor', is_active: true }],
+      vendor_profiles: [],
+      tpl_partners: [{ ...PARTNER, document_issues: { 'PAN Card': 'Blurry scan', 'GST Certificate': 'Expired' } }],
+      tpl_documents: [{ id: 'doc-1', partner_id: PARTNER.id, file_url: 'acme_3pl/pan_card_old.pdf', doc_type: 'PAN Card' }],
+      tpl_corridors: [],
+    });
+    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`).send({
+      verify_pan: 'ABCDE1234F',
+      documents: [{ type: 'PAN Card', url: `${PARTNER.id}/pan_card_new.pdf` }],
+    });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].document_issues).toEqual({ 'GST Certificate': 'Expired' });
+  });
+
+  it('resubmitting a rejected application puts it back to pending and clears the reason and every flag', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'partner-user', role: 'vendor', is_active: true }],
+      vendor_profiles: [],
+      tpl_partners: [{ ...PARTNER, status: 'rejected', rejection_reason: 'PAN mismatch', document_issues: { 'PAN Card': 'Blurry scan' } }],
+      tpl_documents: [{ id: 'doc-1', partner_id: PARTNER.id, file_url: 'acme_3pl/pan_card_old.pdf', doc_type: 'PAN Card' }],
+      tpl_corridors: [],
+    });
+    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`).send({
+      verify_pan: 'ABCDE1234F',
+      companyName: 'Acme',
+      documents: [{ type: 'PAN Card', url: `${PARTNER.id}/pan_card_new.pdf` }],
+    });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0]).toMatchObject({ status: 'pending', rejection_reason: null, document_issues: null });
+  });
+
+  it('refuses to edit an application that is neither pending nor rejected', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'partner-user', role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
+      vendor_profiles: [],
+      tpl_partners: [{ ...PARTNER, status: 'active' }],
+      tpl_documents: [],
+      tpl_corridors: [],
+    });
+    // Staff auth, not verify_pan: the PAN check has its own rate limit, already exercised above in this file.
+    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`)
+      .set('Authorization', `Bearer ${supabaseMock.signUserToken('super-1')}`)
+      .send({ companyName: 'Acme' });
+    expect(res.status).toBe(409);
+  });
 });
 
 // Last in the file: it uses up this client's hourly allowance

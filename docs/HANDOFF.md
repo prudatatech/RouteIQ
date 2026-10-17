@@ -73,6 +73,18 @@ registry `margixacr7m52h4t5it6og`.
   Activating a driver or staff member likewise asks for confirmation first if a required document is still
   missing (`people.service.ts` `changeStatus`, `confirm_missing_documents`). `FlagDocumentsModal.tsx` and
   `DocUploadField.tsx` are shared across all of these instead of duplicated per flow.
+- 3PL partner applications now have the same per-document flagging (`tpl_partners.document_issues`, keyed by the
+  doc_type strings already on `tpl_documents`: "PAN Card", "GST Certificate", "Cancelled Cheque", "Signed Rate
+  Agreement"; `tplService.flagDocuments`, `PUT /tpl/:id/flag-documents`, "Flag documents" on
+  `TplPartnerDetailPage.tsx`). A rejected application used to be a dead end (only "Apply again" - a brand new
+  application); `updateApplication` now also accepts a rejected one, flipping it back to pending and clearing the
+  reason and every flag. The applicant's tracking page (`TplTrackApplicationPage.tsx`) can now replace a flagged
+  (or any, once resubmitting) document inline, through the existing PAN-verified edit API, rather than only via
+  the full onboarding wizard. Found and removed a pre-existing dead end while building this: the tracking page's
+  "Edit application details" button sent the applicant to `TplOnboardingPage.tsx?edit=<id>&pan=...`, but that
+  wizard never reads `edit`/`pan` or prefills anything - it only ever files a brand new application. Still open:
+  teaching the wizard to load and resubmit an existing application (for non-document fields) instead of only
+  filing a new one; for now the tracking page covers documents only.
 - One sign-in page `/login` for every account kind; each goes to its own area. The platform owner lands on
   `/platform/organisations`.
 - Vendor review is a full page `/admin/kyc/:id`: approve, reject, ask for more details (status `info_requested`;

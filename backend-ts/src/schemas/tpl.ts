@@ -82,6 +82,22 @@ export function assertPartnerSettings(input: Record<string, unknown>): { sla_com
 /** A plain address check: something, an @, something, a dot, something. */
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** Checks a { "<doc type>": reason } payload: at least one entry, every key a real document type, every reason 3-300 characters. */
+export function assertFlagDocuments(issues: unknown, docTypes: readonly string[]): Record<string, string> {
+  if (!issues || typeof issues !== 'object' || Array.isArray(issues)) throw new HttpError(400, 'Flag at least one document');
+  const entries = Object.entries(issues as Record<string, unknown>);
+  if (entries.length === 0) throw new HttpError(400, 'Flag at least one document');
+  const out: Record<string, string> = {};
+  for (const [key, reason] of entries) {
+    if (!docTypes.includes(key)) throw new HttpError(400, `Unknown document: ${key}`);
+    if (typeof reason !== 'string' || reason.trim().length < 3 || reason.length > 300) {
+      throw new HttpError(400, 'Say what is wrong with each document (3 to 300 characters)');
+    }
+    out[key] = reason.trim();
+  }
+  return out;
+}
+
 export function assertApplicationFields(data: Record<string, unknown>, partial = false): void {
   if (!(partial && data.companyName === undefined) && !isText(data.companyName, 200)) {
     throw new HttpError(400, 'Company name is required (up to 200 characters)');

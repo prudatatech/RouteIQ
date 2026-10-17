@@ -9,7 +9,7 @@ import { notificationService, PLATFORM } from './notification.service';
 import { emailService, fromAddress } from './email.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
 import { auditService, type AuditActor } from './audit.service';
-import { EMAIL_PATTERN, assertApplicationFields, assertPartnerSettings } from '../schemas/tpl';
+import { EMAIL_PATTERN, assertApplicationFields, assertFlagDocuments, assertPartnerSettings } from '../schemas/tpl';
 import { formatRate, type RateUnit } from '../utils/corridor-match';
 import { isUuid } from '../core/validate';
 import { findAuthUserByEmail } from '../core/auth-users';
@@ -314,10 +314,12 @@ export const tplService = {
     if (data.email !== undefined && !EMAIL_PATTERN.test(String(data.email).trim())) throw new HttpError(400, 'Enter a valid email address, for example name@company.in');
     assertApplicationFields(data ?? {}, true);
 
-    const { data: current, error: currentErr } = await supabase.from('tpl_partners').select('id, status, custom_id, pan_number, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
+    const { data: current, error: currentErr } = await supabase.from('tpl_partners')
+      .select('id, status, custom_id, pan_number, document_issues, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
     if (currentErr) throw new Error(`Failed to load 3PL partner: ${currentErr.message}`);
     if (!current) throw new HttpError(404, 'Application not found');
-    if (current.status !== 'pending') throw new HttpError(409, 'Only pending applications can be edited');
+    if (!['pending', 'rejected'].includes(current.status)) throw new HttpError(409, 'Only a pending or rejected application can be edited');
+    const wasRejected = current.status === 'rejected';
     // A GSTIN carries the PAN: check it against the new PAN, or the one on record
     const gstProblem = gst !== undefined ? gstinError(gst, pan ?? current.pan_number) : undefined;
     if (gstProblem) throw new HttpError(400, gstProblem);
@@ -330,8 +332,9 @@ export const tplService = {
     // The IFSC lookup only runs when the bank details are part of the edit
     const bank = bankIfsc !== undefined ? await ifscColumns(bankIfsc) : { columns: {}, check: null as IfscCheck | null };
 
-    // 1. Update the partner record: only the fields that were sent, so an edit of the name never wipes the partner ID or the tax details
-    const columns = {
+    // 1. Update the partner record: only the fields that were sent, so an edit of the name never wipes the partner ID or the tax details.
+    // Editing a rejected application resubmits it: back to pending, the old reason and every document flag cleared.
+    const columns: Record<string, unknown> = {
         ...(custom_id !== undefined ? { custom_id: custom_id || null } : {}),
         ...(companyName !== undefined ? { company_name: companyName } : {}),
         ...(data.phone !== undefined ? { phone: parseMobile(data.phone) } : {}),
@@ -343,10 +346,11 @@ export const tplService = {
         ...bank.columns,
         ...(slaCommitment !== undefined ? { sla_commitment: slaCommitment || '2 Hours' } : {}),
         ...(taxTreatment !== undefined ? { tax_treatment: taxTreatment || null } : {}),
+        ...(wasRejected ? { status: 'pending', rejection_reason: null, document_issues: null } : {}),
     };
     const { error: partnerErr } = Object.keys(columns).length === 0
       ? { error: null }
-      : await supabase.from('tpl_partners').update(columns).eq('id', id).eq('status', 'pending'); // Only a pending application can be edited
+      : await supabase.from('tpl_partners').update(columns).eq('id', id).eq('status', current.status);
 
     if (partnerErr) throw new Error(`Failed to update 3PL partner: ${partnerErr.message}`);
 
@@ -378,6 +382,14 @@ export const tplService = {
       }
       for (const doc of toRemove) {
         await supabase.from('tpl_documents').delete().eq('id', doc.id);
+      }
+      // Replacing a flagged document clears its own flag, even without resubmitting the whole form.
+      if (!wasRejected && current.document_issues) {
+        const replacedTypes = new Set(toAdd.map(d => d.type));
+        const remaining = Object.fromEntries(Object.entries(current.document_issues).filter(([type]) => !replacedTypes.has(type)));
+        if (Object.keys(remaining).length !== Object.keys(current.document_issues).length) {
+          await supabase.from('tpl_partners').update({ document_issues: Object.keys(remaining).length > 0 ? remaining : null }).eq('id', id);
+        }
       }
     }
 
@@ -584,6 +596,33 @@ export const tplService = {
       id,
     );
     await auditService.record('staff-console', actor, 'tpl_rejected', { partner_id: id, company_name: updated.company_name, reason });
+    return updated;
+  },
+
+  /**
+   * Flag specific documents on a pending application, each with its own reason, instead of rejecting
+   * the whole thing. The application stays pending (the applicant's existing edit flow already handles
+   * replacing a document); the flag on a document clears the moment it is replaced or the applicant
+   * resubmits the whole form.
+   */
+  async flagDocuments(id: string, issues: unknown, actor: AuditActor) {
+    const { data: partner, error: fetchErr } = await supabase
+      .from('tpl_partners').select('id, status, company_name, document_issues, user_id').eq('id', id).maybeSingle();
+    if (fetchErr) throw new Error(`Failed to fetch partner: ${fetchErr.message}`);
+    if (!partner) throw new HttpError(404, 'Application not found');
+    if (partner.status !== 'pending') throw new HttpError(409, 'Documents can be flagged only while the application is waiting for review');
+
+    const flagged = assertFlagDocuments(issues, TPL_DOCUMENT_TYPES);
+    const merged = { ...(partner.document_issues ?? {}), ...flagged };
+    const { data: updated, error } = await supabase.from('tpl_partners')
+      .update({ document_issues: merged })
+      .eq('id', id).eq('status', 'pending').select().maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!updated) throw new HttpError(409, 'Documents can be flagged only while the application is waiting for review');
+
+    const list = Object.entries(flagged).map(([type, reason]) => `${type}: ${reason}`).join('; ');
+    await this.notifyPartner(partner, 'A document needs fixing', `We need you to fix the following before we can review your application: ${list}`, 'tpl_document_flagged', id);
+    await auditService.record('staff-console', actor, 'tpl_document_flagged', { partner_id: id, company_name: partner.company_name, issues: flagged });
     return updated;
   },
 
