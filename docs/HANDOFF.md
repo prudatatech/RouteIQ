@@ -85,6 +85,25 @@ registry `margixacr7m52h4t5it6og`.
   wizard never reads `edit`/`pan` or prefills anything - it only ever files a brand new application. Still open:
   teaching the wizard to load and resubmit an existing application (for non-document fields) instead of only
   filing a new one; for now the tracking page covers documents only.
+- A fresh audit of all four onboarding flows (owner asked to "check each step... find the significant gap")
+  found and fixed real dead ends/holes: 3PL's rejected-applicant document-fix path was itself broken (the
+  upload-url route still only allowed `status='pending'`); 3PL's quick-onboard form (`fleet_size` set) could
+  reach `approve()` with no PAN, GSTIN, bank details or documents at all - `approve()` now refuses a first-time
+  approval missing any of those; vendor KYC could get permanently stuck in `info_requested` once every flagged
+  document was fixed through a per-document save rather than the full wizard (no code path ever moved it back
+  to `submitted`) - fixed in `saveKycDocuments`; `CompanyKycPage.tsx`'s submit had no pre-submit validation for
+  GSTIN/PAN/bank; a driver whose vehicle document was flagged saw nothing on the waiting screen they actually
+  land on; the platform's company-review drawer collected bank details but never showed them to the reviewer;
+  the 3PL reviewer page never showed the applicant's phone; the vendor reviewer page never showed the pickup
+  location or declaration-accepted flag the vendor had to provide to submit.
+  Still open, logged rather than built without the owner's steer (each is a product decision, not a bug):
+  vehicle registration never asks for document expiry dates or container dimensions even though the backend
+  schema and staff review screen are already built to show them (`driver-app` has no date-picker pattern yet,
+  and no simulator access here to verify a new one); none of the four flows collect an entity/business type
+  (proprietorship/LLP/Pvt Ltd), a CIN, an authorized signatory, or a registered-office-vs-operating-address
+  distinction - a real compliance gap for a B2B GST-registered counterparty, but adding required fields to four
+  live onboarding forms at once needs a deliberate scope decision, not a silent addition; the 3PL quick-onboard
+  form's "Contact person" field is stored as the company's legal name with no separate field for the real one.
 - One sign-in page `/login` for every account kind; each goes to its own area. The platform owner lands on
   `/platform/organisations`.
 - Vendor review is a full page `/admin/kyc/:id`: approve, reject, ask for more details (status `info_requested`;

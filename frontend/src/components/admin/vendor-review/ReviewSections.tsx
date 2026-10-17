@@ -95,6 +95,8 @@ export function KycFormSection({ form, ifscVerifiedAt }: { form: KycFormView; if
           { label: 'Vendor number', value: mono(f.number) },
           { label: 'Vendor type', value: given(f.vendorType) },
           { label: 'Address', value: given(address) },
+          { label: 'Pickup location', value: f.latitude && f.longitude ? <span className="font-mono">{f.latitude}, {f.longitude}</span> : given(undefined) },
+          { label: 'Declaration', value: f.declaration ? 'Accepted' : given(undefined) },
         ])}
         {group('Contact', [
           { label: 'Contact person', value: given(f.contactPerson) },

@@ -491,6 +491,20 @@ export const tplService = {
     }
 
     const updates = partner.pending_updates;
+    // The quick-onboard form (fleet_size set) defers PAN, GST, bank and documents to a self-service step
+    // after registering, so it writes a 'pending' partner with none of them - do not let a first-time
+    // approval activate a partner that never actually came back and completed that step. (Approving a
+    // pending_updates change on an already-active partner is a different, later action: not gated here.)
+    if (!updates) {
+      const missing: string[] = [];
+      if (!partner.pan_number) missing.push('PAN');
+      if (!partner.gstin) missing.push('GSTIN');
+      if (!partner.bank_account_no || !partner.bank_ifsc) missing.push('bank details');
+      const { count: docCount, error: docCountErr } = await supabase.from('tpl_documents').select('id', { count: 'exact', head: true }).eq('partner_id', id);
+      if (docCountErr) throw new Error(`Failed to count documents: ${docCountErr.message}`);
+      if (!docCount) missing.push('documents');
+      if (missing.length > 0) throw new HttpError(409, `This application is still missing: ${missing.join(', ')}`);
+    }
     const partnerUpdates: Record<string, unknown> = { status: 'active', pending_updates: null, rejection_reason: null, document_issues: null };
     if (updates) {
       if (updates.sla_commitment) partnerUpdates.sla_commitment = updates.sla_commitment;

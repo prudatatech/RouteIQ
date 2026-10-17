@@ -30,6 +30,9 @@ export interface KycFormView {
   city?: string
   state?: string
   postalCode?: string
+  latitude?: string
+  longitude?: string
+  declaration?: boolean
   contactPerson?: string
   telephone?: string
   mobileNumber?: string

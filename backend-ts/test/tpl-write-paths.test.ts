@@ -16,6 +16,9 @@ function partner(status: string, extra: Record<string, unknown> = {}) {
     status,
     email: 'ops@acme.in',
     pan_number: 'ABCDE1234F',
+    gstin: '27ABCDE1234F1Z5',
+    bank_account_no: '123456789012',
+    bank_ifsc: 'HDFC0001234',
     user_id: 'partner-user',
     pending_updates: null,
     tpl_corridors: [],
@@ -153,6 +156,37 @@ describe('partner settings request', () => {
 describe('staff decisions on partners', () => {
   const act = (verb: string, token = bearer('super-1'), body?: Record<string, unknown>) =>
     request(app).post(`/api/v1/tpl/${verb}`).set(token).send(body ?? {});
+
+  it.each([
+    ['PAN', { pan_number: null }, 'PAN'],
+    ['GSTIN', { gstin: null }, 'GSTIN'],
+    ['bank account', { bank_account_no: null }, 'bank details'],
+    ['IFSC', { bank_ifsc: null }, 'bank details'],
+  ])('refuses to approve a quick-onboarded application missing its %s', async (_name, extra, expectedWord) => {
+    reset('pending', extra);
+    const res = await act(`approve/${PID}`);
+    expect(res.status).toBe(409);
+    expect(res.body.detail ?? res.body.error).toContain(expectedWord);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('pending');
+  });
+
+  it('refuses to approve a quick-onboarded application with no documents', async () => {
+    reset('pending');
+    supabaseMock.rows('tpl_documents').length = 0;
+    const res = await act(`approve/${PID}`);
+    expect(res.status).toBe(409);
+    expect(res.body.detail ?? res.body.error).toContain('documents');
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('pending');
+  });
+
+  it('still approves a profile-update request even if PAN/GST/bank are missing', async () => {
+    // The compliance gate only applies to a first-time approval; a profile-update request (settings
+    // changes, which move status back to 'pending' while open) was already activated once and is not
+    // re-vetted here.
+    reset('pending', { pan_number: null, gstin: null, bank_account_no: null, bank_ifsc: null, pending_updates: { sla_commitment: '6 Hours' } });
+    const res = await act(`approve/${PID}`);
+    expect(res.status).toBe(200);
+  });
 
   it('refuses to approve an application with an unresolved flagged document', async () => {
     reset('pending', { document_issues: { 'PAN Card': 'Blurry scan' } });

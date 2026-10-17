@@ -31,6 +31,7 @@ interface TplPartnerDetail {
   custom_id: string | null
   company_name: string
   email: string | null
+  phone?: string | null
   status: string
   rejection_reason?: string | null
   created_at: string
@@ -254,7 +255,7 @@ export default function TplPartnerDetailPage() {
     <Page>
       <PageHeader
         title={partner.company_name}
-        description={`Submitted ${partner.created_at ? formatDateTime(partner.created_at) : '—'}${partner.email ? ` by ${partner.email}` : ''}`}
+        description={`Submitted ${partner.created_at ? formatDateTime(partner.created_at) : '—'}${partner.email ? ` by ${partner.email}` : ''}${partner.phone ? ` · ${partner.phone}` : ''}`}
         back={{ to: PARTNERS_TAB, label: 'Back to 3PL partners' }}
         actions={<StatusPill status={partner.status} />}
       />

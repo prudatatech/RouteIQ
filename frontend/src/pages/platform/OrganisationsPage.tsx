@@ -124,6 +124,16 @@ function OrgDrawer({ org, onClose, onDecide, deciding, onFlag, viewer }: {
               <div className="sm:col-span-2"><Detail label="Address" value={org.address} /></div>
             </dl>
           </section>
+          {org.kind === 'logistic_company' && (
+            <section aria-label="Bank details">
+              <h3 className="mb-2 text-sm font-semibold">Bank details</h3>
+              <dl className="grid gap-3 sm:grid-cols-2">
+                <Detail label="Bank name" value={typeof org.profile?.bank_name === 'string' ? org.profile.bank_name : null} />
+                <Detail label="Account number" value={typeof org.profile?.bank_account_no === 'string' ? org.profile.bank_account_no : null} />
+                <Detail label="IFSC" value={typeof org.profile?.bank_ifsc === 'string' ? org.profile.bank_ifsc : null} />
+              </dl>
+            </section>
+          )}
           {org.kind === 'logistic_company' && <OrgDocumentsSection org={org} onFlag={onFlag} viewer={viewer} />}
           <section aria-label="History">
             <h3 className="mb-2 text-sm font-semibold">History</h3>
