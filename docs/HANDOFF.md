@@ -221,8 +221,18 @@ registry `margixacr7m52h4t5it6og`.
   502; traffic calls get 401), telematics webhook secret, negotiated company per-km rate card, CA review of GST 2.0 rates (507 rows
   flagged needs_review).
 - Product gaps: a real finance role (finance/dispatcher/ops map to one role); `/public/companies` caps at 200;
-  finance lists unpaginated; vendor company details are asked three times (sign-up, business profile, KYC form);
-  no consignee GSTIN on loads (needed for e-way bills).
+  finance lists unpaginated; vendor company details are asked three times (sign-up, business profile, KYC form) -
+  all three in progress as of 17 Oct 2026.
+  (Checked 17 Oct 2026, scoped deliberately rather than built: "no consignee GSTIN on loads" is not a clean,
+  standalone field addition - the `shipments`/dispatch side already fully has `consignee_name`/`consignee_gstin`/
+  `eway_bill_ref` (migration `20260930014100_cargo_lots.sql`, validated in `schemas/index.ts`'s `DropInputSchema`/
+  `ShipmentCreateSchema`). The actual gap is in vendor load-posting (`LoadDraftSchema`), which has no consignee
+  concept at all - only an unnamed "delivery contact" name/phone. Adding GSTIN there means first introducing a
+  consignee entity to load posting with no automated consumer yet (no e-way-bill generation exists anywhere in
+  this codebase, only a GSTIN *validator* in `gstin.service.ts` and unused GSP env vars) - exactly the kind of
+  half-finished addition the engineering standard warns against. Needs a product decision (introduce the
+  consignee concept now and leave it unconsumed, or scope it together with real e-way-bill generation) before
+  it's built, not a quiet field add.)
   (Checked 17 Oct 2026: `/capacity/nearby-vendors` "lists all vendors to any company" is NOT a tenant-isolation
   bug - vendors aren't company-scoped by design (`docs/platform-model.md`: any company can solicit bids from any
   approved vendor), and only name/city/coordinates are returned, already pared down with a comment explaining why.
