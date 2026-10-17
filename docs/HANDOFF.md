@@ -150,6 +150,17 @@ registry `margixacr7m52h4t5it6og`.
   - **Drivers** already had this (`people.service.ts`'s invite flow) - no change needed.
   - `organizations.created_by` already existed; the same column was added to `vendor_profiles` and `tpl_partners`
     so every review screen can show a consistent "entered by staff" signal.
+  - **Bug found and fixed same day**: all three staff-create flows let an application go out with zero documents
+    (documents are optional at creation on purpose - staff may not have them yet), but none of the three
+    review/detail pages could add a document afterward - once stuck, approval correctly 409s with
+    "missing: documents" but there was no way back in. Fixed on all three, reusing backend routes already built
+    for this (no new backend code for vendor/3PL; one new thin route for company):
+    `TplPartnerDetailPage.tsx` gained an upload control (careful detail: the PATCH that attaches a document is a
+    desired-final-list call, so it must resend every existing document too, or it deletes them);
+    `VendorReviewPage.tsx` gained one (new route `PUT /vendor/admin/kyc/applicants/:vendorUserId/documents`,
+    thin wrapper over the already-generic `saveKycDocuments`); `RegisterCompanyModal.tsx` can now be reopened in a
+    "resume" mode for an existing not-yet-submitted company (a "Finish registration" button in `OrganisationsPage.tsx`'s
+    `OrgDrawer`), since that modal creates the org before documents, so closing early stranded it the same way.
 
 ## 4. Azure pitfalls (each broke something once)
 - PostgREST (`margix-rest` / `margix-test-rest`) caches the database schema at startup and never notices a
