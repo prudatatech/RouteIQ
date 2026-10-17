@@ -2,8 +2,8 @@ import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  BarChart3, Building2, Gavel, LayoutDashboard, MapPin, MapPinned, Package, Route, ShieldAlert, Truck, Waypoints,
-  type LucideIcon,
+  BarChart3, Building2, Gavel, IndianRupee, LayoutDashboard, MapPin, MapPinned, Package, PackageCheck, Route, Search,
+  ShieldAlert, Truck, Waypoints, type LucideIcon,
 } from 'lucide-react'
 import { buttonClasses } from '@/components/ui'
 import { publicAPI, type PublicStats } from '@/services/api'
@@ -56,6 +56,13 @@ const features: { icon: LucideIcon; title: string; description: string }[] = [
   { icon: ShieldAlert, title: 'Emergencies', description: 'Driver SOS alerts arrive with the vehicle and its location.' },
   { icon: Truck, title: 'Driver app', description: 'Drivers get their trips, share their location and confirm delivery from their phone.' },
   { icon: BarChart3, title: 'Analytics', description: 'See how your fleet, drivers and vendors are performing.' },
+]
+
+// The real steps a load takes, start to finish - no step here is aspirational; each is a feature that exists today.
+const howItWorks: { icon: LucideIcon; title: string; description: string }[] = [
+  { icon: Search, title: 'Post a load', description: 'Enter the pickup, drop and cargo. The platform works out a recommended price range for you.' },
+  { icon: IndianRupee, title: 'A company takes it', description: "Any logistic company on the lane can book it at that price, or you take spare capacity on someone else's return trip." },
+  { icon: PackageCheck, title: 'Track to delivery', description: 'Follow the vehicle on a live map and get status updates until it is delivered.' },
 ]
 
 const statLabels: { key: keyof PublicStats; label: string }[] = [
@@ -128,6 +135,25 @@ export default function LandingPage() {
         </section>
 
         <LiveNumbers />
+
+        <section aria-labelledby="how-it-works-title" className="mx-auto max-w-content px-4 pb-4 pt-12 sm:px-6 sm:pt-16">
+          <h2 id="how-it-works-title" className="text-2xl font-semibold text-text sm:text-3xl">How it works</h2>
+          <ol className="mt-8 grid gap-6 sm:grid-cols-3">
+            {howItWorks.map(({ icon: StepIcon, title, description }, i) => (
+              <li key={title} className="flex gap-4">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-soft font-semibold text-brand">
+                  {i + 1}
+                </span>
+                <div>
+                  <h3 className="flex items-center gap-2 text-base font-semibold text-text">
+                    <StepIcon size={16} className="text-brand" aria-hidden /> {title}
+                  </h3>
+                  <p className="mt-1 text-sm text-muted">{description}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
 
         <section aria-labelledby="audiences-title" className="mx-auto max-w-content px-4 pb-12 pt-8 sm:px-6 sm:pb-16 sm:pt-10">
           <h2 id="audiences-title" className="text-2xl font-semibold text-text sm:text-3xl">Get started</h2>
