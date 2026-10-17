@@ -80,6 +80,7 @@ export default function TplOnboardingPage() {
   const [submitted, setSubmitted] = useState(false)
   
   // Step 1
+  const [companyName, setCompanyName] = useState('')
   const [ownerName, setOwnerName] = useState('')
   const [email, setEmail] = useState('')
   const [mobile, setMobile] = useState('')
@@ -211,23 +212,23 @@ export default function TplOnboardingPage() {
   // Warn on refresh if form has data and is not submitted
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if ((ownerName || mobile || location || step > 0) && !submitted) {
+      if ((companyName || ownerName || mobile || location || step > 0) && !submitted) {
         e.preventDefault()
         e.returnValue = ''
       }
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [ownerName, mobile, location, step, submitted])
+  }, [companyName, ownerName, mobile, location, step, submitted])
 
   // Return to step 1 if state is lost (e.g. after a refresh)
   useEffect(() => {
     if (step > 0 && !submitted) {
-      if (!ownerName || !email || !mobile || !location) {
+      if (!companyName || !ownerName || !email || !mobile || !location) {
         setSearchParams({ step: '0' }, { replace: true })
       }
     }
-  }, [step, ownerName, email, mobile, location, submitted, setSearchParams])
+  }, [step, companyName, ownerName, email, mobile, location, submitted, setSearchParams])
 
   if (userLoading) {
     return <div className="min-h-screen bg-bg flex items-center justify-center">Loading...</div>
@@ -290,7 +291,7 @@ export default function TplOnboardingPage() {
   const next = async () => {
     setDirection('forward')
     if (step === 0) {
-      if (!ownerName || !email || !mobile || !location) {
+      if (!companyName || !ownerName || !email || !mobile || !location) {
         toast.error('Please fill all fields.')
         return
       }
@@ -317,7 +318,8 @@ export default function TplOnboardingPage() {
       setIsSubmitting(true)
       try {
         const res = await tplAPI.onboard({
-          companyName: ownerName,
+          companyName: companyName,
+          contactName: ownerName,
           phone: mobile,
           email: email.trim() || session?.user?.email || '',
           operatingFrom: location,
@@ -435,6 +437,13 @@ export default function TplOnboardingPage() {
             
             {step === 0 && (
               <div className="space-y-6">
+                <Input
+                  label="Company name"
+                  required
+                  placeholder="Registered business name"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                />
                 <Input
                   label="Contact person"
                   required
@@ -554,6 +563,10 @@ export default function TplOnboardingPage() {
                   <h3 className="font-semibold text-text">Application Summary</h3>
                   
                   <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted block mb-1">Company name</span>
+                      <span className="font-medium text-text">{companyName}</span>
+                    </div>
                     <div>
                       <span className="text-muted block mb-1">Contact person</span>
                       <span className="font-medium text-text">{ownerName}</span>

@@ -163,7 +163,7 @@ describe('saving an IFSC', () => {
   });
 
   it('3PL onboarding: refuses an unknown IFSC, warns when the service is down', async () => {
-    const onboard = () => request(app).post('/api/v1/tpl/onboard').send({ companyName: 'Northline', email: 'ops@northline.example', pan: 'ABCDE1234F', gst: '27ABCDE1234F1Z0', bankIfsc: 'HDFC0001234' });
+    const onboard = () => request(app).post('/api/v1/tpl/onboard').send({ companyName: 'Northline', contactName: 'Priya Rao', email: 'ops@northline.example', pan: 'ABCDE1234F', gst: '27ABCDE1234F1Z0', bankIfsc: 'HDFC0001234' });
     const reset = () => supabaseMock.reset({ users: [], tpl_partners: [], tpl_corridors: [], tpl_documents: [], notifications: [] });
 
     reset();

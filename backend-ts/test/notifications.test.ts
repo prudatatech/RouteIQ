@@ -135,6 +135,7 @@ describe('staff notifications (D2)', () => {
     it('notifies admins and superadmins, who can both open the 3PL pages, when a new application is onboarded', async () => {
       const res = await request(app).post('/api/v1/tpl/onboard').send({
         companyName: 'Northline Logistics',
+        contactName: 'Priya Rao',
         email: 'ops@northline.example',
         pan: 'ABCDE1234F',
         gst: '27ABCDE1234F1Z0',

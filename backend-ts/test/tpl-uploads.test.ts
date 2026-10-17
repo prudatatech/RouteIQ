@@ -115,7 +115,7 @@ describe('POST /tpl/applications/upload-url', () => {
 
 describe('attaching uploaded documents', () => {
   const onboard = (documents: unknown) => request(app).post('/api/v1/tpl/onboard').send({
-    custom_id: 'fresh_3pl', companyName: 'Fresh', email: 'hi@fresh.in', pan: 'FGHIJ5678K', gst: '27FGHIJ5678K1Z1', documents,
+    custom_id: 'fresh_3pl', companyName: 'Fresh', contactName: 'Fresh Contact', email: 'hi@fresh.in', pan: 'FGHIJ5678K', gst: '27FGHIJ5678K1Z1', documents,
   });
 
   it('accepts documents from the application\'s own upload folder', async () => {
@@ -231,6 +231,40 @@ describe('attaching uploaded documents', () => {
     expect(supabaseMock.rows('tpl_partners')[0]).toMatchObject({ status: 'pending', rejection_reason: null, document_issues: null });
   });
 
+  it('lets a rejected applicant fix non-document details (PAN, GSTIN, bank, SLA, tax) and resubmits', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'partner-user', role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
+      vendor_profiles: [],
+      tpl_partners: [{ ...PARTNER, status: 'rejected', rejection_reason: "PAN name doesn't match GSTIN", contact_name: 'Old Contact' }],
+      tpl_documents: [{ id: 'doc-1', partner_id: PARTNER.id, file_url: 'acme_3pl/pan_card_old.pdf', doc_type: 'PAN Card' }],
+      tpl_corridors: [],
+    });
+    // Staff auth, not verify_pan: the PAN check has its own rate limit, already exercised above in this file.
+    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`)
+      .set('Authorization', `Bearer ${supabaseMock.signUserToken('super-1')}`)
+      .send({
+        companyName: 'Acme Logistics Pvt Ltd',
+        contactName: 'New Contact',
+        pan: 'ABCDE1234F',
+        gst: '27ABCDE1234F1Z0',
+        bankAccount: '123456789012',
+        bankIfsc: 'HDFC0001234',
+        slaCommitment: '4 Hours',
+        taxTreatment: '5% GTA (No ITC) - Reverse Charge',
+      });
+    expect(res.status).toBe(200);
+    const row = supabaseMock.rows('tpl_partners')[0];
+    expect(row).toMatchObject({
+      status: 'pending',
+      rejection_reason: null,
+      company_name: 'Acme Logistics Pvt Ltd',
+      contact_name: 'New Contact',
+      gstin: '27ABCDE1234F1Z0',
+      sla_commitment: '4 Hours',
+      tax_treatment: '5% GTA (No ITC) - Reverse Charge',
+    });
+  });
+
   it('refuses to edit an application that is neither pending nor rejected', async () => {
     supabaseMock.reset({
       users: [{ id: 'partner-user', role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
@@ -261,7 +295,7 @@ describe('upload URL rate limit', () => {
 describe('3PL applicant phone', () => {
   it('rejects a phone number that is not a 10-digit Indian mobile', async () => {
     const res = await request(app).post('/api/v1/tpl/onboard').send({
-      companyName: 'Acme Logistics', email: 'new-partner@acme.in', pan: 'ABCDE1234F', gst: '27ABCDE1234F1Z0', phone: '12345',
+      companyName: 'Acme Logistics', contactName: 'New Contact', email: 'new-partner@acme.in', pan: 'ABCDE1234F', gst: '27ABCDE1234F1Z0', phone: '12345',
     });
     expect(res.status).toBe(400);
     expect(res.body.detail ?? res.body.error).toMatch(/mobile/i);

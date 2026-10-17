@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { uploadTplDocument } from '@/services/tplDocuments'
 import { Alert, Button, Card, FileButton, Input, StatusPill } from '@/components/ui'
+import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
 
 interface TplApplication {
   id: string
@@ -19,37 +20,98 @@ interface TplApplication {
 }
 
 interface TplDocument { id: string; doc_type: string; file_url: string }
-interface TplApplicationFull extends TplApplication { tpl_documents?: TplDocument[] }
+interface TplApplicationFull extends TplApplication {
+  tpl_documents?: TplDocument[]
+  contact_name?: string | null
+  pan_number?: string | null
+  gstin?: string | null
+  bank_account_no?: string | null
+  bank_ifsc?: string | null
+  sla_commitment?: string | null
+  tax_treatment?: string | null
+}
+
+/**
+ * Edits the company, tax, bank and operational details of a pending or rejected application —
+ * the same fields `updateApplication` already accepts, just given a form. Saving resubmits a
+ * rejected application (the backend flips it back to pending and clears the rejection reason).
+ * Optional fields (GSTIN, bank account, IFSC) are only sent when filled in, so leaving one blank
+ * never wipes out a value the applicant already has on file.
+ */
+function FixDetails({ applicationId, pan, full, onSaved }: { applicationId: string; pan: string; full: TplApplicationFull; onSaved: () => void }) {
+  const [companyName, setCompanyName] = useState(full.company_name || '')
+  const [contactName, setContactName] = useState(full.contact_name || '')
+  const [panNumber, setPanNumber] = useState(full.pan_number || '')
+  const [gst, setGst] = useState(full.gstin || '')
+  const [bankAccount, setBankAccount] = useState(full.bank_account_no || '')
+  const [bankIfsc, setBankIfsc] = useState(full.bank_ifsc || '')
+  const [slaCommitment, setSlaCommitment] = useState(full.sla_commitment || '2 Hours')
+  const [taxTreatment, setTaxTreatment] = useState(full.tax_treatment || '12% GTA (With ITC) - Forward Charge')
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (!companyName.trim() || !contactName.trim()) {
+      toast.error('Company name and contact person are required.')
+      return
+    }
+    setSaving(true)
+    try {
+      await tplAPI.updateApplication(applicationId, {
+        verify_pan: pan,
+        companyName: companyName.trim(),
+        contactName: contactName.trim(),
+        ...(panNumber.trim() ? { pan: panNumber.trim().toUpperCase() } : {}),
+        ...(gst.trim() ? { gst: gst.trim().toUpperCase() } : {}),
+        ...(bankAccount.trim() ? { bankAccount: bankAccount.trim() } : {}),
+        ...(bankIfsc.trim() ? { bankIfsc: bankIfsc.trim().toUpperCase() } : {}),
+        slaCommitment,
+        taxTreatment,
+      })
+      toast.success(full.status === 'rejected' ? 'Details saved. Your application is back under review.' : 'Details saved')
+      onSaved()
+    } catch (err) {
+      toast.error(errorMessage(err, 'We could not save your details. Try again.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Input label="Company name" required value={companyName} onChange={e => setCompanyName(e.target.value)} />
+        <Input label="Contact person" required value={contactName} onChange={e => setContactName(e.target.value)} />
+        <Input label="PAN" value={panNumber} onChange={e => setPanNumber(e.target.value.toUpperCase())} placeholder="ABCDE1234F" maxLength={10} className="font-mono" />
+        <Input label="GSTIN" value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="07ABCDE1234F1Z5" maxLength={15} className="font-mono" />
+        <Input label="Bank account number" value={bankAccount} onChange={e => setBankAccount(e.target.value)} className="font-mono" />
+        <Input label="Bank IFSC" value={bankIfsc} onChange={e => setBankIfsc(e.target.value.toUpperCase())} placeholder="HDFC0001234" maxLength={11} className="font-mono" />
+      </div>
+      <OperationalTermsFields
+        slaCommitment={slaCommitment}
+        taxTreatment={taxTreatment}
+        onSlaChange={setSlaCommitment}
+        onTaxChange={setTaxTreatment}
+      />
+      <Button fullWidth loading={saving} onClick={save}>Save details</Button>
+    </div>
+  )
+}
 
 /**
  * Lets the applicant replace a flagged (or any, once resubmitting a rejected application) document
- * without going through the full onboarding form again. Loaded only once the PAN is verified.
+ * without going through the full onboarding form again.
  */
-function FixDocuments({ applicationId, pan, onDone }: { applicationId: string; pan: string; onDone: () => void }) {
-  const [full, setFull] = useState<TplApplicationFull | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+function FixDocumentsList({ applicationId, pan, full, onReplaced }: { applicationId: string; pan: string; full: TplApplicationFull; onReplaced: () => void }) {
   const [uploadingType, setUploadingType] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    tplAPI.getPartner(applicationId, pan)
-      .then(data => { if (!cancelled) setFull(data as TplApplicationFull) })
-      .catch(err => { if (!cancelled) setError(errorMessage(err, 'We could not load your application. Check the PAN and try again.')) })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   const replace = (doc: TplDocument) => async (file: File) => {
     setUploadingType(doc.doc_type)
     try {
       const path = await uploadTplDocument(file, doc.doc_type, { applicationId, verifyPan: pan })
-      const documents = (full?.tpl_documents ?? []).map(d => (d.id === doc.id ? { type: d.doc_type, url: path } : { type: d.doc_type, url: d.file_url }))
+      const documents = (full.tpl_documents ?? []).map(d => (d.id === doc.id ? { type: d.doc_type, url: path } : { type: d.doc_type, url: d.file_url }))
       await tplAPI.updateApplication(applicationId, { verify_pan: pan, documents })
-      toast.success(full?.status === 'rejected' ? 'Document replaced. Your application is back under review.' : 'Document replaced')
-      onDone()
+      toast.success(full.status === 'rejected' ? 'Document replaced. Your application is back under review.' : 'Document replaced')
+      onReplaced()
     } catch (err) {
       toast.error(errorMessage(err, 'We could not save this document. Try again.'))
     } finally {
@@ -57,12 +119,13 @@ function FixDocuments({ applicationId, pan, onDone }: { applicationId: string; p
     }
   }
 
-  if (loading) return <p className="text-center text-sm text-muted">Loading your application…</p>
-  if (error || !full) return <Alert tone="danger">{error ?? 'Application not found'}</Alert>
+  if (!full.tpl_documents || full.tpl_documents.length === 0) {
+    return <p className="text-sm text-muted">No documents uploaded yet.</p>
+  }
 
   return (
     <div className="space-y-3">
-      {(full.tpl_documents ?? []).map(doc => {
+      {full.tpl_documents.map(doc => {
         const issue = full.document_issues?.[doc.doc_type]
         return (
           <div key={doc.id} className={`rounded-control border p-3 ${issue ? 'border-warning bg-warning/5' : 'border-border'}`}>
@@ -79,6 +142,49 @@ function FixDocuments({ applicationId, pan, onDone }: { applicationId: string; p
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/**
+ * Loads the full application once the PAN is verified, then shows one or both ways to fix it:
+ * the company/tax/bank detail form ('full' mode, offered to a rejected application — it may
+ * have been rejected for a non-document reason) and the per-document replace list (always).
+ * Either can be saved on its own; both resubmit a rejected application.
+ */
+function FixApplication({ applicationId, pan, mode, onDone }: { applicationId: string; pan: string; mode: 'full' | 'documents'; onDone: () => void }) {
+  const [full, setFull] = useState<TplApplicationFull | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = () => {
+    setLoading(true)
+    return tplAPI.getPartner(applicationId, pan)
+      .then(data => setFull(data as TplApplicationFull))
+      .catch(err => setError(errorMessage(err, 'We could not load your application. Check the PAN and try again.')))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const refresh = async () => {
+    await load()
+    onDone()
+  }
+
+  if (loading) return <p className="text-center text-sm text-muted">Loading your application…</p>
+  if (error || !full) return <Alert tone="danger">{error ?? 'Application not found'}</Alert>
+
+  return (
+    <div className="space-y-6">
+      {mode === 'full' && <FixDetails applicationId={applicationId} pan={pan} full={full} onSaved={refresh} />}
+      <div className={mode === 'full' ? 'border-t border-border pt-4' : ''}>
+        {mode === 'full' && <p className="mb-3 text-xs font-medium text-muted">Documents</p>}
+        <FixDocumentsList applicationId={applicationId} pan={pan} full={full} onReplaced={refresh} />
+      </div>
     </div>
   )
 }
@@ -200,7 +306,7 @@ export default function TplTrackApplicationPage() {
                     </Alert>
                   )}
                   {fixingDocs ? (
-                    <FixDocuments applicationId={application.id} pan={editPan.trim()} onDone={refreshAfterFix} />
+                    <FixApplication applicationId={application.id} pan={editPan.trim()} mode="documents" onDone={refreshAfterFix} />
                   ) : (
                     <>
                       <Input
@@ -234,7 +340,7 @@ export default function TplTrackApplicationPage() {
                       )}
                       {fixingDocs ? (
                         <div className="text-left">
-                          <FixDocuments applicationId={application.id} pan={editPan.trim()} onDone={refreshAfterFix} />
+                          <FixApplication applicationId={application.id} pan={editPan.trim()} mode="full" onDone={refreshAfterFix} />
                         </div>
                       ) : (
                         <>
@@ -248,7 +354,7 @@ export default function TplTrackApplicationPage() {
                             className="font-mono"
                           />
                           <Button fullWidth disabled={!editPan.trim()} onClick={() => setFixingDocs(true)}>
-                            Fix a document and resubmit
+                            Fix your details and resubmit
                           </Button>
                         </>
                       )}

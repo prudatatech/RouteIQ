@@ -109,10 +109,10 @@ export const tplService = {
    * Submit a new 3PL onboarding application
    */
   async onboard(data: any) {
-    const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents, operatingFrom, fleetSize, truckType, user_id } = data;
+    const { custom_id, companyName, contactName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents, operatingFrom, fleetSize, truckType, user_id } = data;
     const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
     const isQuick = !!fleetSize;
-    if (!companyName || !email || (!isQuick && !pan)) throw new HttpError(400, 'Company name, email and PAN are required');
+    if (!companyName || !contactName || !email || (!isQuick && !pan)) throw new HttpError(400, 'Company name, contact person, email and PAN are required');
     if (!EMAIL_PATTERN.test(email)) throw new HttpError(400, 'Enter a valid email address, for example name@company.in');
     
     if (!isQuick) {
@@ -143,6 +143,7 @@ export const tplService = {
       .insert({
         custom_id: custom_id || null,
         company_name: companyName,
+        contact_name: contactName,
         email: email,
         phone,
         pan_number: pan,
@@ -211,7 +212,7 @@ export const tplService = {
             <h1 style="color: #000; margin: 0;">Welcome to Margix India!</h1>
           </div>
           <div style="padding: 30px; color: #333;">
-            <p>Hi ${companyName},</p>
+            <p>Hi ${escapeHtml(contactName)},</p>
             <p>Thanks for applying to become a 3PL Truck Partner. Your tracking ID is: <strong>${partnerId}</strong></p>
             <p>Your application is now pending review. We will email you as soon as it is approved — you can keep signing in with Google in the meantime to check its status.</p>
           </div>
@@ -310,7 +311,7 @@ export const tplService = {
    * Update an existing 3PL partner application (only if pending)
    */
   async updateApplication(id: string, data: any) {
-    const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
+    const { custom_id, companyName, contactName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
     if (data.email !== undefined && !EMAIL_PATTERN.test(String(data.email).trim())) throw new HttpError(400, 'Enter a valid email address, for example name@company.in');
     assertApplicationFields(data ?? {}, true);
 
@@ -337,6 +338,7 @@ export const tplService = {
     const columns: Record<string, unknown> = {
         ...(custom_id !== undefined ? { custom_id: custom_id || null } : {}),
         ...(companyName !== undefined ? { company_name: companyName } : {}),
+        ...(contactName !== undefined ? { contact_name: contactName } : {}),
         ...(data.phone !== undefined ? { phone: parseMobile(data.phone) } : {}),
         ...(pan !== undefined ? { pan_number: pan } : {}),
         ...(gst !== undefined ? { gstin: normalizeGstin(gst) } : {}),

@@ -344,7 +344,7 @@ describe('PUT /tpl/:id/flag-documents', () => {
 
 describe('application field checks', () => {
   const onboard = (change: Record<string, unknown>) =>
-    request(app).post('/api/v1/tpl/onboard').send({ companyName: 'Northline', email: 'ops@northline.example', pan: 'ABCDE1234F', ...change });
+    request(app).post('/api/v1/tpl/onboard').send({ companyName: 'Northline', contactName: 'Priya Rao', email: 'ops@northline.example', pan: 'ABCDE1234F', ...change });
 
   it.each([
     ['a bad PAN', { pan: 'nope' }],
@@ -352,9 +352,30 @@ describe('application field checks', () => {
     ['a bad IFSC', { bankIfsc: 'XYZ' }],
     ['a bad account number', { bankAccount: '12ab' }],
     ['a negative corridor rate', { corridors: [{ name: 'DEL-BOM', rate: '-1' }] }],
+    ['no contact person', { contactName: undefined }],
+    ['no company name', { companyName: undefined }],
   ])('refuses %s', async (_name, change) => {
     reset('pending');
     const res = await onboard(change);
+    expect(res.status).toBe(400);
+    expect(supabaseMock.writes('tpl_partners', 'POST')).toHaveLength(0);
+  });
+
+  it('stores the company name and the contact person under their own columns', async () => {
+    reset('pending');
+    const res = await request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Acme Logistics Pvt Ltd', contactName: 'Priya Rao', email: 'new@northline.example', fleetSize: 'single', truckType: '32ft_sxl', user_id: 'new-user',
+    });
+    expect(res.status).toBe(200);
+    const written = supabaseMock.writes('tpl_partners', 'POST')[0].body;
+    expect(written).toMatchObject({ company_name: 'Acme Logistics Pvt Ltd', contact_name: 'Priya Rao' });
+  });
+
+  it('refuses a quick application missing the contact person even with no PAN yet', async () => {
+    reset('pending');
+    const res = await request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Acme Logistics Pvt Ltd', email: 'new2@northline.example', fleetSize: 'single', truckType: '32ft_sxl',
+    });
     expect(res.status).toBe(400);
     expect(supabaseMock.writes('tpl_partners', 'POST')).toHaveLength(0);
   });

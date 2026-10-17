@@ -102,6 +102,9 @@ export function assertApplicationFields(data: Record<string, unknown>, partial =
   if (!(partial && data.companyName === undefined) && !isText(data.companyName, 200)) {
     throw new HttpError(400, 'Company name is required (up to 200 characters)');
   }
+  if (!(partial && data.contactName === undefined) && !isText(data.contactName, 200)) {
+    throw new HttpError(400, 'Contact person is required (up to 200 characters)');
+  }
   if (!(partial && data.pan === undefined) && (typeof data.pan !== 'string' || !PAN_PATTERN.test(data.pan.trim()))) {
     throw new HttpError(400, 'PAN looks incorrect (for example ABCDE1234F)');
   }

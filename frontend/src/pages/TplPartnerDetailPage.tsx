@@ -30,6 +30,7 @@ interface TplPartnerDetail {
   id: string
   custom_id: string | null
   company_name: string
+  contact_name?: string | null
   email: string | null
   phone?: string | null
   status: string
@@ -294,6 +295,7 @@ export default function TplPartnerDetailPage() {
             <DetailList
               columns={2}
               items={[
+                { label: 'Contact person', value: partner.contact_name || '—' },
                 { label: 'Company PAN', value: partner.pan_number ? <span className="font-mono">{partner.pan_number}</span> : '—' },
                 { label: '3PL ID', value: <span className="font-mono">{partner.custom_id || 'Not assigned yet'}</span> },
                 { label: 'GSTIN', value: partner.gstin ? <div><span className="font-mono">{partner.gstin}</span><GstinStatus gstin={partner.gstin} pan={partner.pan_number ?? undefined} /></div> : '—' },
