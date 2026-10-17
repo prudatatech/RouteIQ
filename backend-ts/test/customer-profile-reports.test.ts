@@ -257,7 +257,7 @@ describe('staff handle customer reports', () => {
     const summary = await request(app).get(api('/finance/invoices/summary')).set(auth.admin());
     expect(summary.body).toMatchObject({ open_reports: 2, open_payment_reports: 1 });
     const invoices = await request(app).get(api('/finance/invoices?reports=open')).set(auth.admin());
-    expect(invoices.body.map((i: any) => [i.id, i.open_reports])).toEqual([[INV, 2]]);
+    expect(invoices.body.items.map((i: any) => [i.id, i.open_reports])).toEqual([[INV, 2]]);
     expect((await request(app).get(api('/finance/invoice-reports')).set(auth.customer())).status).toBe(403);
   });
 

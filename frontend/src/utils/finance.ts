@@ -48,6 +48,22 @@ export interface Invoice {
   open_reports?: number
 }
 
+/** A page of GET /finance/invoices (same envelope as GET /admin/orgs). */
+export interface InvoicePage {
+  items: Invoice[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/** A page of GET /finance/expenses (same envelope as GET /admin/orgs). */
+export interface ExpensePage {
+  items: Expense[]
+  total: number
+  limit: number
+  offset: number
+}
+
 /** What the server says when an invoice is refused for want of seller details (409). */
 export const INVOICE_PROFILE_MESSAGE = 'Set your company name, GSTIN and state in Settings before issuing invoices'
 
@@ -280,12 +296,28 @@ export const sortReports = (reports: InvoiceReport[]): InvoiceReport[] =>
     return a.status === 'open' ? a.created_at.localeCompare(b.created_at) : b.created_at.localeCompare(a.created_at)
   })
 
+export const FINANCE_PAGE_SIZE = 25
+
 /** The query string for the invoices list: open reports ignore the date range, as the server does. */
-export function invoiceListParams(f: { from?: string; to?: string; status?: string; requester?: string; overdue?: boolean; reportsOnly?: boolean }) {
+export function invoiceListParams(f: {
+  from?: string; to?: string; status?: string; requester?: string; overdue?: boolean; reportsOnly?: boolean
+  page: number; limit?: number
+}) {
+  const limit = f.limit ?? FINANCE_PAGE_SIZE
   return {
     ...(f.reportsOnly ? { reports: 'open' as const } : { from: f.from, to: f.to }),
     status: f.status || undefined,
     requester: f.requester || undefined,
     overdue: f.overdue ? '1' : undefined,
+    limit, offset: Math.max(0, f.page) * limit,
+  }
+}
+
+/** The query string for the expenses list: date range plus the optional filters, paged like everything else. */
+export function expenseListParams(f: { from?: string; to?: string; category?: string; vehicle_id?: string; page: number; limit?: number }) {
+  const limit = f.limit ?? FINANCE_PAGE_SIZE
+  return {
+    from: f.from, to: f.to, category: f.category || undefined, vehicle_id: f.vehicle_id || undefined,
+    limit, offset: Math.max(0, f.page) * limit,
   }
 }

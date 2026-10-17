@@ -65,12 +65,7 @@ export function decisionsFor(status: OrgStatus, kind: OrgKind, kycReady = true):
   return []
 }
 
-export function pageRange(total: number, limit: number, offset: number): { from: number; to: number; hasPrev: boolean; hasNext: boolean } {
-  if (total <= 0) return { from: 0, to: 0, hasPrev: false, hasNext: false }
-  const from = offset + 1
-  const to = Math.min(offset + limit, total)
-  return { from, to, hasPrev: offset > 0, hasNext: offset + limit < total }
-}
+export { pageRange } from './pagination'
 
 /** The reason an organisation was rejected or suspended, kept in its profile by the server. */
 export function decisionReason(org: Pick<OrgRow, 'status' | 'profile'>): string | null {

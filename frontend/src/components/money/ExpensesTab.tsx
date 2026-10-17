@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Paperclip, Pencil, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { financeAPI } from '@/services/api'
@@ -9,7 +9,8 @@ import {
 } from '@/components/ui'
 import { downloadCsv, toCsv } from '@/utils/csv'
 import { errorMessage, formatDate, formatRupees } from '@/utils/display'
-import { EXPENSE_CATEGORIES, EXPENSE_CSV_COLUMNS, categoryLabel, expenseCsvRows, type Expense } from '@/utils/finance'
+import { pageRange } from '@/utils/pagination'
+import { EXPENSE_CATEGORIES, EXPENSE_CSV_COLUMNS, FINANCE_PAGE_SIZE, categoryLabel, expenseCsvRows, expenseListParams, type Expense } from '@/utils/finance'
 import ExpenseModal from './ExpenseModal'
 
 /** The expense log for the chosen dates: add, edit, delete, filter and export. */
@@ -18,12 +19,14 @@ export default function ExpensesTab({ range }: { range: DateRangeValue }) {
   const { confirm } = useConfirm()
   const [category, setCategory] = useState('')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(0)
   const [editing, setEditing] = useState<Expense | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
 
-  const list = useQuery<Expense[]>({
-    queryKey: ['finance', 'expenses', range.from, range.to, category],
-    queryFn: () => financeAPI.expenses({ from: range.from, to: range.to, category: category || undefined }) as Promise<Expense[]>,
+  const list = useQuery({
+    queryKey: ['finance', 'expenses', range.from, range.to, category, page],
+    queryFn: () => financeAPI.expenses(expenseListParams({ from: range.from, to: range.to, category: category || undefined, page })),
+    placeholderData: keepPreviousData,
   })
 
   const remove = useMutation({
@@ -37,10 +40,14 @@ export default function ExpensesTab({ range }: { range: DateRangeValue }) {
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return (list.data ?? []).filter(e => !q || [e.plate_number, e.note, categoryLabel(e.category)].some(v => (v ?? '').toLowerCase().includes(q)))
+    return (list.data?.items ?? []).filter(e => !q || [e.plate_number, e.note, categoryLabel(e.category)].some(v => (v ?? '').toLowerCase().includes(q)))
   }, [list.data, search])
   const total = rows.reduce((s, e) => s + e.amount, 0)
+  const pageRangeInfo = pageRange(list.data?.total ?? 0, list.data?.limit ?? FINANCE_PAGE_SIZE, list.data?.offset ?? 0)
   const filtered = !!(category || search)
+  const changeCategory = (v: string) => { setCategory(v); setPage(0) }
+  // A new date range (chosen above this tab) starts back at page one
+  useEffect(() => { setPage(0) }, [range.from, range.to])
 
   const openAdd = () => { setEditing(null); setModalOpen(true) }
   const openEdit = (e: Expense) => { setEditing(e); setModalOpen(true) }
@@ -100,10 +107,10 @@ export default function ExpensesTab({ range }: { range: DateRangeValue }) {
           hideLabel
           className="sm:w-48"
           value={category}
-          onChange={e => setCategory(e.target.value)}
+          onChange={e => changeCategory(e.target.value)}
           options={[{ value: '', label: 'All categories' }, ...EXPENSE_CATEGORIES.map(c => ({ value: c.value, label: c.label }))]}
         />
-        {filtered && <Button variant="ghost" onClick={() => { setCategory(''); setSearch('') }}>Clear filters</Button>}
+        {filtered && <Button variant="ghost" onClick={() => { setCategory(''); setSearch(''); setPage(0) }}>Clear filters</Button>}
         <div className="flex gap-2 sm:ml-auto">
           <Button variant="secondary" icon={<Download size={16} />} onClick={exportCsv} disabled={rows.length === 0}>Export CSV</Button>
           <Button icon={<Plus size={16} />} onClick={openAdd}>Add expense</Button>
@@ -112,7 +119,8 @@ export default function ExpensesTab({ range }: { range: DateRangeValue }) {
 
       <div className="grid grid-cols-2 gap-3 sm:max-w-lg">
         <Stat label="Expenses shown" loading={list.isLoading} value={rows.length.toLocaleString('en-IN')} />
-        <Stat label="Total" loading={list.isLoading} value={formatRupees(total)} />
+        {/* The page is server-paginated now, so this adds only what is on screen - not the whole date range. */}
+        <Stat label="Total shown" loading={list.isLoading} value={formatRupees(total)} />
       </div>
 
       <DataTable
@@ -125,14 +133,24 @@ export default function ExpensesTab({ range }: { range: DateRangeValue }) {
         onRetry={() => list.refetch()}
         onRowClick={openEdit}
         initialSort={{ key: 'date', direction: 'desc' }}
+        pageSize={FINANCE_PAGE_SIZE}
         empty={filtered
-          ? { title: 'No expenses match these filters', action: <Button variant="secondary" onClick={() => { setCategory(''); setSearch('') }}>Clear filters</Button> }
+          ? { title: 'No expenses match these filters', action: <Button variant="secondary" onClick={() => { setCategory(''); setSearch(''); setPage(0) }}>Clear filters</Button> }
           : {
             title: 'No expenses in this range',
             description: 'Add fuel, maintenance, tolls and driver pay to see real profit.',
             action: <Button icon={<Plus size={16} />} onClick={openAdd}>Add expense</Button>,
           }}
       />
+      {pageRangeInfo.to > 0 && (
+        <div className="flex items-center justify-between text-sm text-muted">
+          <span>Showing {pageRangeInfo.from}-{pageRangeInfo.to} of {list.data?.total}</span>
+          <span className="flex gap-2">
+            <Button size="sm" variant="secondary" disabled={!pageRangeInfo.hasPrev} onClick={() => setPage(p => Math.max(0, p - 1))}>Previous</Button>
+            <Button size="sm" variant="secondary" disabled={!pageRangeInfo.hasNext} onClick={() => setPage(p => p + 1)}>Next</Button>
+          </span>
+        </div>
+      )}
 
       <ExpenseModal open={modalOpen} expense={editing} onClose={() => setModalOpen(false)} />
     </div>

@@ -11,7 +11,7 @@ import type {
   ClosedSettlement, DispatchCheck, DocumentHistory, DocumentInput, DocumentPatch, GenerateKind, LoadDocument, LoadDocumentsResponse,
   LoadTimelineResponse, Settlement, UploadUrl,
 } from '@/types/loadDocuments'
-import type { CompanyProfile, InvoiceDetail, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
+import type { CompanyProfile, ExpensePage, InvoiceDetail, InvoicePage, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
 import type {
   CompanyGroup, ExcludedPartner, Grouped, NetDriver, NetStatement, NetVehicle, NetVehicleInput, PartnerFleetSummary, AffiliationRules, StatementDeduction,
 } from '@/types/network'
@@ -937,7 +937,8 @@ const reportKey = (prefix: string) =>
 export const financeAPI = {
   summary: (range: DateParams) => api.get('/finance/summary', { params: range }).then(r => r.data),
   unpriced: (range: DateParams) => api.get('/finance/unpriced', { params: range }).then(r => ensureArray(r.data)),
-  invoices: (params: DateParams & { status?: string; requester?: string; overdue?: string; reports?: 'open' }) => api.get('/finance/invoices', { params }).then(r => ensureArray(r.data)),
+  invoices: (params: DateParams & { status?: string; requester?: string; overdue?: string; reports?: 'open'; limit?: number; offset?: number }) =>
+    api.get('/finance/invoices', { params }).then(r => r.data as InvoicePage),
   createInvoice: (target: { shipment_id: string } | { manifest_id: string }) => api.post('/finance/invoices', target).then(r => r.data),
   invoiceSummary: () => api.get('/finance/invoices/summary').then(r => r.data as InvoiceSummary),
   /** Offline payment: staff record how and when the money arrived. */
@@ -958,7 +959,8 @@ export const financeAPI = {
     api.post('/finance/unpriced/price', data).then(r => r.data as { invoice_id: string; invoice_number: string | null; amount: number }),
   company: () => api.get('/finance/company').then(r => r.data as CompanyProfile),
   saveCompany: (data: Partial<CompanyProfile>) => api.put('/finance/company', data).then(r => r.data as CompanyProfile),
-  expenses: (params: DateParams & { category?: string; vehicle_id?: string }) => api.get('/finance/expenses', { params }).then(r => ensureArray(r.data)),
+  expenses: (params: DateParams & { category?: string; vehicle_id?: string; limit?: number; offset?: number }) =>
+    api.get('/finance/expenses', { params }).then(r => r.data as ExpensePage),
   createExpense: (data: ExpenseInput) => api.post('/finance/expenses', data).then(r => r.data),
   updateExpense: (id: string, data: Partial<ExpenseInput>) => api.put(`/finance/expenses/${id}`, data).then(r => r.data),
   deleteExpense: (id: string) => api.delete(`/finance/expenses/${id}`),

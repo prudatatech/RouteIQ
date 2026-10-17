@@ -331,8 +331,12 @@ covered here by unit tests only.
 
 ## Observations, not changed
 
-- `GET /finance/invoices`, `/summary` and the expense list are not paginated; the database caps a read at 1,000 rows by default, so a company
-  with more rows in a range would see a silently short list and short totals. Not reproduced (needs more than 1,000 rows).
+- `GET /finance/summary` is still not paginated (it aggregates, so there is no page to return); not reproduced (needs more than 1,000 rows
+  in one range). `GET /finance/invoices` and `GET /finance/expenses` were unpaginated at the time of this audit - fixed afterward: both take
+  `limit`/`offset` and answer `{ items, total, limit, offset }` (same envelope as `GET /admin/orgs`); `reports=open` is bounded by the set of
+  invoices with an open report instead of scanning the whole table. The `requester`/`overdue` filters on `GET /finance/invoices` still run
+  after the page is fetched (they need a join `scopeQuery` does not have), so a page can come back with fewer rows than `limit` when either
+  is combined with paging - a known limitation, not a regression (the client search box has the same page-only reach now).
 - `PATCH /routes/:id/status` on a route with no vehicle answers 500 instead of a 4xx (trips audit).
 - The goods line on the PDF prints the goods' own rate ("HSN 7306 ... @ 18%") next to freight that charges 0% or 5%. Intended as a reference;
   the owner may want the rate dropped so it is not read as the freight's.

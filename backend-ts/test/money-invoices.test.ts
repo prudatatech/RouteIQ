@@ -341,16 +341,16 @@ describe('list, filters and totals', () => {
 
   it('marks overdue invoices and tells who is billed', async () => {
     const res = await list();
-    const byId = (id: string) => res.body.find((i: any) => i.id === id);
+    const byId = (id: string) => res.body.items.find((i: any) => i.id === id);
     expect(byId('i-late')).toMatchObject({ overdue: true, days_overdue: 10, requester_type: 'vendor', requester_name: 'Acme Logistics' });
     expect(byId('i-ok')).toMatchObject({ overdue: false, requester_type: 'customer', requester_name: 'Meera Customer' });
     expect(byId('i-paid').overdue).toBe(false);
   });
 
   it('filters by overdue and by requester type', async () => {
-    expect((await list('overdue=1')).body.map((i: any) => i.id)).toEqual(['i-late']);
-    expect((await list('requester=customer')).body.map((i: any) => i.id)).toEqual(['i-ok']);
-    expect((await list('requester=vendor')).body.map((i: any) => i.id).sort()).toEqual(['i-late', 'i-old-paid', 'i-paid']);
+    expect((await list('overdue=1')).body.items.map((i: any) => i.id)).toEqual(['i-late']);
+    expect((await list('requester=customer')).body.items.map((i: any) => i.id)).toEqual(['i-ok']);
+    expect((await list('requester=vendor')).body.items.map((i: any) => i.id).sort()).toEqual(['i-late', 'i-old-paid', 'i-paid']);
   });
 
   it('totals outstanding and collected this month', async () => {

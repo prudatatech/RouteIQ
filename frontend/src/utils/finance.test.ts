@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { toCsv } from './csv'
-import { INVOICE_PROFILE_MESSAGE, invoiceBlockers, isCompanyProfileError, EXPENSE_CSV_COLUMNS, INVOICE_CSV_COLUMNS, categoryLabel, paymentMethodLabel, expenseCsvRows, invoiceCsvRows, type Expense, type Invoice } from './finance'
+import { pageRange } from './pagination'
+import {
+  INVOICE_PROFILE_MESSAGE, invoiceBlockers, isCompanyProfileError, EXPENSE_CSV_COLUMNS, INVOICE_CSV_COLUMNS, FINANCE_PAGE_SIZE,
+  categoryLabel, paymentMethodLabel, expenseCsvRows, invoiceCsvRows, invoiceListParams, expenseListParams, type Expense, type Invoice,
+} from './finance'
 
 const expense: Expense = {
   id: 'e1', vehicle_id: 'v1', route_id: null, plate_number: 'MH12AB1234', category: 'toll', amount: 400.5,
@@ -55,5 +59,32 @@ describe('invoiceBlockers', () => {
     expect(isCompanyProfileError({ response: { status: 409, data: { code: 'company_profile_incomplete', detail: INVOICE_PROFILE_MESSAGE } } })).toBe(true)
     expect(isCompanyProfileError({ response: { status: 409, data: { detail: 'This delivery already has an invoice' } } })).toBe(false)
     expect(isCompanyProfileError(null)).toBe(false)
+  })
+})
+
+describe('invoiceListParams', () => {
+  it('pages by limit and offset like the other paginated lists', () => {
+    expect(invoiceListParams({ from: '2026-10-01', to: '2026-10-15', page: 0 })).toMatchObject({ from: '2026-10-01', to: '2026-10-15', limit: FINANCE_PAGE_SIZE, offset: 0 })
+    expect(invoiceListParams({ from: '2026-10-01', to: '2026-10-15', page: 2 })).toMatchObject({ limit: FINANCE_PAGE_SIZE, offset: 2 * FINANCE_PAGE_SIZE })
+    expect(invoiceListParams({ page: 1, limit: 10 })).toMatchObject({ limit: 10, offset: 10 })
+  })
+  it('still ignores the date range for the open-reports view, whatever the page', () => {
+    expect(invoiceListParams({ reportsOnly: true, page: 3, from: '2026-10-01', to: '2026-10-15' })).toMatchObject({ reports: 'open', offset: 3 * FINANCE_PAGE_SIZE })
+  })
+})
+
+describe('expenseListParams', () => {
+  it('pages the same way and keeps the category/vehicle filters', () => {
+    expect(expenseListParams({ from: '2026-10-01', to: '2026-10-15', category: 'fuel', page: 1 })).toMatchObject({
+      from: '2026-10-01', to: '2026-10-15', category: 'fuel', vehicle_id: undefined, limit: FINANCE_PAGE_SIZE, offset: FINANCE_PAGE_SIZE,
+    })
+  })
+})
+
+describe('pageRange (shared with GET /admin/orgs)', () => {
+  it('describes the window and whether there is a previous/next page', () => {
+    expect(pageRange(120, 25, 25)).toEqual({ from: 26, to: 50, hasPrev: true, hasNext: true })
+    expect(pageRange(10, 25, 0)).toEqual({ from: 1, to: 10, hasPrev: false, hasNext: false })
+    expect(pageRange(0, 25, 0)).toEqual({ from: 0, to: 0, hasPrev: false, hasNext: false })
   })
 })

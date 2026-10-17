@@ -116,10 +116,23 @@ describe('invoice list and status', () => {
   it('lists invoices with reference and vendor name, filtered by status', async () => {
     const all = await request(app).get('/api/v1/finance/invoices').set(admin());
     expect(all.status).toBe(200);
-    expect(all.body).toHaveLength(2);
-    expect(all.body.find((i: any) => i.id === 'i1')).toMatchObject({ reference: 'RTX-S1', vendor_name: 'Acme Logistics' });
+    expect(all.body.items).toHaveLength(2);
+    expect(all.body).toMatchObject({ total: 2, limit: 50, offset: 0 });
+    expect(all.body.items.find((i: any) => i.id === 'i1')).toMatchObject({ reference: 'RTX-S1', vendor_name: 'Acme Logistics' });
     const paid = await request(app).get('/api/v1/finance/invoices?status=paid').set(admin());
-    expect(paid.body.map((i: any) => i.id)).toEqual(['i2']);
+    expect(paid.body.items.map((i: any) => i.id)).toEqual(['i2']);
+  });
+
+  it('paginates with limit/offset, and total counts every matching invoice whatever the page size', async () => {
+    const page1 = await request(app).get('/api/v1/finance/invoices?limit=1&offset=0').set(admin());
+    expect(page1.body).toMatchObject({ total: 2, limit: 1, offset: 0 });
+    expect(page1.body.items.map((i: any) => i.id)).toEqual(['i1']);
+    const page2 = await request(app).get('/api/v1/finance/invoices?limit=1&offset=1').set(admin());
+    expect(page2.body).toMatchObject({ total: 2, limit: 1, offset: 1 });
+    expect(page2.body.items.map((i: any) => i.id)).toEqual(['i2']);
+    const page3 = await request(app).get('/api/v1/finance/invoices?limit=1&offset=2').set(admin());
+    expect(page3.body.items).toEqual([]);
+    expect(page3.body.total).toBe(2);
   });
 
   it('marks an issued invoice paid, once', async () => {
@@ -183,12 +196,13 @@ describe('expenses', () => {
     await post({ category: 'toll', amount: 400, expense_date: TODAY });
 
     const list = await request(app).get('/api/v1/finance/expenses').set(admin());
-    expect(list.body).toHaveLength(2);
-    expect(list.body.find((e: any) => e.category === 'fuel').plate_number).toBe('MH12AB1234');
+    expect(list.body.items).toHaveLength(2);
+    expect(list.body).toMatchObject({ total: 2, limit: 50, offset: 0 });
+    expect(list.body.items.find((e: any) => e.category === 'fuel').plate_number).toBe('MH12AB1234');
     const fuel = await request(app).get('/api/v1/finance/expenses?category=fuel').set(admin());
-    expect(fuel.body).toHaveLength(1);
+    expect(fuel.body.items).toHaveLength(1);
     const byVehicle = await request(app).get('/api/v1/finance/expenses?vehicle_id=v1').set(admin());
-    expect(byVehicle.body).toHaveLength(1);
+    expect(byVehicle.body.items).toHaveLength(1);
 
     const id = created.body.id;
     const edited = await request(app).put(`/api/v1/finance/expenses/${id}`).set(admin()).send({ amount: 3300 });
@@ -197,6 +211,21 @@ describe('expenses', () => {
     expect((await request(app).delete(`/api/v1/finance/expenses/${id}`).set(admin())).status).toBe(204);
     expect(supabaseMock.rows('expenses')).toHaveLength(1);
     expect((await request(app).delete(`/api/v1/finance/expenses/${id}`).set(admin())).status).toBe(404);
+  });
+
+  it('paginates with limit/offset, and total counts every matching expense whatever the page size', async () => {
+    await post({ category: 'fuel', amount: 100, expense_date: TODAY });
+    await post({ category: 'toll', amount: 200, expense_date: TODAY });
+    await post({ category: 'other', amount: 300, expense_date: TODAY });
+    const page1 = await request(app).get('/api/v1/finance/expenses?limit=2&offset=0').set(admin());
+    expect(page1.body).toMatchObject({ total: 3, limit: 2, offset: 0 });
+    expect(page1.body.items).toHaveLength(2);
+    const page2 = await request(app).get('/api/v1/finance/expenses?limit=2&offset=2').set(admin());
+    expect(page2.body).toMatchObject({ total: 3, limit: 2, offset: 2 });
+    expect(page2.body.items).toHaveLength(1);
+    // The two pages are disjoint and together cover every expense
+    const ids = [...page1.body.items, ...page2.body.items].map((e: any) => e.id).sort();
+    expect(ids).toEqual(supabaseMock.rows('expenses').map(e => e.id).sort());
   });
 
   it.each([

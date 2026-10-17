@@ -41,6 +41,17 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const validDate = (v: unknown): v is string => typeof v === 'string' && DATE_RE.test(v) && !Number.isNaN(Date.parse(v));
 const rangeFrom = (req: Request) => resolveIndianDateRange(req.query.from, req.query.to, 30);
 
+const DEFAULT_PAGE_LIMIT = 50;
+const MAX_PAGE_LIMIT = 200;
+/** `limit`/`offset` for a list route, same convention as GET /notifications and GET /admin/orgs. */
+function parsePaging(req: Request): { limit: number; offset: number } {
+  const rawLimit = Number(req.query.limit);
+  const rawOffset = Number(req.query.offset);
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), MAX_PAGE_LIMIT) : DEFAULT_PAGE_LIMIT;
+  const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.floor(rawOffset) : 0;
+  return { limit, offset };
+}
+
 // ── GET /summary — profit and loss for the range ───────────
 router.get('/summary', async (req: Request, res: Response) => {
   try {
@@ -102,14 +113,27 @@ router.get('/invoices', async (req: Request, res: Response) => {
     // Invoices with a report waiting are listed whatever their date: the queue must not hide an old one
     const waiting = req.query.reports === 'open';
     const { start, end } = rangeFrom(req);
-    let query = scopeQuery(supabase.from('invoices').select(LIST_COLUMNS), OWNED.invoice).order('issued_at', { ascending: false });
-    if (!waiting) query = query.gte('issued_at', start.toISOString()).lt('issued_at', end.toISOString());
+    const { limit, offset } = parsePaging(req);
+    let query = scopeQuery(supabase.from('invoices').select(LIST_COLUMNS, { count: 'exact' }), OWNED.invoice).order('issued_at', { ascending: false });
+    if (waiting) {
+      // Not bounded by date (an old one must not be hidden), but still bounded: by the small set of invoices
+      // that actually have an open report, not by scanning the whole table (same bound listReports() uses).
+      const { data: openRows, error: openErr } = await supabase.from('invoice_payment_reports').select('invoice_id').eq('status', 'open').limit(500);
+      if (openErr) throw new Error(`Failed to list waiting invoices: ${openErr.message}`);
+      const openIds = [...new Set((openRows ?? []).map((r: any) => r.invoice_id as string))];
+      // No invoice has an open report right now: an id no row has, so the query matches nothing (not everything)
+      query = query.in('id', openIds.length ? openIds : ['00000000-0000-0000-0000-000000000000']);
+    } else {
+      query = query.gte('issued_at', start.toISOString()).lt('issued_at', end.toISOString());
+    }
     const status = req.query.status;
     if (typeof status === 'string' && ['issued', 'paid', 'void'].includes(status)) query = query.eq('status', status);
+    query = query.range(offset, offset + limit - 1);
     // The payment terms do not depend on the invoices: read both at once
-    const [{ data, error }, terms] = await Promise.all([query, getCachedPaymentTermsDays()]);
+    const [{ data, error, count }, terms] = await Promise.all([query, getCachedPaymentTermsDays()]);
     if (error) throw new Error(`Failed to list invoices: ${error.message}`);
     const rows = data ?? [];
+    const total = count ?? rows.length;
 
     // The names behind the invoices (shipments, loads, vendors, then the customers of the bookings) and the
     // billed party of each invoice are separate chains: they run side by side
@@ -170,10 +194,13 @@ router.get('/invoices', async (req: Request, res: Response) => {
         open_reports: openOf.get(r.id) ?? 0,
       };
     });
-    res.json(out
+    // requester/overdue narrow the page already fetched above, same as `pendingFirst` on /admin/orgs reorders
+    // only within its page: `total`/`limit`/`offset` describe the date-range-and-status match, not this
+    // narrower view, so a page can come back with fewer rows than `limit` when either is combined with paging.
+    const items = out
       .filter(r => !wantRequester || r.requester_type === wantRequester)
-      .filter(r => req.query.overdue !== '1' || r.overdue)
-      .filter(r => req.query.reports !== 'open' || r.open_reports > 0));
+      .filter(r => req.query.overdue !== '1' || r.overdue);
+    res.json({ items, total, limit, offset });
   } catch (e) {
     sendError(req, res, e);
   }
@@ -403,9 +430,10 @@ router.get('/expenses', async (req: Request, res: Response) => {
     const { start, end } = rangeFrom(req);
     const fromKey = indianDateKey(start);
     const toKey = indianDateKey(new Date(end.getTime() - 1));
+    const { limit, offset } = parsePaging(req);
     let query = scopeQuery(supabase
       .from('expenses')
-      .select('id, vehicle_id, route_id, category, amount, expense_date, litres, note, receipt_path, created_at')
+      .select('id, vehicle_id, route_id, category, amount, expense_date, litres, note, receipt_path, created_at', { count: 'exact' })
       .gte('expense_date', fromKey)
       .lte('expense_date', toKey), OWNED.carrier)
       .order('expense_date', { ascending: false });
@@ -413,12 +441,13 @@ router.get('/expenses', async (req: Request, res: Response) => {
       query = query.eq('category', req.query.category);
     }
     if (typeof req.query.vehicle_id === 'string' && req.query.vehicle_id) query = query.eq('vehicle_id', req.query.vehicle_id);
-    const { data, error } = await query;
+    const { data, error, count } = await query.range(offset, offset + limit - 1);
     if (error) throw new Error(`Failed to list expenses: ${error.message}`);
     const rows = data ?? [];
     const vehicles = await selectIn<{ id: string; plate_number: string }>('vehicles', 'id', rows.map((r: any) => r.vehicle_id), 'id, plate_number');
     const plates = new Map(vehicles.map(v => [v.id, v.plate_number]));
-    res.json(rows.map((r: any) => ({ ...r, plate_number: r.vehicle_id ? (plates.get(r.vehicle_id) ?? null) : null })));
+    const items = rows.map((r: any) => ({ ...r, plate_number: r.vehicle_id ? (plates.get(r.vehicle_id) ?? null) : null }));
+    res.json({ items, total: count ?? items.length, limit, offset });
   } catch (e) {
     sendError(req, res, e);
   }
