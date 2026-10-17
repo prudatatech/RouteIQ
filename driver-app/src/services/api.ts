@@ -154,6 +154,9 @@ export interface RegisteredVehicle {
   vehicle_type: VehicleKind;
   capacity_kg: number | null;
   vehicle_model?: string | null;
+  container_length_ft?: number | null;
+  container_width_ft?: number | null;
+  container_height_ft?: number | null;
   rc_number?: string | null;
   rc_expiry?: string | null;
   rc_document_url?: string | null;
@@ -196,6 +199,9 @@ export interface VehicleRegistrationInput {
   vehicle_type: VehicleKind;
   capacity_kg: number;
   vehicle_model?: string;
+  container_length_ft?: number;
+  container_width_ft?: number;
+  container_height_ft?: number;
   rc_number?: string;
   rc_expiry?: string;
   insurance_number?: string;

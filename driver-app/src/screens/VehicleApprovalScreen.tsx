@@ -17,7 +17,7 @@ import { REGISTRATION_KEY } from '../hooks/useVehicleRegistration';
 import { useTranslation } from '../hooks/useTranslation';
 import PhotoSlots from '../components/vehicle/PhotoSlots';
 import { Button, Card, ErrorBanner, StatusPill, Text } from '../components/ui';
-import { formatDateTime, formatNumber } from '../utils/format';
+import { formatDate, formatDateTime, formatNumber } from '../utils/format';
 import { colors, size, space } from '../theme';
 
 interface Props {
@@ -69,8 +69,19 @@ export default function VehicleApprovalScreen({ registration, view, refreshing, 
     [t('vehicle_capacity'), vehicle.capacity_kg ? `${formatNumber(vehicle.capacity_kg)} kg` : '—'],
   ];
   if (vehicle.vehicle_model) rows.push([t('vehicle_model_label'), vehicle.vehicle_model]);
+  if (vehicle.container_length_ft || vehicle.container_width_ft || vehicle.container_height_ft) {
+    rows.push([
+      t('vehicle_container_length'),
+      `${vehicle.container_length_ft ?? 0} × ${vehicle.container_width_ft ?? 0} × ${vehicle.container_height_ft ?? 0} ft`,
+    ]);
+  }
   if (vehicle.rc_number) rows.push([t('vehicle_rc_number'), vehicle.rc_number]);
+  if (vehicle.rc_expiry) rows.push([t('vehicle_rc_expiry'), formatDate(vehicle.rc_expiry)]);
   if (vehicle.insurance_number) rows.push([t('vehicle_insurance_number'), vehicle.insurance_number]);
+  if (vehicle.insurance_expiry) rows.push([t('vehicle_insurance_expiry'), formatDate(vehicle.insurance_expiry)]);
+  if (vehicle.fitness_expiry) rows.push([t('vehicle_fitness_expiry'), formatDate(vehicle.fitness_expiry)]);
+  if (vehicle.permit_expiry) rows.push([t('vehicle_permit_expiry'), formatDate(vehicle.permit_expiry)]);
+  if (vehicle.puc_expiry) rows.push([t('vehicle_puc_expiry'), formatDate(vehicle.puc_expiry)]);
   if (vehicle.submitted_at) rows.push([t('vehicle_submitted_at'), formatDateTime(vehicle.submitted_at)]);
 
   return (

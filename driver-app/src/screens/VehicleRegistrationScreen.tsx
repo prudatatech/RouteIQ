@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, type RegisteredVehicle, type VehicleDocumentSlot, type VehicleKind, type VehiclePhotoInfo, type VehiclePhotoSlot } from '../services/api';
 import { chooseVehiclePhoto, uploadStagedPhotos } from '../services/vehiclePhotos';
 import { chooseVehicleDocument, uploadStagedDocuments } from '../services/vehicleDocuments';
+import { isValidDay } from '../utils/documents';
 import { useTranslation } from '../hooks/useTranslation';
 import PhotoSlots from '../components/vehicle/PhotoSlots';
 import DocumentSlots from '../components/vehicle/DocumentSlots';
@@ -56,23 +57,50 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
   const [capacity, setCapacity] = useState(initial?.capacity_kg ? String(initial.capacity_kg) : '');
   const [model, setModel] = useState(initial?.vehicle_model ?? '');
   const [rc, setRc] = useState(initial?.rc_number ?? '');
+  const [rcExpiry, setRcExpiry] = useState(initial?.rc_expiry ?? '');
   const [insurance, setInsurance] = useState(initial?.insurance_number ?? '');
+  const [insuranceExpiry, setInsuranceExpiry] = useState(initial?.insurance_expiry ?? '');
   const [fitness, setFitness] = useState(initial?.fitness_certificate_number ?? '');
+  const [fitnessExpiry, setFitnessExpiry] = useState(initial?.fitness_expiry ?? '');
   const [permit, setPermit] = useState(initial?.permit_number ?? '');
+  const [permitExpiry, setPermitExpiry] = useState(initial?.permit_expiry ?? '');
   const [puc, setPuc] = useState(initial?.puc_number ?? '');
+  const [pucExpiry, setPucExpiry] = useState(initial?.puc_expiry ?? '');
+  const [containerLength, setContainerLength] = useState(initial?.container_length_ft ? String(initial.container_length_ft) : '');
+  const [containerWidth, setContainerWidth] = useState(initial?.container_width_ft ? String(initial.container_width_ft) : '');
+  const [containerHeight, setContainerHeight] = useState(initial?.container_height_ft ? String(initial.container_height_ft) : '');
   const [staged, setStaged] = useState<Partial<Record<VehiclePhotoSlot, string>>>({});
   const [stagedDocs, setStagedDocs] = useState<Partial<Record<VehicleDocumentSlot, string>>>({});
-  const [errors, setErrors] = useState<{ plate?: string; capacity?: string }>({});
+  const [errors, setErrors] = useState<{
+    plate?: string;
+    capacity?: string;
+    rcExpiry?: string;
+    insuranceExpiry?: string;
+    fitnessExpiry?: string;
+    permitExpiry?: string;
+    pucExpiry?: string;
+    containerLength?: string;
+    containerWidth?: string;
+    containerHeight?: string;
+  }>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const capacityRef = useRef<TextInput>(null);
   const modelRef = useRef<TextInput>(null);
   const rcRef = useRef<TextInput>(null);
+  const rcExpiryRef = useRef<TextInput>(null);
   const insuranceRef = useRef<TextInput>(null);
+  const insuranceExpiryRef = useRef<TextInput>(null);
   const fitnessRef = useRef<TextInput>(null);
+  const fitnessExpiryRef = useRef<TextInput>(null);
   const permitRef = useRef<TextInput>(null);
+  const permitExpiryRef = useRef<TextInput>(null);
   const pucRef = useRef<TextInput>(null);
+  const pucExpiryRef = useRef<TextInput>(null);
+  const containerLengthRef = useRef<TextInput>(null);
+  const containerWidthRef = useRef<TextInput>(null);
+  const containerHeightRef = useRef<TextInput>(null);
 
   const existing: Partial<Record<VehiclePhotoSlot, string | null>> = {};
   for (const p of photos) existing[p.slot] = p.url;
@@ -100,9 +128,26 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
     if (!/^[A-Z0-9]{4,20}$/.test(plateValue)) nextErrors.plate = t('vehicle_plate_invalid');
     const capacityValue = Number(capacity);
     if (!Number.isFinite(capacityValue) || capacityValue <= 0 || capacityValue > 50000) nextErrors.capacity = t('vehicle_capacity_invalid');
+    if (rcExpiry.trim() && !isValidDay(rcExpiry.trim())) nextErrors.rcExpiry = t('doc_expiry_invalid');
+    if (insuranceExpiry.trim() && !isValidDay(insuranceExpiry.trim())) nextErrors.insuranceExpiry = t('doc_expiry_invalid');
+    if (fitnessExpiry.trim() && !isValidDay(fitnessExpiry.trim())) nextErrors.fitnessExpiry = t('doc_expiry_invalid');
+    if (permitExpiry.trim() && !isValidDay(permitExpiry.trim())) nextErrors.permitExpiry = t('doc_expiry_invalid');
+    if (pucExpiry.trim() && !isValidDay(pucExpiry.trim())) nextErrors.pucExpiry = t('doc_expiry_invalid');
+    const containerLengthValue = containerLength.trim() ? Number(containerLength) : null;
+    if (containerLengthValue !== null && (!Number.isFinite(containerLengthValue) || containerLengthValue < 0 || containerLengthValue > 60)) {
+      nextErrors.containerLength = t('vehicle_container_invalid');
+    }
+    const containerWidthValue = containerWidth.trim() ? Number(containerWidth) : null;
+    if (containerWidthValue !== null && (!Number.isFinite(containerWidthValue) || containerWidthValue < 0 || containerWidthValue > 15)) {
+      nextErrors.containerWidth = t('vehicle_container_invalid');
+    }
+    const containerHeightValue = containerHeight.trim() ? Number(containerHeight) : null;
+    if (containerHeightValue !== null && (!Number.isFinite(containerHeightValue) || containerHeightValue < 0 || containerHeightValue > 15)) {
+      nextErrors.containerHeight = t('vehicle_container_invalid');
+    }
     setErrors(nextErrors);
-    if (nextErrors.plate || nextErrors.capacity) {
-      // The fields are at the top: bring the inline message into view
+    if (Object.values(nextErrors).some(Boolean)) {
+      // The plate and capacity fields are at the top: bring the inline message into view
       scrollRef.current?.scrollTo({ y: 0, animated: true });
       return;
     }
@@ -116,10 +161,18 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
         capacity_kg: capacityValue,
         ...(model.trim() ? { vehicle_model: model.trim() } : {}),
         ...(rc.trim() ? { rc_number: rc.trim().toUpperCase() } : {}),
+        ...(rcExpiry.trim() ? { rc_expiry: rcExpiry.trim() } : {}),
         ...(insurance.trim() ? { insurance_number: insurance.trim().toUpperCase() } : {}),
+        ...(insuranceExpiry.trim() ? { insurance_expiry: insuranceExpiry.trim() } : {}),
         ...(fitness.trim() ? { fitness_certificate_number: fitness.trim().toUpperCase() } : {}),
+        ...(fitnessExpiry.trim() ? { fitness_expiry: fitnessExpiry.trim() } : {}),
         ...(permit.trim() ? { permit_number: permit.trim().toUpperCase() } : {}),
+        ...(permitExpiry.trim() ? { permit_expiry: permitExpiry.trim() } : {}),
         ...(puc.trim() ? { puc_number: puc.trim().toUpperCase() } : {}),
+        ...(pucExpiry.trim() ? { puc_expiry: pucExpiry.trim() } : {}),
+        ...(containerLengthValue !== null ? { container_length_ft: containerLengthValue } : {}),
+        ...(containerWidthValue !== null ? { container_width_ft: containerWidthValue } : {}),
+        ...(containerHeightValue !== null ? { container_height_ft: containerHeightValue } : {}),
       });
       if (Object.keys(staged).length > 0) {
         const failed = await uploadStagedPhotos(vehicle.id, staged);
@@ -201,6 +254,57 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
               editable={!busy}
               returnKeyType="next"
               submitBehavior="submit"
+              onSubmitEditing={() => containerLengthRef.current?.focus()}
+            />
+            <TextField
+              ref={containerLengthRef}
+              label={t('vehicle_container_length')}
+              hint={t('vehicle_optional')}
+              value={containerLength}
+              onChangeText={(v) => {
+                setContainerLength(v.replace(/[^\d.]/g, ''));
+                if (errors.containerLength) setErrors((e) => ({ ...e, containerLength: undefined }));
+              }}
+              error={errors.containerLength}
+              keyboardType="decimal-pad"
+              maxLength={5}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => containerWidthRef.current?.focus()}
+            />
+            <TextField
+              ref={containerWidthRef}
+              label={t('vehicle_container_width')}
+              hint={t('vehicle_optional')}
+              value={containerWidth}
+              onChangeText={(v) => {
+                setContainerWidth(v.replace(/[^\d.]/g, ''));
+                if (errors.containerWidth) setErrors((e) => ({ ...e, containerWidth: undefined }));
+              }}
+              error={errors.containerWidth}
+              keyboardType="decimal-pad"
+              maxLength={5}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => containerHeightRef.current?.focus()}
+            />
+            <TextField
+              ref={containerHeightRef}
+              label={t('vehicle_container_height')}
+              hint={t('vehicle_optional')}
+              value={containerHeight}
+              onChangeText={(v) => {
+                setContainerHeight(v.replace(/[^\d.]/g, ''));
+                if (errors.containerHeight) setErrors((e) => ({ ...e, containerHeight: undefined }));
+              }}
+              error={errors.containerHeight}
+              keyboardType="decimal-pad"
+              maxLength={5}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
               onSubmitEditing={() => rcRef.current?.focus()}
             />
             <TextField
@@ -212,6 +316,24 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
               autoCapitalize="characters"
               autoCorrect={false}
               maxLength={50}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => rcExpiryRef.current?.focus()}
+            />
+            <TextField
+              ref={rcExpiryRef}
+              label={t('vehicle_rc_expiry')}
+              hint={t('doc_date_hint')}
+              value={rcExpiry}
+              onChangeText={(v) => {
+                setRcExpiry(v);
+                if (errors.rcExpiry) setErrors((e) => ({ ...e, rcExpiry: undefined }));
+              }}
+              error={errors.rcExpiry}
+              placeholder="YYYY-MM-DD"
+              keyboardType="numbers-and-punctuation"
+              maxLength={10}
               editable={!busy}
               returnKeyType="next"
               submitBehavior="submit"
@@ -229,6 +351,24 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
               editable={!busy}
               returnKeyType="next"
               submitBehavior="submit"
+              onSubmitEditing={() => insuranceExpiryRef.current?.focus()}
+            />
+            <TextField
+              ref={insuranceExpiryRef}
+              label={t('vehicle_insurance_expiry')}
+              hint={t('doc_date_hint')}
+              value={insuranceExpiry}
+              onChangeText={(v) => {
+                setInsuranceExpiry(v);
+                if (errors.insuranceExpiry) setErrors((e) => ({ ...e, insuranceExpiry: undefined }));
+              }}
+              error={errors.insuranceExpiry}
+              placeholder="YYYY-MM-DD"
+              keyboardType="numbers-and-punctuation"
+              maxLength={10}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
               onSubmitEditing={() => fitnessRef.current?.focus()}
             />
             <TextField
@@ -240,6 +380,24 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
               autoCapitalize="characters"
               autoCorrect={false}
               maxLength={50}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => fitnessExpiryRef.current?.focus()}
+            />
+            <TextField
+              ref={fitnessExpiryRef}
+              label={t('vehicle_fitness_expiry')}
+              hint={t('doc_date_hint')}
+              value={fitnessExpiry}
+              onChangeText={(v) => {
+                setFitnessExpiry(v);
+                if (errors.fitnessExpiry) setErrors((e) => ({ ...e, fitnessExpiry: undefined }));
+              }}
+              error={errors.fitnessExpiry}
+              placeholder="YYYY-MM-DD"
+              keyboardType="numbers-and-punctuation"
+              maxLength={10}
               editable={!busy}
               returnKeyType="next"
               submitBehavior="submit"
@@ -257,6 +415,24 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
               editable={!busy}
               returnKeyType="next"
               submitBehavior="submit"
+              onSubmitEditing={() => permitExpiryRef.current?.focus()}
+            />
+            <TextField
+              ref={permitExpiryRef}
+              label={t('vehicle_permit_expiry')}
+              hint={t('doc_date_hint')}
+              value={permitExpiry}
+              onChangeText={(v) => {
+                setPermitExpiry(v);
+                if (errors.permitExpiry) setErrors((e) => ({ ...e, permitExpiry: undefined }));
+              }}
+              error={errors.permitExpiry}
+              placeholder="YYYY-MM-DD"
+              keyboardType="numbers-and-punctuation"
+              maxLength={10}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
               onSubmitEditing={() => pucRef.current?.focus()}
             />
             <TextField
@@ -268,6 +444,24 @@ export default function VehicleRegistrationScreen({ initial, photos, mode, onDon
               autoCapitalize="characters"
               autoCorrect={false}
               maxLength={50}
+              editable={!busy}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => pucExpiryRef.current?.focus()}
+            />
+            <TextField
+              ref={pucExpiryRef}
+              label={t('vehicle_puc_expiry')}
+              hint={t('doc_date_hint')}
+              value={pucExpiry}
+              onChangeText={(v) => {
+                setPucExpiry(v);
+                if (errors.pucExpiry) setErrors((e) => ({ ...e, pucExpiry: undefined }));
+              }}
+              error={errors.pucExpiry}
+              placeholder="YYYY-MM-DD"
+              keyboardType="numbers-and-punctuation"
+              maxLength={10}
               editable={!busy}
               returnKeyType="done"
               onSubmitEditing={submit}
