@@ -220,7 +220,13 @@ async function loadReviewable(vehicleId: string): Promise<Row> {
   return data;
 }
 
-function notifyDriver(vehicle: Row, driverId: string | null, title: string, body: string, decision: 'approved' | 'rejected') {
+/**
+ * `document_fix_requested` is distinct from `rejected`: the vehicle stays pending_approval and only
+ * named documents need redoing, unlike a full rejection (archived, everything redone). Keeping the
+ * values apart lets the driver app (and this notification's own text) tell the two apart instead of
+ * reusing rejection language for a partial ask.
+ */
+function notifyDriver(vehicle: Row, driverId: string | null, title: string, body: string, decision: 'approved' | 'rejected' | 'document_fix_requested') {
   if (!driverId) return;
   notificationService
     .sendNotification(driverId, title, body, 'vehicle_approval', { vehicle_id: vehicle.id, decision })
@@ -327,7 +333,7 @@ export async function requestVehicleDocumentFixes(vehicleId: string, actor: Acto
   if (!data) throw new HttpError(409, 'This vehicle was already decided by someone else.');
 
   const list = Object.entries(issues).map(([slot, reason]) => `${VEHICLE_DOCUMENT_LABELS[slot as VehicleDocumentSlot]}: ${reason}`).join('; ');
-  notifyDriver(data, vehicle.driver_id ?? vehicle.submitted_by ?? null, 'A document needs fixing', `${data.plate_number} — ${list}`, 'rejected');
+  notifyDriver(data, vehicle.driver_id ?? vehicle.submitted_by ?? null, 'A document needs fixing', `${data.plate_number} — ${list}`, 'document_fix_requested');
   await auditService.record('staff-console', actor, 'vehicle_document_fix_requested', { vehicle_id: vehicleId, plate_number: data.plate_number, issues });
   return data;
 }

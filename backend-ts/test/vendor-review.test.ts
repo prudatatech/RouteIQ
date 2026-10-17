@@ -168,6 +168,16 @@ describe('PUT /vendor/kyc/:id/flag-documents', () => {
     expect((await send({ panScan: 'Blurry' })).status).toBe(409);
   });
 
+  // GST registration is optional on the form; this vendor's fixture never filed it (kyc.documents has
+  // no row for it). Staff still need to be able to ask for it - "you need to provide this for your
+  // business type" is a normal review action, not limited to documents the vendor already uploaded.
+  it('flags a document the vendor never uploaded at all', async () => {
+    const res = await send({ gstRegistration: 'Your business type needs a GST registration on file' });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_document_issues).toEqual({ gstRegistration: 'Your business type needs a GST registration on file' });
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_status).toBe('info_requested');
+  });
+
   it('rejects an empty ask, an unknown document key, a short reason and non-platform callers', async () => {
     expect((await send({})).status).toBe(400);
     expect((await send({ notARealDoc: 'bad' })).status).toBe(400);

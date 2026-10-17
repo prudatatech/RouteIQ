@@ -17,6 +17,21 @@ import type { VendorReview } from '@/components/admin/vendor-review/types'
 
 const BACK = { to: '/admin/kyc', label: 'KYC review' }
 
+/**
+ * Every named document the vendor KYC wizard can ask for (VendorDocumentsPage.tsx's DOC_FIELDS /
+ * backend-ts vendor-review.service.ts's DOC_LABELS), minus the legacy whole-form upload
+ * (softCopyExcel/softCopyPdf) that is not a document in this sense. A vendor can leave an optional
+ * one (e.g. GST registration) unfiled; staff still need to be able to flag it - "you need to give us
+ * this" is a normal review action, so it must be offered even when kyc.documents has no row for it.
+ */
+const NAMED_DOCUMENT_LABELS: Record<string, string> = {
+  panScan: 'PAN card',
+  cancelledCheque: 'Cancelled cheque',
+  gstRegistration: 'GST registration',
+  msmeCert: 'MSME certificate',
+  companyLogo: 'Company logo',
+}
+
 const WHY_DISABLED: Record<string, string> = {
   pending: 'This vendor has not submitted KYC yet. You can decide once they do.',
   info_requested: 'You asked this vendor for more details. You can decide once they answer.',
@@ -62,6 +77,11 @@ function ReviewView({ id, data }: { id: string; data: VendorReview }) {
   const busy = approve.isPending || reject.isPending || askInfo.isPending || flagDocuments.isPending
   // Only the vendor's own named documents (not an "other" document filed from an answered info request)
   const namedDocuments = kyc.documents.filter(d => !d.key.startsWith('other_'))
+  // Every document that can be flagged, including ones the vendor skipped - not just the ones uploaded
+  const uploadedByKey = new Map(namedDocuments.map(d => [d.key, d]))
+  const flaggableDocuments = Object.entries(NAMED_DOCUMENT_LABELS).map(([key, label]) => (
+    uploadedByKey.get(key) ?? { key, label: `${label} (not uploaded)` }
+  ))
 
   const doApprove = async () => {
     const ok = await confirm({
@@ -124,7 +144,7 @@ function ReviewView({ id, data }: { id: string; data: VendorReview }) {
       )}
       {flagOpen && (
         <FlagDocumentsModal
-          open entityName={name} documents={namedDocuments} busy={flagDocuments.isPending}
+          open entityName={name} documents={flaggableDocuments} busy={flagDocuments.isPending}
           noneUploadedLabel="This vendor has not uploaded any named documents yet."
           onClose={() => setFlagOpen(false)} onSubmit={issues => flagDocuments.mutate(issues)}
         />

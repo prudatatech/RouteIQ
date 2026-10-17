@@ -9,6 +9,7 @@ import {
   Page, PageHeader, Card, CardBody, Button, Checkbox, DetailList, EmptyState, ErrorState, Modal, Skeleton, StatusPill, Textarea, humanize, useConfirm,
 } from '@/components/ui'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
+import { getKycDocumentUrl } from '@/services/kycDocuments'
 import { expiryStatus } from '@/utils/documentExpiry'
 import { errorMessage, formatDate, formatDateTime, formatRelative } from '@/utils/display'
 
@@ -35,6 +36,15 @@ export default function VehicleRequestsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const openId = searchParams.get('open')
   const [viewing, setViewing] = useState<{ url: string; name: string } | null>(null)
+  // A document can be a legacy public URL or the newer signed-upload storage path; getKycDocumentUrl
+  // resolves either to a short-lived signed URL. Absent is the only case with nothing to open.
+  const viewDocument = async (stored: string, name: string) => {
+    try {
+      setViewing({ url: await getKycDocumentUrl(stored), name })
+    } catch {
+      toast.error('We could not open this document. Try again.')
+    }
+  }
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -184,6 +194,7 @@ export default function VehicleRequestsPage() {
               onReject={() => askReject(r)}
               onRequestFix={() => askFix(r)}
               onViewPhoto={(url, name) => setViewing({ url, name })}
+              onViewDocument={viewDocument}
             />
           ))}
         </div>
@@ -263,7 +274,7 @@ export default function VehicleRequestsPage() {
   )
 }
 
-function RequestCard({ request, now, highlighted, onSeen, busy, onApprove, onReject, onRequestFix, onViewPhoto }: {
+function RequestCard({ request, now, highlighted, onSeen, busy, onApprove, onReject, onRequestFix, onViewPhoto, onViewDocument }: {
   request: VehicleRequest
   now: number
   highlighted: boolean
@@ -273,6 +284,7 @@ function RequestCard({ request, now, highlighted, onSeen, busy, onApprove, onRej
   onReject: () => void
   onRequestFix: () => void
   onViewPhoto: (url: string, name: string) => void
+  onViewDocument: (stored: string, name: string) => void
 }) {
   const { vehicle, driver, photos, primary_photo_url: primary, submitted_at: submittedAt } = request
   const ref = useRef<HTMLDivElement>(null)
@@ -372,8 +384,12 @@ function RequestCard({ request, now, highlighted, onSeen, busy, onApprove, onRej
                             {text(vehicle[d.expiry]) ? ` · valid to ${formatDate(text(vehicle[d.expiry]))}` : ''}
                           </p>
                           {issue && <p className="mt-1 text-warning">{issue}</p>}
-                          {file && /^https?:\/\//.test(file) && (
-                            <a className="text-brand hover:underline" href={file} target="_blank" rel="noopener noreferrer">View file</a>
+                          {file ? (
+                            // A legacy public URL and the newer signed-upload storage path both resolve
+                            // through getKycDocumentUrl; only an empty field means nothing was uploaded.
+                            <button type="button" className="text-brand hover:underline" onClick={() => onViewDocument(file, `${vehicle.plate_number} ${d.label}`)}>View file</button>
+                          ) : (
+                            <p className="mt-0.5 text-xs text-muted">Not uploaded</p>
                           )}
                         </li>
                       )

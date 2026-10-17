@@ -480,6 +480,11 @@ describe('requesting a fix on specific documents', () => {
     expect(String(note!.body)).toContain('RC photo is unreadable');
     expect(String(note!.body)).toContain('Expired last month');
     expect(supabaseMock.rows('ai_agent_logs')[0]).toMatchObject({ action: 'vehicle_document_fix_requested' });
+
+    // A document-fix request is not the same decision as a full rejection: a future UI (and the driver
+    // app) must be able to tell "fix one document" apart from "the whole vehicle was rejected".
+    expect(note).toMatchObject({ type: 'vehicle_approval', data: { vehicle_id: 'veh-p', decision: 'document_fix_requested' } });
+    expect(note!.data.decision).not.toBe('rejected');
   });
 
   it('refuses an empty or unknown slot, and a non-admin/manager caller', async () => {

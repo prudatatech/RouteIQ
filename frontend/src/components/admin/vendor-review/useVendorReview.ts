@@ -1,12 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { vendorAPI } from '@/services/api'
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { errorMessage, isNotFoundError } from '@/utils/display'
 import type { InfoRequestInput } from './types'
 
 export const reviewKey = (id: string) => ['vendor-review', id] as const
 
 export function useVendorReview(id: string) {
+  // The vendor may fix flagged documents or answer an info request while staff still have this page
+  // open; without this, staff keep reviewing a stale snapshot until they manually reload.
+  useRealtimeRefresh('vendor_review_page', ['vendor_profiles'], [reviewKey(id), ['vendor-registry']])
   return useQuery({
     queryKey: reviewKey(id),
     queryFn: () => vendorAPI.review(id),

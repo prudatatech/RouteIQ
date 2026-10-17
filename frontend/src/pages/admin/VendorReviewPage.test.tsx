@@ -9,7 +9,10 @@ const api = vi.hoisted(() => ({
   review: vi.fn(), approveKyc: vi.fn(), rejectKyc: vi.fn(), requestKycInfo: vi.fn(), flagKycDocuments: vi.fn(),
 }))
 vi.mock('@/services/api', () => ({ vendorAPI: api }))
-vi.mock('@/services/supabase', () => ({ supabase: {} }))
+const channel = vi.hoisted(() => ({ on: vi.fn(), subscribe: vi.fn() }))
+channel.on.mockReturnValue(channel)
+channel.subscribe.mockReturnValue(channel)
+vi.mock('@/services/supabase', () => ({ supabase: { removeChannel: vi.fn() }, openChannel: vi.fn(() => channel) }))
 vi.mock('@/services/kycDocuments', () => ({ getKycDocumentUrl: vi.fn().mockResolvedValue('https://signed/doc.pdf') }))
 vi.mock('@/components/tpl/GstinStatus', () => ({ GstinStatus: () => null }))
 vi.mock('@/components/ui/DocumentViewerModal', () => ({
