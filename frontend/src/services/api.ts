@@ -717,6 +717,18 @@ export const vendorAPI = {
   /** Awards the load to this quote. Atomic: only one award can happen. */
   acceptQuote: (loadId: string, quoteId: string) =>
     api.post(`/vendor/loads/${encodeURIComponent(loadId)}/quotes/${encodeURIComponent(quoteId)}/accept`).then(r => r.data),
+  /** Staff only: finds or invites (by email) the account to enter a phoned-in applicant's KYC under.
+   * Call this first - document uploads and the final submit are scoped by the returned id. */
+  adminResolveKycApplicant: (data: { email: string; full_name?: string; company_name?: string }): Promise<{ vendorUserId: string; invited: boolean }> =>
+    api.post('/vendor/admin/kyc/applicants', data).then(r => r.data),
+  /** Staff only: a signed upload URL for one of the applicant's KYC documents, scoped under their
+   * (already resolved) account id rather than the caller's. */
+  adminKycUploadUrlFor: (vendorUserId: string, data: { key: string; content_type: string; size: number }): Promise<{ path: string; token: string; signed_url: string }> =>
+    api.post(`/vendor/admin/kyc/applicants/${encodeURIComponent(vendorUserId)}/upload-url`, data).then(r => r.data),
+  /** Staff only: submits a phoned-in applicant's KYC, in the same shape as submitKyc, plus the
+   * applicant's email (and optional name) so their account can be found or invited. */
+  adminCreateKycOnBehalf: (data: Record<string, unknown> & { email: string; full_name?: string }) =>
+    api.post('/vendor/admin/kyc/applicants/create', data).then(r => r.data),
 }
 
 /** Accepts a bare list or { items | quotes, quote_deadline, quote_requested, awarded }. */

@@ -24,6 +24,25 @@ export async function uploadKycDocument(key: string, file: File): Promise<string
 }
 
 /**
+ * Staff only: uploads a document for a vendor KYC entered on the applicant's behalf (they phoned or
+ * WhatsApp'd their details in), through a signed upload URL scoped under the applicant's own
+ * (already resolved) account id - never the staff member's. Returns the storage path to save.
+ */
+export async function uploadKycDocumentFor(vendorUserId: string, key: string, file: File): Promise<string> {
+  let upload: { path: string; token: string }
+  try {
+    upload = await vendorAPI.adminKycUploadUrlFor(vendorUserId, { key, content_type: file.type, size: file.size })
+  } catch (err) {
+    throw new Error(errorMessage(err, 'We could not start the upload. Try again.'))
+  }
+  const { error } = await supabase.storage
+    .from('kyc_documents')
+    .uploadToSignedUrl(upload.path, upload.token, file, { contentType: file.type })
+  if (error) throw new Error('We could not upload the document. Try again.')
+  return upload.path
+}
+
+/**
  * Uploads a logistic company's KYC document through a signed upload URL from the
  * backend, which picks the path in the company's own folder. Returns the storage
  * path to save with saveKycDocuments.

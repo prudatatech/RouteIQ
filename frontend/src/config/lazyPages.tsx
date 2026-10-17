@@ -42,6 +42,7 @@ export const adminUsers = page(() => import('@/pages/admin/UsersPage'))
 export const adminPerson = page(() => import('@/pages/admin/PersonPage'))
 export const adminKyc = page(() => import('@/pages/admin/KycReviewPage'))
 export const adminVendorReview = page(() => import('@/pages/admin/VendorReviewPage'))
+export const adminEnterVendorKyc = page(() => import('@/pages/admin/EnterVendorKycPage'))
 export const adminAudit = page(() => import('@/pages/admin/AuditLogPage'))
 export const adminOrganisation = page(() => import('@/pages/admin/OrganisationPage'))
 export const platformOrganisations = page(() => import('@/pages/platform/OrganisationsPage'))
@@ -95,6 +96,7 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/insights': insights.preload,
   '/admin/users': adminUsers.preload,
   '/admin/kyc': adminKyc.preload,
+  '/admin/kyc/enter-on-behalf': adminEnterVendorKyc.preload,
   '/admin/audit': adminAudit.preload,
   '/admin/settings': adminSettings.preload,
   '/admin/settings/rate-api': adminRateApi.preload,

@@ -8,6 +8,7 @@ import {
 } from '@/components/ui'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
 import { usePendingPartnersCount } from '@/hooks/usePendingPartnersCount'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { formatDateTime, formatRelative } from '@/utils/display'
 import type { KycStatus, RegistryRow } from '@/components/admin/vendor-review/types'
 
@@ -26,6 +27,7 @@ export default function KycReviewPage() {
 
   const vendors = useQuery({ queryKey: ['vendor-registry'], queryFn: () => vendorAPI.registryAll() })
   const pendingPartners = usePendingPartnersCount() ?? 0
+  const isSuperadmin = useEffectiveRole().role === 'superadmin'
   useRealtimeRefresh('kyc_review_page', ['vendor_profiles'], [['vendor-registry']])
 
   const all = useMemo(() => vendors.data?.items ?? [], [vendors.data])
@@ -105,6 +107,11 @@ export default function KycReviewPage() {
       <PageHeader
         title="KYC review"
         description="Every vendor who signed up, where they are in KYC, and a full page to check, approve, reject or ask for more details. Vendors can bid only after approval."
+        actions={isSuperadmin ? (
+          <Link to="/admin/kyc/enter-on-behalf" className={buttonClasses({ variant: 'secondary' })}>
+            Enter application for someone
+          </Link>
+        ) : undefined}
       >
         <div className="space-y-4">
           {pendingPartners > 0 && (

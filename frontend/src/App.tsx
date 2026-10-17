@@ -14,7 +14,7 @@ import LandingPage from '@/pages/LandingPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
-  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminAudit, money, invoicePage, adminSettings, adminRateApi, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, companyKyc, vendorInvoices,
+  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminEnterVendorKyc, adminAudit, money, invoicePage, adminSettings, adminRateApi, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, companyKyc, vendorInvoices,
   vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
   driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
@@ -40,6 +40,7 @@ const UsersPage = adminUsers.Component
 const PersonPage = adminPerson.Component
 const KycReviewPage = adminKyc.Component
 const VendorReviewPage = adminVendorReview.Component
+const EnterVendorKycPage = adminEnterVendorKyc.Component
 const AuditLogPage = adminAudit.Component
 const MoneyPage = money.Component
 const InvoicePage = invoicePage.Component
@@ -446,6 +447,13 @@ export default function App() {
             <Route path="admin/kyc" element={
               <PrivateRoute allowedRoles={ADMINS}>
                 <KycReviewPage />
+              </PrivateRoute>
+            } />
+            {/* Enters a vendor's KYC for an applicant who phoned or WhatsApp'd it in; the backend routes
+                it calls are superadmin-only, so gate the page the same way. */}
+            <Route path="admin/kyc/enter-on-behalf" element={
+              <PrivateRoute allowedRoles={SUPERADMIN}>
+                <EnterVendorKycPage />
               </PrivateRoute>
             } />
             <Route path="admin/kyc/:vendorId" element={
