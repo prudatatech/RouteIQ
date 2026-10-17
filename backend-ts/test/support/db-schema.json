@@ -675,7 +675,8 @@
     "contact_name",
     "entity_type",
     "cin",
-    "authorized_signatory_name"
+    "authorized_signatory_name",
+    "created_by"
   ],
   "traffic_incidents": [
     "id",
@@ -842,7 +843,8 @@
     "kyc_document_issues",
     "entity_type",
     "cin",
-    "authorized_signatory_name"
+    "authorized_signatory_name",
+    "created_by"
   ],
   "vendor_route_opportunities": [
     "id",

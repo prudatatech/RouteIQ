@@ -123,6 +123,63 @@ export async function createOrg(actor: AuditActor, input: OrgCreate): Promise<Or
   return org as OrgRow;
 }
 
+/**
+ * Staff registers a logistic company on behalf of an applicant who gave their details over
+ * phone/WhatsApp instead of filling in the sign-up form themselves. Finds or invites the applicant's
+ * account by email to own the new company, then leaves it exactly where self-service registration
+ * would: `pending`, not yet KYC-submitted. Staff still uses the normal
+ * `/admin/orgs/:id/kyc/upload-url` -> `/kyc/documents` -> `/kyc/submit` admin routes afterward (the
+ * same service functions self-service uses, just reached without an `org_members` ownership check),
+ * so the record enters the normal review queue unchanged. The invite is sent immediately (not
+ * deferred to approval) because the company KYC flow expects the owner to log in and fix any flagged
+ * document while the application is under review.
+ */
+export async function createOrgOnBehalf(actor: AuditActor, input: OrgCreate & { email: string; fullName?: string }): Promise<OrgRow> {
+  const email = input.email.trim().toLowerCase();
+  if (!email) throw new HttpError(400, 'An email is required to invite the applicant');
+
+  const { data: existingUser, error: lookupErr } = await supabase.from('users').select('id, role').eq('email', email).maybeSingle();
+  if (lookupErr) throw new Error(lookupErr.message);
+  if (existingUser && ['admin', 'superadmin'].includes(existingUser.role)) {
+    throw new HttpError(409, 'That email belongs to a staff account; use a different email for the applicant');
+  }
+
+  let ownerId: string;
+  if (existingUser) {
+    ownerId = existingUser.id;
+  } else {
+    const { data: invited, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
+      data: { full_name: input.fullName ?? input.name },
+    });
+    if (inviteError || !invited?.user) {
+      throw new HttpError(502, `Could not invite the applicant: ${inviteError?.message ?? 'unknown error'}`);
+    }
+    ownerId = invited.user.id;
+    // handle_new_user() already creates this row with its own default role (Azure); this only fills
+    // it in when nothing else has (e.g. this test suite's mock has no such trigger). It never touches
+    // `role` itself, so it cannot trip the role-change side effects in app.sync_user_membership().
+    await supabase.from('users').upsert({ id: ownerId, email, full_name: input.fullName ?? input.name }, { onConflict: 'id', ignoreDuplicates: false });
+  }
+
+  const { email: _email, fullName: _fullName, ...orgFields } = input;
+  const { data: org, error } = await supabase
+    .from('organizations')
+    .insert({ id: crypto.randomUUID(), ...definedOnly(orgFields), status: 'pending', created_by: actor.user_id })
+    .select(ORG_COLUMNS)
+    .single();
+  if (error || !org) throw new Error(`Failed to create the organisation: ${error?.message}`);
+  const { error: memberErr } = await supabase
+    .from('org_members')
+    .insert({ org_id: org.id, user_id: ownerId, role: 'owner', status: 'active', invited_by: actor.user_id });
+  if (memberErr) {
+    await supabase.from('organizations').delete().eq('id', org.id);
+    throw new Error(`Failed to add the owner: ${memberErr.message}`);
+  }
+  invalidateOrgContext();
+  await audit(actor, 'org.created', { org_id: org.id, kind: input.kind, name: input.name, staff_created: true, owner_invited: !existingUser });
+  return org as OrgRow;
+}
+
 // ── Logistic-company KYC documents (mirrors vendor_profiles KYC, vendor.service.ts) ──
 
 interface OrgKycData { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] }

@@ -214,6 +214,40 @@ adminOrgsRouter.get('/', handle(async (req, res) => {
   res.json(await orgs.listOrgs(parse(AdminOrgFilterSchema, req.query)));
 }));
 
+// Staff registers a logistic company for an applicant who phoned/WhatsApp'd their details in; stays
+// `pending`, not KYC-submitted — staff finishes it with the three routes right below, same as self-service.
+adminOrgsRouter.post('/create-on-behalf', handle(async (req, res) => {
+  const { email, full_name, ...rest } = req.body ?? {};
+  const input = parse(OrgCreateSchema, rest);
+  if (input.kind !== 'logistic_company') throw new HttpError(400, 'Only a logistic company can be created on behalf of an applicant');
+  res.status(201).json(await orgs.createOrgOnBehalf(actorOf(req), { ...input, email, fullName: full_name }));
+}));
+
+// Bank details (profile.bank_account_no/bank_ifsc) and any other field self-service sets via PATCH /org
+// - staff needs the same before it can submit the company's KYC on its behalf.
+adminOrgsRouter.patch('/:id', handle(async (req, res) => {
+  const id = uuidParam(req.params.id, 'Organisation not found');
+  res.json(await orgs.updateOrg(actorOf(req), id, parse(OrgUpdateSchema, req.body)));
+}));
+
+// The three steps below reuse the exact service functions self-service KYC uses - just reached without
+// the org_members ownership check, since staff is not a member of the company being onboarded.
+adminOrgsRouter.post('/:id/kyc/upload-url', rateLimitByUser('org-admin-kyc-upload', 60, 60 * 60), handle(async (req, res) => {
+  const id = uuidParam(req.params.id, 'Organisation not found');
+  const { key, content_type, size } = req.body ?? {};
+  res.json(await orgs.createOrgKycUploadUrl(id, { key, contentType: content_type, size }));
+}));
+
+adminOrgsRouter.put('/:id/kyc/documents', handle(async (req, res) => {
+  const id = uuidParam(req.params.id, 'Organisation not found');
+  res.json(await orgs.saveOrgDocuments(id, parse(OrgDocumentsSchema, req.body)));
+}));
+
+adminOrgsRouter.post('/:id/kyc/submit', handle(async (req, res) => {
+  const id = uuidParam(req.params.id, 'Organisation not found');
+  res.json(await orgs.submitOrgKyc(actorOf(req), id));
+}));
+
 for (const decision of ['approve', 'reject', 'suspend'] as const) {
   adminOrgsRouter.put(`/:id/${decision}`, handle(async (req, res) => {
     const id = uuidParam(req.params.id, 'Organisation not found');

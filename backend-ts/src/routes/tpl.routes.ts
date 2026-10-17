@@ -153,6 +153,20 @@ router.post('/onboard', rateLimitByIp('tpl-onboard', 20, 60 * 60), async (req, r
   }
 });
 
+// Staff enters a 3PL application on behalf of someone who phoned/WhatsApp'd their details in, instead
+// of using the public wizard themselves. Same onboard() the public form uses (so it goes through the
+// normal review queue unchanged, no account required yet) - just tags who on staff entered it.
+// Uploading documents beforehand uses the public /applications/upload-url route with `custom_id`, same
+// as the public wizard; it needs no application_id yet since the partner record doesn't exist until now.
+router.post('/admin/create', requireAuth, requireRole('superadmin'), rateLimitByUser('tpl-admin-onboard', 60, 60 * 60), async (req, res) => {
+  try {
+    const { partner, warnings } = await tplService.onboard({ ...req.body, created_by: req.user!.user_id });
+    res.json({ success: true, data: { id: partner.id, custom_id: partner.custom_id, status: partner.status }, ...withWarnings({}, warnings) });
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // POST /api/v1/tpl/applications/upload-url — signed URL to upload one document.
 // New application: { custom_id, doc_type, content_type, size }.
 // Existing one: { application_id, doc_type, content_type, size } as staff or the

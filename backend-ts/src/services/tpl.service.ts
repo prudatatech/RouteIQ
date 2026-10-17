@@ -112,7 +112,7 @@ export const tplService = {
   async onboard(data: any) {
     const {
       custom_id, companyName, contactName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents,
-      operatingFrom, fleetSize, truckType, user_id, entityType, cin, authorizedSignatoryName,
+      operatingFrom, fleetSize, truckType, user_id, entityType, cin, authorizedSignatoryName, created_by,
     } = data;
     const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
     const isQuick = !!fleetSize;
@@ -165,7 +165,8 @@ export const tplService = {
         operating_from: operatingFrom || null,
         fleet_size: fleetSize || null,
         truck_type: truckType || null,
-        user_id: user_id || null
+        user_id: user_id || null,
+        created_by: created_by || null,
       })
       .select()
       .single();

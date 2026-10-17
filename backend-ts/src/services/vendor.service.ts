@@ -27,7 +27,8 @@ function cleanVendorGstin(raw: unknown): string {
   if (problem) throw new HttpError(400, problem);
   return gstin;
 }
-import { assertOwnDocumentPaths } from '../schemas/vendor';
+import { assertKycContent, assertOwnDocumentPaths, type KycSubmitInput } from '../schemas/vendor';
+import { invalidateRoleCache } from '../core/auth';
 
 /** Formats a KYC document may be uploaded in, and the extension each is stored under. */
 const KYC_UPLOAD_CONTENT_TYPES: Record<string, string> = {
@@ -186,6 +187,92 @@ export const vendorService = {
     if (!data) throw new HttpError(404, 'Vendor not found');
     await auditService.record('staff-console', actor, 'vendor_location_set', { vendor_id: vendorId, lat: input.lat, lng: input.lng });
     return data;
+  },
+
+  /**
+   * Staff resolves (or invites) the account an applicant's details should be entered under, before
+   * uploading any of their documents — document paths are scoped by this id, so it must exist first.
+   * Safe to call again with the same email once the account already exists (e.g. right before the
+   * final `createKycOnBehalf` call): it returns the same id without re-inviting.
+   */
+  async resolveApplicantForKyc(input: { email: string; fullName?: string; companyName?: string }) {
+    const email = input.email.trim().toLowerCase();
+    if (!email) throw new HttpError(400, 'An email is required to invite the applicant');
+
+    const { data: existingUser, error: lookupErr } = await supabase
+      .from('users').select('id, role').eq('email', email).maybeSingle();
+    if (lookupErr) throw new Error(lookupErr.message);
+    if (existingUser && ['admin', 'superadmin'].includes(existingUser.role)) {
+      throw new HttpError(409, 'That email belongs to a staff account; use a different email for the applicant');
+    }
+    if (existingUser) return { vendorUserId: existingUser.id as string, invited: false };
+
+    const { data: invited, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
+      data: { full_name: input.fullName ?? input.companyName ?? email },
+    });
+    if (inviteError || !invited?.user) {
+      throw new HttpError(502, `Could not invite the applicant: ${inviteError?.message ?? 'unknown error'}`);
+    }
+    const vendorUserId = invited.user.id;
+    await supabase.from('users').upsert({
+      id: vendorUserId, email, full_name: input.fullName ?? input.companyName ?? email, role: 'vendor', is_active: true,
+    }, { onConflict: 'id' });
+    await supabase.auth.admin.updateUserById(vendorUserId, { app_metadata: { role: 'vendor' } });
+    invalidateRoleCache(vendorUserId);
+    return { vendorUserId, invited: true };
+  },
+
+  /**
+   * A signed upload URL for one of the applicant's KYC documents, scoped under their own (already
+   * resolved) account id rather than the caller's — the one part of document upload that differs from
+   * the self-service `/vendor/kyc/upload-url` a vendor uses for themselves.
+   */
+  async createKycUploadUrlFor(vendorUserId: string, input: { key: unknown; contentType: unknown; size: unknown }) {
+    const { data: user, error } = await supabase.from('users').select('role').eq('id', vendorUserId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!user || user.role !== 'vendor') throw new HttpError(404, 'Applicant not found - resolve them first');
+    return this.createKycUploadUrl(vendorUserId, input);
+  },
+
+  /**
+   * Staff enters a vendor's KYC on behalf of an applicant who gave their details over phone/WhatsApp
+   * instead of using the sign-up form themselves. Finds or invites the applicant's account by email,
+   * then submits through the same `submitKyc` path a self-service vendor would use, so the record goes
+   * through the normal review queue unchanged. The invite is sent immediately (not deferred to
+   * approval) because the vendor review flow expects the applicant to log in and fix any flagged
+   * document while kyc_status is still `info_requested`.
+   */
+  async createKycOnBehalf(actor: AuditActor, input: {
+    email: string;
+    fullName?: string;
+    companyName: string;
+    gstNumber: string;
+    city: string;
+    address: string;
+    lat: number;
+    lng: number;
+    companyLogo?: string | null;
+    kycData: unknown;
+  }) {
+    const { vendorUserId, invited } = await this.resolveApplicantForKyc(input);
+
+    assertKycContent(vendorUserId, input as KycSubmitInput);
+    const profile = await this.submitKyc(vendorUserId, {
+      companyName: input.companyName,
+      gstNumber: input.gstNumber,
+      city: input.city,
+      address: input.address,
+      lat: input.lat,
+      lng: input.lng,
+      companyLogo: input.companyLogo,
+      kycData: input.kycData,
+    });
+    const { error: tagError } = await supabase.from('vendor_profiles').update({ created_by: actor.user_id }).eq('id', vendorUserId);
+    if (tagError) console.error('[vendor] Failed to tag staff-created KYC:', tagError.message);
+    await auditService.record('staff-console', actor, 'vendor_kyc_created_by_staff', {
+      vendor_id: vendorUserId, company_name: input.companyName, invited,
+    });
+    return profile;
   },
 
   /**

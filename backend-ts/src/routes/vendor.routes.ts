@@ -404,6 +404,44 @@ router.put('/kyc/:id/reject', requireAuth, requireRole('superadmin'), async (req
   }
 });
 
+// Resolve (or invite) the account to enter a phoned-in applicant's KYC under, before uploading their documents
+router.post('/admin/kyc/applicants', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
+  try {
+    const { email, full_name, company_name } = req.body ?? {};
+    const data = await vendorService.resolveApplicantForKyc({ email, fullName: full_name, companyName: company_name });
+    res.json(data);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Signed upload URL for a phoned-in applicant's KYC document, scoped under their (already resolved) account
+router.post('/admin/kyc/applicants/:vendorUserId/upload-url', requireAuth, requireRole('superadmin'), rateLimitByUser('vendor-admin-kyc-upload', 60, 60 * 60), async (req: any, res: any) => {
+  try {
+    const { key, content_type, size } = req.body ?? {};
+    const data = await vendorService.createKycUploadUrlFor(req.params.vendorUserId, { key, contentType: content_type, size });
+    res.json(data);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Staff enters a vendor's KYC on behalf of an applicant who phoned/WhatsApp'd their details in; goes through the same review queue
+router.post('/admin/kyc/applicants/create', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
+  try {
+    const input = parseBody(KycSubmitSchema, req.body);
+    const { email, full_name } = req.body ?? {};
+    if (typeof email !== 'string' || !email.trim()) throw new HttpError(400, 'An email is required to invite the applicant');
+    const { companyName, gstNumber, city, address, lat, lng, companyLogo, kycData } = input;
+    const profile = await vendorService.createKycOnBehalf(req.user, {
+      email, fullName: full_name, companyName, gstNumber, city, address, lat, lng, companyLogo, kycData,
+    });
+    res.json(profile);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // Set a vendor's pickup location for them (Admin/Super Admin), e.g. when a bid can't be awarded without one
 router.put('/:id/location', requireAuth, requireRole('superadmin', 'admin'), async (req: any, res: any) => {
   try {
