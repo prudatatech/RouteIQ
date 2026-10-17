@@ -7,13 +7,15 @@ import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { useEffectiveRole } from '@/store/effectiveRole'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
+import { uploadTplDocument } from '@/services/tplDocuments'
 import {
   Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, IfscVerifiedHint, Page, PageHeader, Spinner, StatusPill, humanize, useConfirm,
 } from '@/components/ui'
+import { DocUploadField } from '@/components/kyc/DocUploadField'
 import RulesEditor from '@/components/tpl/RulesEditor'
 import StatementsPanel from '@/components/tpl/StatementsPanel'
 import { TplPartnerPerformance } from '@/components/tpl/TplPartnerPerformance'
-import { corridorRateText, rateText, type RateUnit } from '@/components/tpl/constants'
+import { TPL_DOCUMENT_TYPES, corridorRateText, rateText, type RateUnit } from '@/components/tpl/constants'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { FlagDocumentsModal } from '@/components/admin/FlagDocumentsModal'
@@ -134,6 +136,7 @@ export default function TplPartnerDetailPage() {
   const canDecide = useEffectiveRole().role === 'superadmin'
   const [preview, setPreview] = useState<{ url: string, name: string } | null>(null)
   const [flagOpen, setFlagOpen] = useState(false)
+  const [uploadingType, setUploadingType] = useState<string | null>(null)
 
   const { data: partner, isLoading, error, refetch } = useQuery<TplPartnerDetail>({
     queryKey: ['tpl-partner', id],
@@ -171,6 +174,20 @@ export default function TplPartnerDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
     },
     onError: (err: unknown) => toast.error(errorMessage(err, 'We could not flag these documents. Try again.')),
+  })
+
+  // Attaches one newly uploaded document to the application. `updateApplication`'s `documents` field is the
+  // desired final list (see tpl.service.ts), so every existing document is carried over alongside the new one -
+  // otherwise this call would delete every document not freshly re-sent.
+  const addDocument = useMutation({
+    mutationFn: (doc: { type: string; url: string }) => tplAPI.updateApplication(id!, {
+      documents: [...(partner?.tpl_documents ?? []).map(d => ({ type: d.doc_type, url: d.file_url })), doc],
+    }),
+    onSuccess: () => {
+      toast.success('Document added')
+      queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
+    },
+    onError: (err: unknown) => toast.error(errorMessage(err, 'We could not add this document. Try again.')),
   })
 
   const togglePause = useMutation({
@@ -234,6 +251,18 @@ export default function TplPartnerDetailPage() {
       setPreview({ url, name: humanize(doc.doc_type) })
     } catch (err) {
       toast.error(errorMessage(err, 'We could not open this document. Try again.'))
+    }
+  }
+
+  const uploadDocument = async (docType: string, file: File) => {
+    setUploadingType(docType)
+    try {
+      const path = await uploadTplDocument(file, docType, { applicationId: id! })
+      await addDocument.mutateAsync({ type: docType, url: path })
+    } catch (err) {
+      toast.error(errorMessage(err, 'We could not upload this document. Try again.'))
+    } finally {
+      setUploadingType(null)
     }
   }
 
@@ -341,6 +370,27 @@ export default function TplPartnerDetailPage() {
                 </div>
               )}
             </div>
+            {canDecide && (partner.status === 'pending' || partner.status === 'rejected') && (
+              <div className="mt-6 border-t border-border pt-4">
+                <p className="mb-3 text-xs text-muted">
+                  Add a document the applicant left out, or one more if it is still missing. This is the only way to
+                  finish an application that has none yet - documents are optional when an application is entered,
+                  but required before it can be approved.
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {TPL_DOCUMENT_TYPES.map(docType => (
+                    <DocUploadField
+                      key={docType}
+                      label={docType}
+                      busy={uploadingType === docType}
+                      onUpload={file => uploadDocument(docType, file)}
+                      onRemove={() => {}}
+                      onView={() => {}}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </Card>
 
