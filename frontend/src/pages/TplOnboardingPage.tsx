@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react'
-import { Page, PageHeader, Card, Input, Button, Select, Alert } from '@/components/ui'
+import { Page, PageHeader, Card, Input, Button, Select, Alert, Stepper } from '@/components/ui'
 import { CheckCircle2, ChevronLeft, ChevronRight, Truck, Blocks } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
@@ -28,43 +28,6 @@ function GoogleIcon() {
       <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
       <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
     </svg>
-  )
-}
-
-function Stepper({ step }: { step: number }) {
-  return (
-    <Card padded className="mb-6 flex justify-between items-center py-4 px-6 md:px-12">
-      {STEPS.map((label, i) => (
-        <div key={label} className="flex flex-col items-center relative flex-1">
-          {i < STEPS.length - 1 && (
-            <div
-              className={clsx(
-                'absolute top-4 left-[50%] right-[-50%] h-[2px]',
-                i < step ? 'bg-text' : 'bg-border'
-              )}
-            />
-          )}
-          
-          <div
-            className={clsx(
-              'relative z-10 flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold',
-              i < step ? 'bg-success text-white' : i === step ? 'bg-text text-white' : 'bg-surface-subtle text-muted border border-border'
-            )}
-          >
-            {i < step ? <CheckCircle2 size={16} /> : i + 1}
-          </div>
-          
-          <span
-            className={clsx(
-              'mt-2 text-xs font-medium',
-              i === step ? 'text-text' : 'text-muted'
-            )}
-          >
-            {label}
-          </span>
-        </div>
-      ))}
-    </Card>
   )
 }
 
@@ -422,7 +385,7 @@ export default function TplOnboardingPage() {
         }
       />
 
-      <Stepper step={step} />
+      <Stepper steps={STEPS} current={step} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 relative">
         <div

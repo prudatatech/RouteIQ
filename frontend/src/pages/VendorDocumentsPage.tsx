@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Check, FileText, Trash2, Upload } from 'lucide-react'
+import { FileText, Trash2, Upload } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
@@ -11,7 +11,7 @@ import { getKycDocumentUrl, uploadKycDocument } from '@/services/kycDocuments'
 import AddressPicker from '@/components/map/AddressPicker'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import type { IfscDetails } from '@/services/api'
-import { Alert, Button, Card, Checkbox, ErrorState, FileButton, IfscField, BankBranchFields, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
+import { Alert, Button, Card, Checkbox, ErrorState, FileButton, IfscField, BankBranchFields, Input, Page, PageHeader, Select, Spinner, Stepper, useConfirm } from '@/components/ui'
 import { DocUploadField } from '@/components/kyc/DocUploadField'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
@@ -530,7 +530,7 @@ export default function VendorDocumentsPage() {
         <ReadOnlySummary form={form} otherDocs={otherDocs} issues={kycDocumentIssues} onView={openViewer} onAdd={() => setIsEditingKyc(true)} />
       ) : (
         <Card padded className="space-y-6">
-          <Stepper current={step} onSelect={i => { if (i <= step) setStep(i); else if (i === step + 1) goNext() }} />
+          <Stepper steps={STEPS} current={step} variant="inline" onSelect={i => { if (i <= step) setStep(i); else if (i === step + 1) goNext() }} />
 
           {step === 0 && (
             <div className="space-y-4">
@@ -713,35 +713,6 @@ export default function VendorDocumentsPage() {
         fileName={viewer?.name ?? ''}
       />
     </Page>
-  )
-}
-
-function Stepper({ current, onSelect }: { current: number; onSelect: (i: number) => void }) {
-  return (
-    <ol className="flex flex-wrap items-center gap-y-2">
-      {STEPS.map((label, i) => (
-        <li key={label} className="flex items-center">
-          <button
-            type="button"
-            onClick={() => onSelect(i)}
-            aria-current={i === current ? 'step' : undefined}
-            className="flex items-center gap-2 rounded-control px-1 py-1 text-left"
-          >
-            <span className={
-              i < current
-                ? 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-fill text-xs font-medium text-text'
-                : i === current
-                  ? 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-brand text-xs font-medium text-brand'
-                  : 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border text-xs font-medium text-muted'
-            }>
-              {i < current ? <Check size={14} /> : i + 1}
-            </span>
-            <span className={i === current ? 'text-sm font-medium text-text' : 'text-sm text-muted'}>{label}</span>
-          </button>
-          {i < STEPS.length - 1 && <span className="mx-2 h-px w-6 bg-border sm:w-10" aria-hidden="true" />}
-        </li>
-      ))}
-    </ol>
   )
 }
 
