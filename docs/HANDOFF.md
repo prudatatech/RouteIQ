@@ -220,9 +220,18 @@ registry `margixacr7m52h4t5it6og`.
 - Owner configuration still missing: Twilio + Redis (SMS OTP), WhatsApp, TomTom key (route optimisation returns
   502; traffic calls get 401), telematics webhook secret, negotiated company per-km rate card, CA review of GST 2.0 rates (507 rows
   flagged needs_review).
-- Product gaps: a real finance role (finance/dispatcher/ops map to one role); `/public/companies` caps at 200;
-  finance lists unpaginated; vendor company details are asked three times (sign-up, business profile, KYC form) -
-  all three in progress as of 17 Oct 2026.
+- Product gaps: a real finance role (finance/dispatcher/ops map to one role) is the only one left open.
+  Since fixed (17 Oct 2026): `/public/companies`' 200-row scan ran alphabetically BEFORE the city/vehicle_type
+  filter, so a company sorting late could be invisible to a real search even if it was the only match - the
+  filter now runs in the query itself, before the row cap, not after. `/finance/invoices` and `/finance/expenses`
+  were genuinely unbounded (the `reports=open` invoices view skipped its date filter entirely, expenses had no
+  limit at all) - both now use the same `{items, total, limit, offset}` envelope and server pagination as
+  `/admin/orgs`; expenses' "Total" stat still sums the whole filtered range (a second, narrow amount-only query),
+  not just the visible page, except while the client-side search box is active, where it's honestly relabelled
+  "Total shown" since that filter never reaches the server. Vendor company details being "asked three times" was
+  mostly already pre-filled correctly (company name/GSTIN/address) - the real gap was city/state/pincode, typed
+  once at business-profile time then silently discarded; now mirrored into the vendor's KYC draft (merged, never
+  overwriting anything the vendor already typed differently) so the KYC form picks them up without asking again.
   (Checked 17 Oct 2026, scoped deliberately rather than built: "no consignee GSTIN on loads" is not a clean,
   standalone field addition - the `shipments`/dispatch side already fully has `consignee_name`/`consignee_gstin`/
   `eway_bill_ref` (migration `20260930014100_cargo_lots.sql`, validated in `schemas/index.ts`'s `DropInputSchema`/
