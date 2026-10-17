@@ -148,15 +148,22 @@ registry `margixacr7m52h4t5it6og`.
 - Not yet walked: scheduler jobs (document expiry, driver-without-vehicle, quote escalation), customer-app OTP,
   driver app on a device, a browser walkthrough of every screen, load testing.
 - UI complexity/duplication audit (owner asked to "think on" this; fixed the KYC-review page's duplicate
-  `tpl_partners` pending-count query, now sharing `usePendingPartnersCount` with the sidebar badge). Still open,
-  needs the owner's steer before touching them (bigger blast radius, not done unilaterally):
-  the vendor (4-step) and 3PL (3-step) onboarding wizards each hand-roll their own `Stepper` with different
-  behaviour instead of one shared component, and logistic-company registration has no steps at all - three
-  different interaction models for "register an organisation"; `LoginPage.tsx` is one 636-line component for
-  sign-in/sign-up/forgot/reset; eleven top-level nav sections (`config/navigation.ts` says so in a comment) could
-  likely merge Shipments into Dispatch and Reports into Money; Reports (Analytics vs Insights) and Dispatch
-  (Optimize vs Plan a trip) give a new admin four similarly-named trip-planning destinations; `VendorLoadPage.tsx`
-  hand-rolls a `<table>` instead of the shared `DataTable`.
+  `tpl_partners` pending-count query, now sharing `usePendingPartnersCount` with the sidebar badge). Also since
+  fixed, as pure visual/structural refactors with zero behaviour change: the vendor (4-step) and 3PL (3-step)
+  onboarding wizards no longer hand-roll their own `Stepper` - both use the shared `frontend/src/components/ui/Stepper.tsx`
+  (`variant="panel"` for 3PL's read-only card layout, `variant="inline"` for vendor's clickable row layout);
+  `VendorLoadPage.tsx`'s goods list now uses the shared `DataTable` instead of a hand-rolled `<table>`;
+  `LoginPage.tsx` (previously one 636-line component) is now a thin 238-line container over
+  `frontend/src/components/auth/` - one form component per flow (sign-in/sign-up/forgot/reset), a shared
+  `useLoginFlow` hook holding all the logic, same behaviour and tests unchanged.
+  Still open, needs the owner's steer before touching them (bigger blast radius, not done unilaterally):
+  logistic-company registration still has no step indicator at all, unlike vendor/3PL onboarding - converging it
+  into a stepped wizard is a separate, bigger product decision, not just a dedup; eleven top-level nav sections
+  (`config/navigation.ts` says so in a comment) could likely merge Shipments into Dispatch and Reports into Money;
+  Reports (Analytics vs Insights) and Dispatch (Optimize vs Plan a trip) give a new admin four similarly-named
+  trip-planning destinations. (Nav-section consolidation was deliberately left alone this round: it reshapes a
+  structure every user relies on daily and there is no way to visually verify a restructured sidebar in this
+  environment - do this one with the owner looking at a real screen, not blind.)
 - Next phase when the owner says go: N2 matching intelligence (carrier scores, ranked matching, auto-allocation,
   price learning).
 
