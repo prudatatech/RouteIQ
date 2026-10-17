@@ -4,26 +4,34 @@ import { activeNav, menuFor, navBadgeCounts, navSections } from './navigation'
 const labels = (role: string) => menuFor(role).map(s => s.label)
 
 describe('the staff menu', () => {
-  it('has the eleven sections in the order the work happens', () => {
+  it('has the nine sections in the order the work happens', () => {
     expect(labels('superadmin')).toEqual([
-      'Today', 'Requests', 'Shipments', 'Dispatch', 'On the road', 'Fleet', 'People', 'Return trips', 'Money', 'Reports', 'Settings',
+      'Today', 'Requests', 'Dispatch', 'On the road', 'Fleet', 'People', 'Return trips', 'Money', 'Settings',
     ])
   })
 
   it('gives a manager the operations sections only', () => {
-    expect(labels('manager')).toEqual(['Today', 'Requests', 'Shipments', 'Dispatch', 'On the road', 'Fleet', 'People'])
+    expect(labels('manager')).toEqual(['Today', 'Requests', 'Dispatch', 'On the road', 'Fleet', 'People'])
     const links = menuFor('manager').flatMap(s => [s.to, ...s.children.map(c => c.to)])
-    for (const forbidden of ['/money', '/admin/settings', '/admin/audit', '/admin/kyc', '/return-trips', '/3pl-partners']) {
+    for (const forbidden of ['/money', '/admin/settings', '/admin/audit', '/admin/kyc', '/return-trips', '/3pl-partners', '/analytics', '/insights']) {
       expect(links).not.toContain(forbidden)
     }
   })
 
-  it('gives the finance role Money and Reports only, no operations', () => {
-    expect(labels('finance')).toEqual(['Money', 'Reports'])
+  it('gives the finance role Money only (with Analytics and Insights under it), no operations', () => {
+    expect(labels('finance')).toEqual(['Money'])
     const links = menuFor('finance').flatMap(s => [s.to, ...s.children.map(c => c.to)])
+    expect(links).toEqual(expect.arrayContaining(['/analytics', '/insights']))
     for (const forbidden of ['/today', '/dispatch', '/fleet', '/admin/users', '/admin/settings', '/return-trips', '/3pl-partners']) {
       expect(links).not.toContain(forbidden)
     }
+  })
+
+  it('folds Shipments into Dispatch and Reports into Money, without losing either page', () => {
+    const links = menuFor('superadmin').flatMap(s => [s.to, ...(s.also ?? []), ...s.children.map(c => c.to)])
+    expect(links).toEqual(expect.arrayContaining(['/shipments', '/analytics', '/insights']))
+    expect(labels('superadmin')).not.toContain('Shipments')
+    expect(labels('superadmin')).not.toContain('Reports')
   })
 
   it('shows a company admin return trips but not 3PL partners (the platform reviews those), KYC review, or the audit log', () => {

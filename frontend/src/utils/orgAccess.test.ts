@@ -67,7 +67,7 @@ describe('platform and company actors', () => {
     expect(platform).toEqual(['Platform', 'People', 'Settings'])
     const company = menuFor('admin', actorFor(m('logistic_company', 'active'))).map(s => s.label)
     expect(company).not.toContain('Platform')
-    expect(company).toContain('Shipments')
+    expect(company).toContain('Dispatch')
     expect(company[0]).toBe('Today')
   })
 })
