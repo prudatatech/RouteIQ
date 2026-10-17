@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { orgAPI } from '@/services/api'
 import { selectActiveMembership, useOrgStore } from '@/store/orgStore'
-import { Alert, Button, Card, IfscField, Input, LoadingState, Page, PageHeader, Select } from '@/components/ui'
+import { Alert, Button, Card, IfscField, Input, LoadingState, Page, PageHeader, Select, Stepper } from '@/components/ui'
 import { DocUploadField } from '@/components/kyc/DocUploadField'
 import { errorMessage } from '@/utils/display'
 import { getKycDocumentUrl, uploadOrgKycDocument } from '@/services/kycDocuments'
@@ -17,6 +17,11 @@ import type { IfscDetails } from '@/services/api'
 const PAN_PATTERN = /^[A-Z]{5}\d{4}[A-Z]$/
 const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/
 const ACCOUNT_PATTERN = /^\d{9,18}$/
+
+// Mirrors the page's own three sections below (Company details, Bank details, Documents) so the
+// stepper is a progress indicator over the existing layout, not a new gated wizard: every section
+// stays visible and editable regardless of `current` - only the highlighted step changes.
+const STEPS = ['Company details', 'Bank details', 'Documents'] as const
 
 /** A pending logistic company completes its KYC: GSTIN/PAN, bank account and the documents a reviewer checks. */
 export default function CompanyKycPage() {
@@ -141,6 +146,13 @@ export default function CompanyKycPage() {
   const canSubmit = Object.keys(fieldErrors).length === 0 && missingDocs.length === 0
   const err = (key: string) => (attemptedSubmit ? fieldErrors[key] : undefined)
 
+  // Progress for the stepper only - every section below stays visible and editable no matter
+  // which step this points at.
+  const companyDetailsDone = !fieldErrors.gstin && !fieldErrors.pan && !fieldErrors.entityType && !fieldErrors.cin && !fieldErrors.authorizedSignatoryName
+  const bankDetailsDone = !fieldErrors.bankAccountNo && !fieldErrors.bankIfsc
+  const documentsDone = missingDocs.length === 0
+  const currentStep = !companyDetailsDone ? 0 : !bankDetailsDone ? 1 : !documentsDone ? 2 : STEPS.length
+
   const trySubmit = () => {
     setAttemptedSubmit(true)
     if (canSubmit) submit.mutate()
@@ -165,6 +177,8 @@ export default function CompanyKycPage() {
       )}
 
       <Card padded className="space-y-6">
+        <Stepper steps={STEPS} current={currentStep} variant="inline" />
+
         <div>
           <p className="mb-3 text-sm font-medium text-text">Company details</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
