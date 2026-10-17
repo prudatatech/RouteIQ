@@ -152,6 +152,16 @@ registry `margixacr7m52h4t5it6og`.
     so every review screen can show a consistent "entered by staff" signal.
 
 ## 4. Azure pitfalls (each broke something once)
+- PostgREST (`margix-rest` / `margix-test-rest`) caches the database schema at startup and never notices a
+  migration's new table or column on its own: any request touching the new column fails with "Could not find the
+  '&lt;column&gt;' column ... in the schema cache". Hit live on 17 Oct 2026 - `POST /tpl/onboard` 500ing in production
+  because `authorized_signatory_name` (added by an entity-type migration days earlier) was invisible to a REST
+  container that hadn't restarted since Oct 1-2, so roughly two weeks of migrations were silently invisible to it
+  until restarted by hand. A plain `az containerapp revision restart` does **not** recreate the running replica for
+  this app; `az containerapp revision deactivate` then `activate` on the active revision does, and is now the last
+  step of the `migrate` job's `reload-rest-schema` job in `deploy-azure.yml`, run automatically whenever a
+  migration actually applied something. If this error ever recurs regardless, the manual fix is that
+  deactivate/activate pair against `margix-rest` (live) or `margix-test-rest` (test).
 - Staging was reset on 4 Oct at the owner's request: operational test records cleared; six existing demo accounts
   retained (platform owner, company admin, manager, driver, vendor, 3PL). All six password logins were verified.
   Organisations/configuration and reference catalogues remain; credentials were delivered separately, never committed.
