@@ -128,6 +128,28 @@ registry `margixacr7m52h4t5it6og`.
   certainly a leftover from a past major-version upgrade that never got cleaned up. If performance regresses on
   B1ms under real traffic, the fix is `az postgres flexible-server update -g margix-rg -n margix-pg --sku-name
   Standard_B2s --tier Burstable` (same brief-restart trade-off in reverse).
+- Staff can now enter a vendor KYC, a logistic company registration, or a 3PL application on behalf of someone who
+  phoned or WhatsApp'd their details in instead of using self-serve - some applicants can't use the forms
+  themselves. Each path goes through the exact same review queue as a self-serve submission, no auto-approval:
+  - **Vendor**: superadmin-only `POST /vendor/admin/kyc/applicants` (resolve/invite the applicant's account by
+    email) -> `POST /vendor/admin/kyc/applicants/:vendorUserId/upload-url` (documents, scoped to the applicant's id,
+    not the caller's) -> `POST /vendor/admin/kyc/applicants/create` (same shape as self-serve `/vendor/kyc/submit`,
+    reuses `submitKyc`/`assertKycContent` so validation is identical). UI: `EnterVendorKycPage.tsx`
+    (`/admin/kyc/enter-on-behalf`, linked from `KycReviewPage.tsx`).
+  - **Logistic company**: platform-admin-only `POST /admin/orgs/create-on-behalf` (invites the applicant as owner,
+    leaves the company `pending`, not yet KYC-submitted) -> the same `updateOrg`/`createOrgKycUploadUrl`/
+    `saveOrgDocuments`/`submitOrgKyc` functions self-service uses, just reached without the `org_members` ownership
+    check (`adminOrgsRouter`'s `PATCH /:id`, `/:id/kyc/upload-url`, `/:id/kyc/documents`, `/:id/kyc/submit`). The
+    route's top-level `email` is reserved for the applicant being invited, so the company's own `email` field is
+    set afterward via `PATCH`. UI: `RegisterCompanyModal.tsx`, opened from `OrganisationsPage.tsx`.
+  - **3PL**: already worked architecturally - `tpl.service.ts`'s `approve()` already branched on "no `user_id` yet
+    (e.g. staff-created)" to send a password-setup link instead of a sign-in notice, since a 3PL application never
+    required a pre-existing account either way. Added only `POST /tpl/admin/create` (superadmin-only, tags
+    `created_by`; same body as public `/tpl/onboard`, always the full/non-quick form - never `fleetSize` or
+    `user_id`). UI: `StaffCreateApplicationDrawer.tsx`, opened from `PartnersTab.tsx`.
+  - **Drivers** already had this (`people.service.ts`'s invite flow) - no change needed.
+  - `organizations.created_by` already existed; the same column was added to `vendor_profiles` and `tpl_partners`
+    so every review screen can show a consistent "entered by staff" signal.
 
 ## 4. Azure pitfalls (each broke something once)
 - Staging was reset on 4 Oct at the owner's request: operational test records cleared; six existing demo accounts
