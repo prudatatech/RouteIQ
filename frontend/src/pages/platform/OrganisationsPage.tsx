@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { FlagTriangleRight } from 'lucide-react'
+import { FlagTriangleRight, UserPlus } from 'lucide-react'
 import { adminOrgsAPI } from '@/services/api'
 import {
   Button, DataTable, Drawer, EmptyState, ExportCsvButton, Page, PageHeader, Select, StatusPill, TabPanel, Tabs, useConfirm, useTabParam,
@@ -12,6 +12,7 @@ import { selectActiveMembership, useOrgStore } from '@/store/orgStore'
 import { isPlatformActor } from '@/utils/orgAccess'
 import { useDocumentViewer } from '@/components/admin/useDocumentViewer'
 import { FlagDocumentsModal } from '@/components/admin/FlagDocumentsModal'
+import RegisterCompanyModal from '@/components/admin/RegisterCompanyModal'
 import type { OrgKind, OrgRow } from '@/utils/orgs'
 import {
   decisionReason, decisionsFor, listParams, ORG_CSV_COLUMNS, ORG_KYC_DOCUMENTS, ORG_STATUS_LABELS, orgCsvRows, pageRange, pendingFirst,
@@ -172,6 +173,7 @@ export default function PlatformOrganisationsPage() {
   const [page, setPage] = useState(0)
   const [openId, setOpenId] = useState<string | null>(null)
   const [flagOpen, setFlagOpen] = useState(false)
+  const [registerOpen, setRegisterOpen] = useState(false)
   const viewer = useDocumentViewer()
 
   const list = useQuery({
@@ -268,7 +270,14 @@ export default function PlatformOrganisationsPage() {
       <PageHeader
         title="Organisations"
         description="Companies, vendors and 3PL partners on MargixIndia. Approve new ones and suspend any that should stop."
-        actions={<ExportCsvButton name={`organisations-${kind}`} rows={orgCsvRows(rows)} columns={ORG_CSV_COLUMNS} />}
+        actions={(
+          <>
+            {kind === 'logistic_company' && (
+              <Button variant="secondary" icon={<UserPlus size={16} />} onClick={() => setRegisterOpen(true)}>Register a company for someone</Button>
+            )}
+            <ExportCsvButton name={`organisations-${kind}`} rows={orgCsvRows(rows)} columns={ORG_CSV_COLUMNS} />
+          </>
+        )}
       >
         <Tabs label="Kind of organisation" value={kind} onChange={changeKind} tabs={PLATFORM_ORG_TABS.map(t => ({ id: t.id, label: t.label }))} />
       </PageHeader>
@@ -315,6 +324,13 @@ export default function PlatformOrganisationsPage() {
         />
       )}
       {viewer.modal}
+      {registerOpen && (
+        <RegisterCompanyModal
+          open
+          onClose={() => setRegisterOpen(false)}
+          onRegistered={() => void queryClient.invalidateQueries({ queryKey: ['platform-orgs'] })}
+        />
+      )}
     </Page>
   )
 }

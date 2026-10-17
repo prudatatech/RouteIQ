@@ -210,6 +210,40 @@ export const adminOrgsAPI = {
   /** Flags specific documents on a logistic company's KYC, each with its own reason, instead of rejecting the whole application. */
   flagDocuments: (id: string, issues: Record<string, string>) =>
     api.put(`/admin/orgs/${id}/flag-documents`, { issues }).then(r => r.data as OrgRow),
+  /**
+   * Staff registers a logistic company for an applicant who phoned or WhatsApp'd their details in
+   * instead of using the sign-up form. `applicant_email`/`applicant_full_name` find or invite the
+   * applicant's own account to own the company; the company lands `pending`, not yet KYC-submitted -
+   * staff finishes it with the methods below, same as self-service. The org's own `email` (distinct
+   * from the applicant's) is not settable here - the route reserves the top-level `email` key for
+   * the applicant; set it afterward via `update`.
+   */
+  createOnBehalf: (data: { applicant_email: string; applicant_full_name?: string } & Partial<Omit<OrgRegistration, 'email'>>) =>
+    api.post('/admin/orgs/create-on-behalf', {
+      kind: 'logistic_company',
+      email: data.applicant_email,
+      full_name: data.applicant_full_name,
+      name: data.name,
+      legal_name: data.legal_name,
+      gstin: data.gstin,
+      pan: data.pan,
+      state: data.state,
+      city: data.city,
+      address: data.address,
+      pincode: data.pincode,
+      phone: data.phone,
+    }).then(r => r.data as OrgRow),
+  /** PATCH /admin/orgs/:id: the same fields self-service sets via PATCH /org, plus the org's own `email` (which only this route - not create-on-behalf - can set) and bank details under `profile`. */
+  update: (id: string, data: Partial<OrgProfileInput> & { email?: string; profile?: Record<string, unknown> }) =>
+    api.patch(`/admin/orgs/${id}`, data).then(r => r.data as OrgRow),
+  /** Signed upload URL for one KYC document of a company staff is registering on behalf of an applicant. */
+  kycUploadUrl: (id: string, data: { key: string; content_type: string; size: number }): Promise<{ path: string; token: string; signed_url: string }> =>
+    api.post(`/admin/orgs/${id}/kyc/upload-url`, data).then(r => r.data),
+  /** Saves uploaded document paths on the company ahead of the final submit. */
+  saveKycDocuments: (id: string, data: { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] }) =>
+    api.put(`/admin/orgs/${id}/kyc/documents`, data).then(r => r.data as OrgRow),
+  /** Submits the company's KYC for review once every required document, GSTIN, PAN and bank detail is present. */
+  submitKyc: (id: string) => api.post(`/admin/orgs/${id}/kyc/submit`).then(r => r.data as OrgRow),
 }
 
 export const vehicleRequestsAPI = {
