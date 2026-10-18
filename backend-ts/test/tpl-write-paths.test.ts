@@ -98,6 +98,25 @@ describe('partner document replacement', () => {
     expect((await replace(`${PID}/x.pdf`)).status).toBe(409);
     expect(supabaseMock.rows('tpl_partners')[0].status).toBe('rejected');
   });
+
+  it('lets staff update an active partner\'s document without sending it back to review', async () => {
+    const res = await replace(`${PID}/pan_new.pdf`, bearer('super-1'));
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('active');
+    expect(supabaseMock.rows('tpl_documents')[0].file_url).toBe(`${PID}/pan_new.pdf`);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('active');
+    // The partner is told; staff is not told to re-review its own action
+    const recipients = supabaseMock.writes('notifications', 'POST').map(w => w.body.user_id);
+    expect(recipients).toEqual(['partner-user']);
+  });
+
+  it('lets staff update a paused partner\'s document too, unlike the partner itself', async () => {
+    reset('paused');
+    expect((await replace(`${PID}/x.pdf`)).status).toBe(409); // the partner itself still cannot
+    const res = await replace(`${PID}/pan_new.pdf`, bearer('super-1'));
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('paused');
+  });
 });
 
 describe('partner settings request', () => {

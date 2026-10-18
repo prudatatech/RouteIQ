@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   reject: vi.fn(),
   flagDocuments: vi.fn(),
   updateApplication: vi.fn(),
+  replaceDocument: vi.fn(),
   pause: vi.fn(),
   resume: vi.fn(),
   delete: vi.fn(),
@@ -119,9 +120,13 @@ describe('TplPartnerDetailPage document upload', () => {
     show()
     await screen.findByRole('heading', { name: /Acme Logistics/ })
 
-    const fileInputs = document.body.querySelectorAll('input[type="file"]')
+    // The existing PAN Card now also has its own "Replace" file input (staff can renew it at any
+    // status) - scope by label text so adding that control doesn't shift this by raw DOM position.
+    // "Add a document" renders one "Upload" slot per TPL_DOCUMENT_TYPES entry regardless of what's
+    // already uploaded, in order [PAN Card, GST Certificate, ...] - index 1 is GST Certificate's.
+    const addGstInput = screen.getAllByLabelText('Upload')[1]
     const file = new File(['dummy'], 'gst.pdf', { type: 'application/pdf' })
-    fireEvent.change(fileInputs[1], { target: { files: [file] } })
+    fireEvent.change(addGstInput, { target: { files: [file] } })
 
     await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1))
     expect(api.updateApplication).toHaveBeenCalledWith('p1', {
@@ -138,6 +143,25 @@ describe('TplPartnerDetailPage document upload', () => {
     await screen.findByRole('heading', { name: /Acme Logistics/ })
     expect(screen.queryByText('PAN Card')).toBeNull()
     expect(document.body.querySelectorAll('input[type="file"]').length).toBe(0)
+  })
+
+  it('lets staff renew an active partner\'s document - the gap that otherwise left no way to update one', async () => {
+    api.getPartner.mockResolvedValue(fixture({
+      status: 'active',
+      tpl_documents: [{ id: 'd1', doc_type: 'PAN Card', file_url: 'p1/pan_card_old.pdf' }],
+    }))
+    docs.uploadTplDocument.mockResolvedValue('p1/pan_card_new.pdf')
+    api.replaceDocument.mockResolvedValue({ id: 'd1', file_url: 'p1/pan_card_new.pdf', status: 'active' })
+
+    show()
+    await screen.findByRole('heading', { name: /Acme Logistics/ })
+
+    const replaceInput = screen.getByLabelText(/Replace/)
+    const file = new File(['dummy'], 'pan-renewed.pdf', { type: 'application/pdf' })
+    fireEvent.change(replaceInput, { target: { files: [file] } })
+
+    await waitFor(() => expect(docs.uploadTplDocument).toHaveBeenCalledWith(file, 'PAN Card', { applicationId: 'p1' }))
+    await waitFor(() => expect(api.replaceDocument).toHaveBeenCalledWith('p1', 'd1', 'p1/pan_card_new.pdf'))
   })
 
   it('does not show the upload control to staff who cannot decide', async () => {

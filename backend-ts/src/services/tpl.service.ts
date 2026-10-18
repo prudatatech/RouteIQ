@@ -758,10 +758,19 @@ export const tplService = {
    * path is checked here. An active partner goes back to review (operations
    * pause until staff approve again) and staff are told.
    */
-  async replaceDocument(partnerId: string, docId: string, path: unknown, actor: AuditActor) {
+  /**
+   * Swaps one of the partner's documents for a freshly uploaded file - e.g. a renewed PAN Card scan
+   * once the old one expires. The partner doing this themselves goes back to review (`asStaff: false`,
+   * the original behaviour): a change to a compliance document always gets a second look. Staff doing
+   * it on the partner's behalf (`asStaff: true`) - the gap this was added to close: a platform owner
+   * had no way to update an active partner's documents at all - skips both the ownership check and the
+   * review demotion, since staff is already the one who would have reviewed it.
+   */
+  async replaceDocument(partnerId: string, docId: string, path: unknown, actor: AuditActor, asStaff = false) {
     const partner = await this.getPartner(partnerId);
-    if (partner.user_id !== actor.user_id) throw new HttpError(403, 'Not authorized');
-    if (!['active', 'pending'].includes(partner.status)) {
+    if (!asStaff && partner.user_id !== actor.user_id) throw new HttpError(403, 'Not authorized');
+    const allowedStatuses = asStaff ? ['active', 'pending', 'paused', 'rejected'] : ['active', 'pending'];
+    if (!allowedStatuses.includes(partner.status)) {
       throw new HttpError(409, `Your account is ${partner.status}. Contact support before changing documents.`);
     }
     const documents = (partner.tpl_documents ?? []) as { id: string; doc_type: string; file_url: string }[];
@@ -775,22 +784,39 @@ export const tplService = {
     const { error } = await supabase.from('tpl_documents').update({ file_url: path, uploaded_at: uploadedAt }).eq('id', docId).eq('partner_id', partner.id);
     if (error) throw new Error(`Failed to update document: ${error.message}`);
 
-    if (partner.status === 'active') {
+    if (!asStaff && partner.status === 'active') {
       await this.transition(partner.id, ['active'], { status: 'pending' }, status => `Your account is ${status}.`);
     }
-    try {
-      await notificationService.notifyStaff(
-        '3PL partner changed a document',
-        `${partner.company_name} replaced its ${doc.doc_type} and needs a new review.`,
-        'tpl_update',
-        { partner_id: partner.id },
-        PLATFORM,
-      );
-    } catch (e) {
-      console.error('[tpl] Document notification failed:', e);
+    if (asStaff) {
+      // No account yet (e.g. a staff-entered application never signed in) - nobody to tell.
+      if (partner.user_id) {
+        try {
+          await notificationService.sendNotification(
+            partner.user_id,
+            'A document was updated',
+            `Staff replaced your ${doc.doc_type}.`,
+            'tpl_update',
+            { partner_id: partner.id },
+          );
+        } catch (e) {
+          console.error('[tpl] Document notification failed:', e);
+        }
+      }
+    } else {
+      try {
+        await notificationService.notifyStaff(
+          '3PL partner changed a document',
+          `${partner.company_name} replaced its ${doc.doc_type} and needs a new review.`,
+          'tpl_update',
+          { partner_id: partner.id },
+          PLATFORM,
+        );
+      } catch (e) {
+        console.error('[tpl] Document notification failed:', e);
+      }
     }
-    await auditService.record('partner-portal', actor, 'tpl_document_replaced', { partner_id: partner.id, doc_type: doc.doc_type });
-    return { id: docId, file_url: path, uploaded_at: uploadedAt, status: 'pending' as const };
+    await auditService.record('partner-portal', actor, 'tpl_document_replaced', { partner_id: partner.id, doc_type: doc.doc_type, as_staff: asStaff });
+    return { id: docId, file_url: path, uploaded_at: uploadedAt, status: (!asStaff && partner.status === 'active') ? 'pending' as const : partner.status };
   },
 
   /**

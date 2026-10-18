@@ -289,11 +289,13 @@ router.patch('/:id', ...optionalOrgAuth, async (req, res) => {
   }
 });
 
-// POST /api/v1/tpl/:id/documents/:docId/replace — the partner swaps one of its documents.
-// The new file was uploaded through /applications/upload-url; the partner goes back to review.
+// POST /api/v1/tpl/:id/documents/:docId/replace — the partner swaps one of its documents (goes back to
+// review), or staff updates one on the partner's behalf at any status, including active - the gap that
+// otherwise left a platform owner with no way to update an active partner's documents at all.
 router.post('/:id/documents/:docId/replace', requireAuth, rateLimitByUser('tpl-doc-replace', 30, 60 * 60), async (req, res) => {
   try {
-    const data = await tplService.replaceDocument(req.params.id, req.params.docId, req.body?.path, req.user!);
+    const asStaff = await actsAsPlatform(req);
+    const data = await tplService.replaceDocument(req.params.id, req.params.docId, req.body?.path, req.user!, asStaff);
     res.json({ success: true, data });
   } catch (error) {
     sendError(req, res, error, 'error');

@@ -2,14 +2,14 @@ import { errorMessage, formatDateTime } from '@/utils/display'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, Download, FileText, FlagTriangleRight, ShieldCheck, Zap } from 'lucide-react'
+import { Building2, Download, FileText, FlagTriangleRight, RefreshCw, ShieldCheck, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { useEffectiveRole } from '@/store/effectiveRole'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import { uploadTplDocument } from '@/services/tplDocuments'
 import {
-  Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, IfscVerifiedHint, Page, PageHeader, Spinner, StatusPill, humanize, useConfirm,
+  Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, FileButton, IfscVerifiedHint, Page, PageHeader, Spinner, StatusPill, humanize, useConfirm,
 } from '@/components/ui'
 import { DocUploadField } from '@/components/kyc/DocUploadField'
 import RulesEditor from '@/components/tpl/RulesEditor'
@@ -137,6 +137,7 @@ export default function TplPartnerDetailPage() {
   const [preview, setPreview] = useState<{ url: string, name: string } | null>(null)
   const [flagOpen, setFlagOpen] = useState(false)
   const [uploadingType, setUploadingType] = useState<string | null>(null)
+  const [replacingDocId, setReplacingDocId] = useState<string | null>(null)
 
   const { data: partner, isLoading, error, refetch } = useQuery<TplPartnerDetail>({
     queryKey: ['tpl-partner', id],
@@ -266,6 +267,23 @@ export default function TplPartnerDetailPage() {
     }
   }
 
+  // Lets staff renew a document (e.g. an expired PAN scan) at any status, including an active partner -
+  // without this, there was no way to update an active partner's documents at all. Unlike the partner's
+  // own self-service replace, this never sends an active partner back to review (staff already reviewed it).
+  const replaceExistingDocument = async (doc: TplDocument, file: File) => {
+    setReplacingDocId(doc.id)
+    try {
+      const path = await uploadTplDocument(file, doc.doc_type, { applicationId: id! })
+      await tplAPI.replaceDocument(id!, doc.id, path)
+      toast.success('Document updated')
+      queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
+    } catch (err) {
+      toast.error(errorMessage(err, 'We could not update this document. Try again.'))
+    } finally {
+      setReplacingDocId(null)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -363,6 +381,19 @@ export default function TplPartnerDetailPage() {
                           <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
                             <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {issue}
                           </p>
+                        )}
+                        {canDecide && (
+                          <div className="mt-2">
+                            <FileButton
+                              variant="link"
+                              icon={<RefreshCw size={14} />}
+                              accept=".pdf,.jpg,.jpeg,.png"
+                              disabled={replacingDocId === doc.id}
+                              onFile={file => replaceExistingDocument(doc, file)}
+                            >
+                              {replacingDocId === doc.id ? 'Updating…' : 'Replace (e.g. renewed document)'}
+                            </FileButton>
+                          </div>
                         )}
                       </div>
                     )
