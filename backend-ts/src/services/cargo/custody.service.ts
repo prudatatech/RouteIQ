@@ -596,6 +596,15 @@ export async function recordCustody(target: Consignment | unknown, input: Custod
         ...(c.kind === 'shipment' && otpVerified ? { delivery_otp_hash: null, delivery_otp_expires_at: null } : {}),
       });
 
+      // A partial delivery with nothing refused leaves the vehicle empty too, same as a full delivery -
+      // but its manifest status goes to 'exception' (for the shortage case), not 'delivered', so
+      // afterManifestDelivered's release never fires for it. Release here instead, by the holder, not
+      // the status, so a load still partly on board (refused pieces) correctly keeps its space reserved.
+      if (c.kind === 'manifest' && kind === 'partial_delivery' && holder === 'consignee' && vehicleId) {
+        await releaseVehicleLoad(vehicleId, Number(c.row.capacity_kg) || 0);
+        if (!(await vehicleHasOpenWork(vehicleId, { manifestId: c.id }))) await setOperatingVehicleStatus(vehicleId, 'available');
+      }
+
       // With remarks (damage), a partial, or a broken seal each open a case
       const condType = exceptionTypeFor(input.condition);
       if (condType === 'damage' || damaged > 0) {

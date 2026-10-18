@@ -111,6 +111,21 @@ describe('vendor loads on the driver route', () => {
     expect(vehicle()).toMatchObject({ status: 'available', current_load_kg: 0, available_capacity_kg: 1000 });
   });
 
+  it('also gives the weight back when a load is delivered short, not just fully - nothing is left on the truck either way', async () => {
+    // Regression: a partial delivery with nothing refused still empties the vehicle (the short pieces
+    // are simply missing, not on board), but the manifest's status goes to 'exception' for the shortage
+    // case rather than 'delivered', so the usual on-delivery capacity release never fired for it.
+    reset({ cargo_manifest: [manifest('m1', { status: 'in_transit' })] });
+    Object.assign(vehicle(), { status: 'on_route', current_load_kg: 100, available_capacity_kg: 900 });
+    const res = await request(app).post('/api/v1/telemetry/driver-ping/complete-stop').set(driverAuth()).send({
+      stop_id: 'm1_drop', outcome: 'partial', pieces: 8, pieces_short: 2, received_by: 'Store manager',
+      photo_paths: [`pod/m1_drop/photo_a.jpg`],
+    });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('cargo_manifest')[0].status).toBe('exception');
+    expect(vehicle()).toMatchObject({ status: 'available', current_load_kg: 0, available_capacity_kg: 1000 });
+  });
+
   it('rejects a stop of a cancelled load', async () => {
     reset({ cargo_manifest: [manifest('m1', { status: 'cancelled' })] });
     const res = await complete('m1_pickup');
