@@ -3,8 +3,9 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import toast from 'react-hot-toast'
 import { FlagTriangleRight, UserPlus } from 'lucide-react'
 import { adminOrgsAPI } from '@/services/api'
+import { uploadAdminOrgKycDocument } from '@/services/kycDocuments'
 import {
-  Button, DataTable, Drawer, EmptyState, ExportCsvButton, Page, PageHeader, Select, StatusPill, TabPanel, Tabs, useConfirm, useTabParam,
+  Button, DataTable, Drawer, EmptyState, ExportCsvButton, FileButton, Page, PageHeader, Select, StatusPill, TabPanel, Tabs, useConfirm, useTabParam,
   type Column,
 } from '@/components/ui'
 import { errorMessage, formatDate } from '@/utils/display'
@@ -40,11 +41,14 @@ function Detail({ label, value }: { label: string; value?: string | null }) {
 }
 
 /** A logistic company's uploaded KYC documents, each flaggable with its own reason. Platform only. */
-function OrgDocumentsSection({ org, onFlag, onResume, viewer }: {
+function OrgDocumentsSection({ org, onFlag, onResume, onUpload, uploadingKey, viewer }: {
   org: OrgRow
   onFlag: () => void
   /** Reopens RegisterCompanyModal to finish this company's registration (staff-entered or self-serve). */
   onResume: () => void
+  /** Uploads (or renews) one document, at any status - the company does not need to re-register. */
+  onUpload: (key: string, file: File) => void
+  uploadingKey: string | null
   viewer: ReturnType<typeof useDocumentViewer>
 }) {
   const docUrls = org.kyc_documents?.docUrls ?? {}
@@ -68,43 +72,52 @@ function OrgDocumentsSection({ org, onFlag, onResume, viewer }: {
           {org.kyc_submitted_at ? 'Submitted for review.' : hasAnyDoc ? 'Waiting for the company to fix and resubmit.' : 'The company has not submitted its KYC documents yet.'}
         </p>
       )}
-      {!hasAnyDoc ? (
-        <p className="text-sm text-muted">No documents uploaded yet.</p>
-      ) : (
-        <ul className="divide-y divide-border rounded-control border border-border">
-          {ORG_KYC_DOCUMENTS.map(d => {
-            const path = docUrls[d.key]
-            const issue = issues[d.key]
-            return (
-              <li key={d.key} className={`px-3 py-2 ${issue ? 'bg-warning/5' : ''}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm">{d.label}</span>
-                  {issue && <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>}
-                </div>
+      <ul className="divide-y divide-border rounded-control border border-border">
+        {ORG_KYC_DOCUMENTS.map(d => {
+          const path = docUrls[d.key]
+          const issue = issues[d.key]
+          return (
+            <li key={d.key} className={`px-3 py-2 ${issue ? 'bg-warning/5' : ''}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm">{d.label}</span>
+                {issue && <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>}
+              </div>
+              <div className="mt-1 flex items-center gap-3">
                 {path ? (
-                  <button type="button" onClick={() => viewer.open(d.label, path, d.key)} disabled={viewer.opening === d.key} className="mt-1 text-xs font-medium text-brand hover:underline">
+                  <button type="button" onClick={() => viewer.open(d.label, path, d.key)} disabled={viewer.opening === d.key} className="text-xs font-medium text-brand hover:underline">
                     {viewer.opening === d.key ? 'Opening…' : 'View'}
                   </button>
                 ) : (
-                  <span className="mt-1 block text-xs text-muted">Not uploaded</span>
+                  <span className="text-xs text-muted">Not uploaded</span>
                 )}
-                {issue && <p className="mt-1 text-sm text-warning">{issue}</p>}
-              </li>
-            )
-          })}
-        </ul>
-      )}
+                <FileButton
+                  variant="link"
+                  size="sm"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  disabled={uploadingKey === d.key}
+                  onFile={file => onUpload(d.key, file)}
+                >
+                  {uploadingKey === d.key ? 'Uploading…' : path ? 'Replace' : 'Upload'}
+                </FileButton>
+              </div>
+              {issue && <p className="mt-1 text-sm text-warning">{issue}</p>}
+            </li>
+          )
+        })}
+      </ul>
     </section>
   )
 }
 
-function OrgDrawer({ org, onClose, onDecide, deciding, onFlag, onResume, viewer }: {
+function OrgDrawer({ org, onClose, onDecide, deciding, onFlag, onResume, onUploadDoc, uploadingKey, viewer }: {
   org: OrgRow | null
   onClose: () => void
   onDecide: (org: OrgRow, decision: Decision) => void
   deciding: boolean
   onFlag: () => void
   onResume: (org: OrgRow) => void
+  onUploadDoc: (org: OrgRow, key: string, file: File) => void
+  uploadingKey: string | null
   viewer: ReturnType<typeof useDocumentViewer>
 }) {
   const reason = org ? decisionReason(org) : null
@@ -154,7 +167,16 @@ function OrgDrawer({ org, onClose, onDecide, deciding, onFlag, onResume, viewer 
               </dl>
             </section>
           )}
-          {org.kind === 'logistic_company' && <OrgDocumentsSection org={org} onFlag={onFlag} onResume={() => onResume(org)} viewer={viewer} />}
+          {org.kind === 'logistic_company' && (
+            <OrgDocumentsSection
+              org={org}
+              onFlag={onFlag}
+              onResume={() => onResume(org)}
+              onUpload={(key, file) => onUploadDoc(org, key, file)}
+              uploadingKey={uploadingKey}
+              viewer={viewer}
+            />
+          )}
           <section aria-label="History">
             <h3 className="mb-2 text-sm font-semibold">History</h3>
             <ul className="space-y-2 text-sm">
@@ -217,6 +239,24 @@ export default function PlatformOrganisationsPage() {
     },
     onError: err => toast.error(errorMessage(err, 'We could not flag these documents. Try again.')),
   })
+
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null)
+  // Works at any status, including an already-active company - renewing a document (e.g. an expired
+  // GST certificate) should never need the company to go through registration again.
+  const uploadDocument = async (org: OrgRow, key: string, file: File) => {
+    setUploadingKey(key)
+    try {
+      const path = await uploadAdminOrgKycDocument(org.id, key, file)
+      const docUrls = { ...(org.kyc_documents?.docUrls ?? {}), [key]: path }
+      await adminOrgsAPI.saveKycDocuments(org.id, { docUrls })
+      toast.success('Document updated')
+      void queryClient.invalidateQueries({ queryKey: ['platform-orgs'] })
+    } catch (err) {
+      toast.error(errorMessage(err, 'We could not update this document. Try again.'))
+    } finally {
+      setUploadingKey(null)
+    }
+  }
 
   const onDecide = async (org: OrgRow, decision: Decision) => {
     if (decision === 'reject') {
@@ -331,6 +371,8 @@ export default function PlatformOrganisationsPage() {
         deciding={decide.isPending}
         onFlag={() => setFlagOpen(true)}
         onResume={org => { setOpenId(null); setResumeOrg(org) }}
+        onUploadDoc={uploadDocument}
+        uploadingKey={uploadingKey}
         viewer={viewer}
       />
       {flagOpen && open && (
