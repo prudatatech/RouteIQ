@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { FileText } from 'lucide-react'
-import { Alert, Button, Card, DetailList, IfscVerifiedHint, StatusPill, Timeline, type TimelineEvent } from '@/components/ui'
+import { Alert, Button, Card, DetailList, FileButton, IfscVerifiedHint, StatusPill, Timeline, type TimelineEvent } from '@/components/ui'
 import { DocUploadField } from '@/components/kyc/DocUploadField'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { formatDateTime } from '@/utils/display'
@@ -150,6 +150,7 @@ export function DocumentsSection({ documents, issues, viewer, missingNamed, uplo
    */
   missingNamed?: { key: string; label: string }[]
   uploadingKey?: string | null
+  /** Replaces one already-uploaded document (e.g. renewing an expired one) - works at any KYC status. */
   onUpload?: (key: string, file: File) => void
 }) {
   return (
@@ -160,6 +161,7 @@ export function DocumentsSection({ documents, issues, viewer, missingNamed, uplo
         <ul className="divide-y divide-border rounded-control border border-border">
           {documents.map(d => {
             const issue = issues?.[d.key]
+            const canReplace = onUpload && !d.key.startsWith('other_')
             return (
               <li key={d.key} className={`px-3 py-2 ${issue ? 'bg-warning/5' : ''}`}>
                 <div className="flex items-center justify-between gap-3">
@@ -168,7 +170,20 @@ export function DocumentsSection({ documents, issues, viewer, missingNamed, uplo
                     <span className="truncate">{d.label}</span>
                     {issue && <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>}
                   </span>
-                  <DocButton viewer={viewer} label={d.label} path={d.path} id={d.key} />
+                  <span className="flex items-center gap-2">
+                    <DocButton viewer={viewer} label={d.label} path={d.path} id={d.key} />
+                    {canReplace && (
+                      <FileButton
+                        variant="link"
+                        size="sm"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        disabled={uploadingKey === d.key}
+                        onFile={file => onUpload!(d.key, file)}
+                      >
+                        {uploadingKey === d.key ? 'Updating…' : 'Replace'}
+                      </FileButton>
+                    )}
+                  </span>
                 </div>
                 {issue && <p className="mt-1 text-sm text-warning">{issue}</p>}
               </li>

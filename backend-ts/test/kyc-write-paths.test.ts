@@ -249,6 +249,15 @@ describe('PUT /vendor/admin/kyc/applicants/:vendorUserId/documents', () => {
     expect((await save({ docUrls: {} }, bearer('admin-1'))).status).toBe(403);
     expect((await save({ docUrls: {} }, bearer(VENDOR))).status).toBe(403);
   });
+
+  it('lets staff renew an already-approved vendor\'s document without sending it back to review', async () => {
+    reset('approved');
+    const res = await save({ docUrls: { panCard: `${VENDOR}/panCard_new.pdf` } });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vendor_profiles')[0]).toMatchObject({ kyc_status: 'approved' });
+    const recipients = supabaseMock.writes('notifications', 'POST').map(w => w.body.user_id);
+    expect(recipients).toEqual([VENDOR]);
+  });
 });
 
 describe('vendor form validation', () => {

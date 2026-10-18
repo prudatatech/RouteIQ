@@ -167,6 +167,23 @@ describe('VendorReviewPage', () => {
     expect(screen.queryByText('Add a missing document')).toBeFalsy()
   })
 
+  it('lets staff renew an already-uploaded document even once the KYC is approved', async () => {
+    api.review.mockResolvedValue(fixture({ status: 'approved' }))
+    api.adminKycUploadUrlFor.mockResolvedValue({ path: 'v1/panScan_2.pdf', token: 't', signed_url: 'https://signed' })
+    show()
+    await screen.findByRole('heading', { name: /Acme Traders/ })
+
+    const replaceInput = screen.getByLabelText('Replace')
+    fireEvent.change(replaceInput, { target: { files: [file('pan-renewed.pdf')] } })
+
+    await waitFor(() => expect(api.adminKycUploadUrlFor).toHaveBeenCalledWith('v1', {
+      key: 'panScan', content_type: 'application/pdf', size: expect.any(Number),
+    }))
+    await waitFor(() => expect(api.adminSaveKycDocumentsFor).toHaveBeenCalledWith('v1', {
+      docUrls: { panScan: 'v1/panScan_2.pdf' },
+    }))
+  })
+
   it('shows a not-found state and an error with retry', async () => {
     api.review.mockRejectedValue({ response: { status: 404 } })
     show()

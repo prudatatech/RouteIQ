@@ -759,13 +759,17 @@ export const vendorService = {
   },
 
   /**
-   * Save the vendor's uploaded KYC documents on their profile before they
-   * submit the form. Changing the documents of an approved profile sends it
-   * back to review (as any change to its legal identity does) and tells staff.
+   * Save the vendor's uploaded KYC documents on their profile before they submit the form. The
+   * vendor doing this themselves (`asStaff: false`, the original behaviour) sends an approved
+   * profile back to review, as any change to its legal identity does, and tells staff. Staff
+   * doing it on the vendor's behalf (`asStaff: true`) - e.g. renewing an expired document for an
+   * already-approved vendor - skips that demotion, since staff is already the one who would have
+   * reviewed it, and tells the vendor instead of staff.
    */
   async saveKycDocuments(
     vendorId: string,
     input: { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] },
+    asStaff = false,
   ) {
     assertOwnDocumentPaths(vendorId, input.docUrls, input.otherDocs);
 
@@ -785,7 +789,7 @@ export const vendorService = {
       otherDocs: input.otherDocs ?? current.otherDocs ?? [],
     };
     const changes: Record<string, unknown> = { kyc_data: kycData, updated_at: new Date().toISOString() };
-    const backToReview = profile.kyc_status === 'approved';
+    const backToReview = !asStaff && profile.kyc_status === 'approved';
     if (backToReview) Object.assign(changes, { kyc_status: 'submitted', kyc_reviewed_at: null, kyc_reviewed_by: null });
 
     // Re-uploading a document clears its own flag, even without a full resubmit:
@@ -824,6 +828,12 @@ export const vendorService = {
           'kyc_submitted',
           { profile_id: vendorId },
         );
+      } catch (e) {
+        console.error('[vendor] KYC notification failed:', e);
+      }
+    } else if (asStaff) {
+      try {
+        await notificationService.sendNotification(vendorId, 'A document was updated', 'Staff updated one of your KYC documents.', 'kyc_update', { profile_id: vendorId });
       } catch (e) {
         console.error('[vendor] KYC notification failed:', e);
       }
