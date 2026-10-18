@@ -12,6 +12,7 @@ import { auditService, type AuditActor } from './audit.service';
 import { EMAIL_PATTERN, assertApplicationFields, assertFlagDocuments, assertPartnerSettings } from '../schemas/tpl';
 import { formatRate, type RateUnit } from '../utils/corridor-match';
 import { isUuid } from '../core/validate';
+import { selectIn } from './finance.service';
 import { findAuthUserByEmail } from '../core/auth-users';
 import { invalidateRoleCache } from '../core/auth';
 import { entityTypeRequiresCin } from '../utils/entity-type';
@@ -313,6 +314,38 @@ export const tplService = {
     if (error) throw new Error(`Failed to fetch partner ${id}: ${error.message}`);
     if (!data) throw new HttpError(404, 'Application not found');
     return data;
+  },
+
+  /**
+   * A partner's timeline, newest first: every staff decision already audited for it (approved,
+   * rejected, flagged, paused, resumed, deleted, a document replaced), the same way vendor KYC's
+   * review page builds its own history from `ai_agent_logs`. Read-only, so it is its own endpoint
+   * rather than folded into getPartner, which other write paths call on every request.
+   */
+  async getPartnerHistory(partnerId: string) {
+    const { data: logs, error } = await supabase
+      .from('ai_agent_logs')
+      .select('created_at, action, input_data')
+      .filter('input_data->>partner_id', 'eq', partnerId)
+      .like('action', 'tpl_%')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (error) throw new Error(`Failed to read this partner's history: ${error.message}`);
+
+    const actorIds = [...new Set((logs ?? []).map(l => l.input_data?.actor_id).filter(isUuid))] as string[];
+    const names = new Map<string, string>();
+    for (const a of await selectIn<{ id: string; full_name: string | null; email: string | null }>('users', 'id', actorIds, 'id, full_name, email')) {
+      names.set(a.id, a.full_name || a.email || 'Platform');
+    }
+
+    return (logs ?? []).map(l => ({
+      at: l.created_at as string,
+      // The partner's own account has the base 'vendor' role (3PL has no base role of its own), so
+      // its name resolves the same way staff's does - there is no generic actor_role to branch on.
+      actor: names.get(l.input_data?.actor_id) ?? 'Platform',
+      action: l.action as string,
+      detail: (l.input_data?.reason ?? l.input_data?.doc_type ?? null) as string | null,
+    }));
   },
 
   /**

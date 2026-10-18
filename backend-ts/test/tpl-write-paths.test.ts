@@ -460,3 +460,36 @@ describe('application field checks', () => {
     });
   });
 });
+
+describe('GET /tpl/:id/history', () => {
+  const history = (id = PID, token = bearer('super-1')) => request(app).get(`/api/v1/tpl/${id}/history`).set(token);
+
+  it('lists this partner\'s audited decisions, newest first, with the actor\'s name', async () => {
+    // Name resolution looks the actor up by a real (uuid-shaped) id, unlike this file's other
+    // shorthand bearer ids - add one just for this test.
+    const SUE = '22222222-2222-2222-2222-222222222222';
+    supabaseMock.rows('users').push({ id: SUE, role: 'superadmin', is_active: true, full_name: 'Sue Super' });
+    supabaseMock.rows('ai_agent_logs').push(
+      { created_at: '2026-10-01T05:00:00Z', action: 'tpl_approved', input_data: { actor_id: SUE, partner_id: PID } },
+      { created_at: '2026-10-05T05:00:00Z', action: 'tpl_paused', input_data: { actor_id: SUE, partner_id: PID } },
+      // Belongs to a different partner - must not show up here
+      { created_at: '2026-10-06T05:00:00Z', action: 'tpl_approved', input_data: { actor_id: SUE, partner_id: 'p2' } },
+    );
+    const res = await history();
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([
+      { at: '2026-10-05T05:00:00Z', actor: 'Sue Super', action: 'tpl_paused', detail: null },
+      { at: '2026-10-01T05:00:00Z', actor: 'Sue Super', action: 'tpl_approved', detail: null },
+    ]);
+  });
+
+  it('is empty for a partner with no audited history yet', async () => {
+    expect((await history()).body).toEqual([]);
+  });
+
+  it('is for superadmins only', async () => {
+    expect((await request(app).get(`/api/v1/tpl/${PID}/history`)).status).toBe(401);
+    expect((await history(PID, bearer('admin-1'))).status).toBe(403);
+    expect((await history(PID, bearer('partner-user'))).status).toBe(403);
+  });
+});

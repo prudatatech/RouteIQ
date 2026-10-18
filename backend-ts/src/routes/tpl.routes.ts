@@ -240,6 +240,15 @@ router.get('/:id', rateLimitByIp('tpl-lookup', 60, 60), ...optionalOrgAuth, asyn
   }
 });
 
+// GET /api/v1/tpl/:id/history — the partner's audited timeline, for the superadmin review page
+router.get('/:id/history', requireAuth, requireRole('superadmin'), async (req, res) => {
+  try {
+    res.json(await tplService.getPartnerHistory(uuidParam(req.params.id, 'Application not found')));
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // POST /api/v1/tpl/approve/:id
 router.post('/approve/:id', requireAuth, requireRole('superadmin'), async (req, res) => {
   try {

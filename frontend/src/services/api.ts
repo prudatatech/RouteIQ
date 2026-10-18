@@ -1109,6 +1109,9 @@ export const tplAPI = {
   delete: (id: string) => api.delete(`/tpl/${id}`).then(r => r.data),
   sendSetupOtp: (email: string) => api.post('/tpl/auth/send-otp', { email }).then(r => r.data),
   setupPassword: (email: string, otp: string, password: string) => api.post('/tpl/auth/setup-password', { email, otp, password }).then(r => r.data),
+  /** Every audited decision on this partner, newest first. Superadmin only. */
+  getPartnerHistory: (id: string): Promise<{ at: string; actor: string; action: string; detail: string | null }[]> =>
+    api.get(`/tpl/${id}/history`).then(r => r.data),
 }
 
 export interface OnlineGstin {

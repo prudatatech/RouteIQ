@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const api = vi.hoisted(() => ({
   getPartner: vi.fn(),
+  getPartnerHistory: vi.fn(),
   approve: vi.fn(),
   reject: vi.fn(),
   flagDocuments: vi.fn(),
@@ -80,6 +81,7 @@ beforeEach(() => {
   Object.values(api).forEach(m => m.mockReset())
   docs.uploadTplDocument.mockReset()
   role.role = 'superadmin'
+  api.getPartnerHistory.mockResolvedValue([])
 })
 afterEach(cleanup)
 
@@ -170,5 +172,29 @@ describe('TplPartnerDetailPage document upload', () => {
     show()
     await screen.findByRole('heading', { name: /Acme Logistics/ })
     expect(document.body.querySelectorAll('input[type="file"]').length).toBe(0)
+  })
+})
+
+describe('TplPartnerDetailPage history', () => {
+  it('shows the audited timeline to a superadmin', async () => {
+    api.getPartner.mockResolvedValue(fixture({ status: 'active' }))
+    api.getPartnerHistory.mockResolvedValue([
+      { at: '2026-10-05T05:00:00Z', actor: 'Sue Super', action: 'tpl_paused', detail: null },
+      { at: '2026-10-01T05:00:00Z', actor: 'Sue Super', action: 'tpl_approved', detail: null },
+    ])
+    show()
+    await screen.findByRole('heading', { name: /Acme Logistics/ })
+    expect(await screen.findByText('History')).toBeTruthy()
+    expect(screen.getByText('3PL partner paused')).toBeTruthy()
+    expect(screen.getByText('3PL partner approved')).toBeTruthy()
+  })
+
+  it('does not fetch or show history for staff who cannot decide', async () => {
+    role.role = 'admin'
+    api.getPartner.mockResolvedValue(fixture({ status: 'pending', tpl_documents: [] }))
+    show()
+    await screen.findByRole('heading', { name: /Acme Logistics/ })
+    expect(api.getPartnerHistory).not.toHaveBeenCalled()
+    expect(screen.queryByText('History')).toBeNull()
   })
 })

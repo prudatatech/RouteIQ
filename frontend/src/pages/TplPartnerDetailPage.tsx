@@ -19,6 +19,7 @@ import { TPL_DOCUMENT_TYPES, corridorRateText, rateText, type RateUnit } from '@
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { FlagDocumentsModal } from '@/components/admin/FlagDocumentsModal'
+import { HistorySection } from '@/components/admin/vendor-review/ReviewSections'
 
 interface TplDocument { id: string; doc_type: string; file_url: string }
 interface TplCorridor { id: string; corridor_name: string; vehicle_types: string[] | null; proposed_rate: string | null; rate_amount?: number | null; rate_unit?: RateUnit | null; priority: number | null }
@@ -143,6 +144,12 @@ export default function TplPartnerDetailPage() {
     queryKey: ['tpl-partner', id],
     queryFn: () => tplAPI.getPartner(id!),
     enabled: !!id,
+  })
+
+  const { data: history = [] } = useQuery({
+    queryKey: ['tpl-partner-history', id],
+    queryFn: () => tplAPI.getPartnerHistory(id!),
+    enabled: !!id && canDecide,
   })
 
   const approve = useMutation({
@@ -524,6 +531,8 @@ export default function TplPartnerDetailPage() {
           </div>
         </Card>
       )}
+
+      {canDecide && <HistorySection history={history} />}
 
       {preview && (
         <DocumentViewerModal isOpen={!!preview} onClose={() => setPreview(null)} fileUrl={preview.url} fileName={preview.name} />
