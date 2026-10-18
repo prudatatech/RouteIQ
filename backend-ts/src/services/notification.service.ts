@@ -71,7 +71,9 @@ export const notificationService = {
       title,
       body,
       type,
-      data
+      data,
+      push_status: 'pending',
+      push_attempts: 0,
     }).select().single();
 
     if (error) {
@@ -79,9 +81,11 @@ export const notificationService = {
       throw new Error(error.message);
     }
     
-    // Also trigger native Push Notification if they are a driver. The type
-    // travels with it so a tap opens the right screen (e.g. Messages).
-    await pushService.sendToUser(userId, title, body, { ...(data ?? {}), type });
+    // Trigger native Push Notification asynchronously (non-blocking for HTTP callers).
+    // The notification row push_status is updated upon delivery or picked up by scheduler sweep on failure.
+    if (notif?.id) {
+      void pushService.dispatchPushForNotification(notif.id, userId, title, body, { ...(data ?? {}), type });
+    }
 
     return notif;
   },

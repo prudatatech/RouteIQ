@@ -26,6 +26,7 @@ import { todayKey } from './people-docs.service';
 import { syncAllOdometers } from './odometer-sync.service';
 import { settings } from '../core/config';
 import { escalateQuietLoads, expireQuotes } from './loads/order-routing';
+import { pushService } from './push.service';
 
 export const SCHEDULER_INTERVAL_MS = 60_000;
 /** How often quotes are expired and quiet loads escalated. */
@@ -94,6 +95,11 @@ export async function runSchedulerTick(): Promise<{ windowsClosed: number } | nu
       } catch (e: any) {
         console.error('[scheduler] Order routing check failed:', e.message);
       }
+    }
+    try {
+      await pushService.retryPendingPushes();
+    } catch (e: any) {
+      console.error('[scheduler] Push notification retry sweep failed:', e.message);
     }
     return { windowsClosed };
   } finally {

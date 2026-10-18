@@ -331,7 +331,11 @@
     "type",
     "is_read",
     "data",
-    "created_at"
+    "created_at",
+    "push_status",
+    "push_attempts",
+    "push_error",
+    "push_sent_at"
   ],
   "org_members": [
     "org_id",
