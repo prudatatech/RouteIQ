@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decisionReason, decisionsFor, listParams, orgCsvRows, pageRange, pendingFirst } from './platformOrgs'
+import { decisionReason, decisionsFor, listParams, orgCsvRows, pageRange, pendingFirst, reviewLinkFor } from './platformOrgs'
 import type { OrgRow, OrgStatus } from './orgs'
 
 const row = (id: string, status: OrgStatus, extra: Partial<OrgRow> = {}): OrgRow => ({ id, kind: 'logistic_company', name: id, status, ...extra })
@@ -29,9 +29,9 @@ describe('decisionsFor', () => {
   it('approves or rejects a pending company', () => {
     expect(decisionsFor('pending', 'logistic_company').map(d => d.label)).toEqual(['Approve', 'Reject'])
   })
-  it('suspends an active one and reinstates a suspended one', () => {
-    expect(decisionsFor('active', 'vendor')).toEqual([{ decision: 'suspend', label: 'Suspend' }])
-    expect(decisionsFor('suspended', 'vendor')).toEqual([{ decision: 'approve', label: 'Reinstate' }])
+  it('suspends an active company and reinstates a suspended one', () => {
+    expect(decisionsFor('active', 'logistic_company')).toEqual([{ decision: 'suspend', label: 'Suspend' }])
+    expect(decisionsFor('suspended', 'logistic_company')).toEqual([{ decision: 'approve', label: 'Reinstate' }])
   })
   it('offers nothing for a rejected organisation or the platform', () => {
     expect(decisionsFor('rejected', 'logistic_company')).toEqual([])
@@ -41,8 +41,26 @@ describe('decisionsFor', () => {
     expect(decisionsFor('pending', 'logistic_company', false).map(d => d.label)).toEqual(['Reject'])
     expect(decisionsFor('pending', 'logistic_company', true).map(d => d.label)).toEqual(['Approve', 'Reject'])
   })
-  it('ignores kycReady for other kinds - a pending vendor can always be approved', () => {
-    expect(decisionsFor('pending', 'vendor', false).map(d => d.label)).toEqual(['Approve', 'Reject'])
+  it('offers nothing for a vendor or 3PL partner, at any status - their organisation row is only a mirror of the real KYC review', () => {
+    for (const status of ['pending', 'active', 'suspended', 'rejected'] as const) {
+      expect(decisionsFor(status, 'vendor')).toEqual([])
+      expect(decisionsFor(status, 'tpl_partner')).toEqual([])
+    }
+  })
+})
+
+describe('reviewLinkFor', () => {
+  it('points a vendor at its KYC review page, using the legacy user id', () => {
+    expect(reviewLinkFor({ kind: 'vendor', profile: { legacy_user_id: 'v1' } })).toBe('/admin/kyc/v1')
+  })
+  it('points a 3PL partner at its partner page, using the legacy partner id', () => {
+    expect(reviewLinkFor({ kind: 'tpl_partner', profile: { legacy_tpl_partner_id: 't1' } })).toBe('/3pl-partners/t1')
+  })
+  it('is null without the legacy id, or for a logistic company or the platform', () => {
+    expect(reviewLinkFor({ kind: 'vendor', profile: {} })).toBeNull()
+    expect(reviewLinkFor({ kind: 'vendor', profile: null })).toBeNull()
+    expect(reviewLinkFor({ kind: 'logistic_company', profile: { legacy_user_id: 'x' } })).toBeNull()
+    expect(reviewLinkFor({ kind: 'platform', profile: null })).toBeNull()
   })
 })
 

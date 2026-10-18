@@ -1,12 +1,13 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { FlagTriangleRight, UserPlus } from 'lucide-react'
 import { adminOrgsAPI } from '@/services/api'
 import { uploadAdminOrgKycDocument } from '@/services/kycDocuments'
 import {
-  Button, DataTable, Drawer, EmptyState, ExportCsvButton, FileButton, Page, PageHeader, Select, StatusPill, TabPanel, Tabs, useConfirm, useTabParam,
-  type Column,
+  Button, buttonClasses, DataTable, Drawer, EmptyState, ExportCsvButton, FileButton, Page, PageHeader, Select, StatusPill, TabPanel, Tabs, useConfirm,
+  useTabParam, type Column,
 } from '@/components/ui'
 import { errorMessage, formatDate } from '@/utils/display'
 import { selectActiveMembership, useOrgStore } from '@/store/orgStore'
@@ -17,7 +18,7 @@ import RegisterCompanyModal from '@/components/admin/RegisterCompanyModal'
 import type { OrgKind, OrgRow } from '@/utils/orgs'
 import {
   decisionReason, decisionsFor, listParams, ORG_CSV_COLUMNS, ORG_KYC_DOCUMENTS, ORG_STATUS_LABELS, orgCsvRows, pageRange, pendingFirst,
-  PAGE_SIZE, PLATFORM_ORG_TABS, STATUS_FILTERS, type Decision, type StatusFilter,
+  PAGE_SIZE, PLATFORM_ORG_TABS, reviewLinkFor, STATUS_FILTERS, type Decision, type StatusFilter,
 } from '@/utils/platformOrgs'
 
 const TAB_IDS = PLATFORM_ORG_TABS.map(t => t.id)
@@ -122,13 +123,14 @@ function OrgDrawer({ org, onClose, onDecide, deciding, onFlag, onResume, onUploa
 }) {
   const reason = org ? decisionReason(org) : null
   const actions = org ? decisionsFor(org.status, org.kind, !!org.kyc_submitted_at) : []
+  const reviewLink = org ? reviewLinkFor(org) : null
   return (
     <Drawer
       open={!!org}
       onClose={onClose}
       title={org?.name ?? ''}
       description={org && <StatusPill status={org.status} tone={STATUS_TONE[org.status]}>{ORG_STATUS_LABELS[org.status]}</StatusPill>}
-      footer={actions.length > 0 && (
+      footer={actions.length > 0 ? (
         <>
           {actions.map(a => (
             <Button key={a.decision} variant={a.decision === 'approve' ? 'primary' : 'secondary'} loading={deciding} onClick={() => org && onDecide(org, a.decision)}>
@@ -136,7 +138,11 @@ function OrgDrawer({ org, onClose, onDecide, deciding, onFlag, onResume, onUploa
             </Button>
           ))}
         </>
-      )}
+      ) : reviewLink ? (
+        <Link to={reviewLink} className={buttonClasses({ variant: 'primary' })}>
+          {org?.kind === 'vendor' ? 'Review KYC' : 'Review partner'}
+        </Link>
+      ) : null}
     >
       {org && (
         <div className="space-y-6">

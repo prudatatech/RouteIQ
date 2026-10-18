@@ -55,7 +55,10 @@ export type Decision = 'approve' | 'reject' | 'suspend'
  * to omit `approve` in that case (default true, so other kinds are unaffected).
  */
 export function decisionsFor(status: OrgStatus, kind: OrgKind, kycReady = true): { decision: Decision; label: string }[] {
-  if (kind === 'platform') return []
+  // A vendor's or 3PL partner's organisation row only mirrors its real record (vendor_profiles.kyc_status,
+  // tpl_partners.status) - deciding here would leave the two out of sync without ever checking documents.
+  // Approve/reject/suspend only make sense for the record that actually gates behaviour: a logistic company.
+  if (kind !== 'logistic_company') return []
   if (status === 'pending') {
     const notReady = kind === 'logistic_company' && !kycReady
     return [...(notReady ? [] : [{ decision: 'approve' as Decision, label: 'Approve' }]), { decision: 'reject', label: 'Reject' }]
@@ -63,6 +66,23 @@ export function decisionsFor(status: OrgStatus, kind: OrgKind, kycReady = true):
   if (status === 'active') return [{ decision: 'suspend', label: 'Suspend' }]
   if (status === 'suspended') return [{ decision: 'approve', label: 'Reinstate' }]
   return []
+}
+
+/**
+ * Where to actually decide a vendor's or 3PL partner's application - never here, since this
+ * organisation row is only a mirror. `legacy_user_id`/`legacy_tpl_partner_id` (set by the
+ * database trigger that keeps the mirror in sync) point back at the real record.
+ */
+export function reviewLinkFor(org: Pick<OrgRow, 'kind' | 'profile'>): string | null {
+  if (org.kind === 'vendor') {
+    const userId = org.profile?.legacy_user_id
+    return typeof userId === 'string' ? `/admin/kyc/${userId}` : null
+  }
+  if (org.kind === 'tpl_partner') {
+    const partnerId = org.profile?.legacy_tpl_partner_id
+    return typeof partnerId === 'string' ? `/3pl-partners/${partnerId}` : null
+  }
+  return null
 }
 
 export { pageRange } from './pagination'

@@ -267,6 +267,13 @@ describe('approving, rejecting and suspending', () => {
     expect(status(ORG.platform)).toBe('active');
   });
 
+  it('refuses to decide a vendor or 3PL partner - that belongs to its own KYC review page', async () => {
+    const vendorOrgId = 'a0000000-0000-4000-8000-0000000000ab';
+    expect((await decide('approve', vendorOrgId)).status).toBe(409);
+    expect(status(vendorOrgId)).toBe('pending');
+    expect((await decide('approve', ORG.tplT)).status).toBe(409);
+  });
+
   it('is for platform admins only', async () => {
     for (const who of ['admin-a', 'manager-a', 'tpl-1']) {
       expect((await decide('approve', PENDING, who)).status).toBe(403);
@@ -411,11 +418,12 @@ describe('notifications and paging', () => {
   });
 
   it('tells an org owner of platform approval and rejection', async () => {
-    const created = await request(app).post(api('/orgs')).set(as('driver-a')).send({ kind: 'vendor', name: 'Delta Traders' });
+    const created = await request(app).post(api('/orgs')).set(as('driver-a')).send({ kind: 'logistic_company', name: 'Echo Transport' });
+    supabaseMock.rows('organizations').find(o => o.id === created.body.id)!.kyc_submitted_at = '2026-10-18T00:00:00Z';
     await request(app).put(api(`/admin/orgs/${created.body.id}/approve`)).set(as('super-1'));
     expect(types('driver-a')).toEqual(['org_approve']);
-    await request(app).put(api(`/admin/orgs/${ORG.vendorV}/suspend`)).set(as('super-1'));
-    expect(types('vendor-1')).toEqual(['org_suspend']);
+    await request(app).put(api(`/admin/orgs/${ORG.companyB}/suspend`)).set(as('super-1'));
+    expect(types('admin-b')).toEqual(['org_suspend']);
   });
 
   it('pages the admin list', async () => {

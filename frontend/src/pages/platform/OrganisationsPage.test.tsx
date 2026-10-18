@@ -32,10 +32,10 @@ const ORG: OrgRow = {
   kyc_documents: { docUrls: { gstRegistration: 'org-1/gstRegistration_1.pdf' } },
 }
 
-const show = () => render(
+const show = (initialEntry = '/platform/organisations') => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <ConfirmProvider>
-      <MemoryRouter initialEntries={['/platform/organisations']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <PlatformOrganisationsPage />
       </MemoryRouter>
     </ConfirmProvider>
@@ -88,5 +88,20 @@ describe('PlatformOrganisationsPage document renewal', () => {
 
     await waitFor(() => expect(uploadAdminOrgKycDocument).toHaveBeenCalledWith('org-1', 'gstRegistration', file))
     await waitFor(() => expect(api.saveKycDocuments).toHaveBeenCalledWith('org-1', { docUrls: { gstRegistration: 'org-1/panScan_1.pdf' } }))
+  })
+})
+
+describe('PlatformOrganisationsPage vendor/3PL decisions', () => {
+  it('sends staff to the real KYC review page instead of approving a vendor here', async () => {
+    const vendorOrg: OrgRow = { id: 'v1', kind: 'vendor', name: 'Acme Traders', status: 'pending', profile: { legacy_user_id: 'user-1' } }
+    api.list.mockResolvedValue({ items: [vendorOrg], total: 1, limit: 50, offset: 0 })
+
+    show('/platform/organisations?tab=vendor')
+    fireEvent.click((await screen.findAllByText('Acme Traders'))[0])
+    await screen.findByRole('heading', { name: 'Acme Traders' })
+
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Review KYC' }).getAttribute('href')).toBe('/admin/kyc/user-1')
   })
 })

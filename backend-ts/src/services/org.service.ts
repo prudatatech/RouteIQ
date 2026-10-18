@@ -426,10 +426,19 @@ const FROM_STATUSES: Record<Decision, OrgStatus[]> = {
 };
 const TO_STATUS: Record<Decision, OrgStatus> = { approve: 'active', reject: 'rejected', suspend: 'suspended' };
 
-/** Approve (or reinstate), reject or suspend an organisation. The reason is kept in its profile. */
+/**
+ * Approve (or reinstate), reject or suspend an organisation. The reason is kept in its profile.
+ * Logistic companies only: a vendor's or 3PL partner's `organizations` row is a trigger-synced
+ * mirror of its real record (`vendor_profiles.kyc_status`, `tpl_partners.status`) - deciding here
+ * would only ever touch the mirror, leaving the two out of sync, while the vendor/3PL KYC review
+ * pages (the only places that actually check documents) stay none the wiser.
+ */
 export async function decideOrg(actor: AuditActor, id: string, decision: Decision, reason?: string): Promise<OrgRow> {
   const org = await getOrg(id);
   if (org.kind === 'platform') throw new HttpError(400, 'The platform organisation cannot be approved, rejected or suspended');
+  if (org.kind !== 'logistic_company') {
+    throw new HttpError(409, `A ${org.kind === 'vendor' ? 'vendor' : '3PL partner'} is approved, rejected or suspended from its own KYC review page, not here`);
+  }
   if (!FROM_STATUSES[decision].includes(org.status)) {
     throw new HttpError(409, `A ${org.status} organisation cannot be ${decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'suspended'}`);
   }
