@@ -410,3 +410,22 @@ describe('driver position pings', () => {
     expect(vehicle().status).toBe('on_route');
   });
 });
+
+describe('POST /vehicles/recalculate-capacity', () => {
+  it('is superadmin only', async () => {
+    reset();
+    expect((await request(app).post('/api/v1/vehicles/recalculate-capacity')).status).toBe(401);
+    expect((await request(app).post('/api/v1/vehicles/recalculate-capacity').set(staff('admin-1'))).status).toBe(403);
+  });
+
+  it('recalculates every vehicle from its real active load, healing one whose stored numbers drifted', async () => {
+    reset({ users: [{ id: 'admin-1', role: 'admin', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }] });
+    // Simulates the exact drift this heals: nothing active on veh-1 any more, but its stored
+    // numbers still say 300kg reserved.
+    Object.assign(vehicle(), { status: 'on_route', current_load_kg: 300, available_capacity_kg: 700 });
+    const res = await request(app).post('/api/v1/vehicles/recalculate-capacity').set(staff('super-1'));
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ success: true, checked: 2 });
+    expect(vehicle()).toMatchObject({ status: 'available', current_load_kg: 0, available_capacity_kg: 1000 });
+  });
+});

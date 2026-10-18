@@ -22,6 +22,7 @@ import { emptySosCounts, loadSosCounts } from '../services/sos.service';
 import { withDriverLicenceStatus } from '../services/people-docs.service';
 import { isRealPosition, recordGpsPoints } from '../services/gps-history.service';
 import { closeOpenJobsForVehicle } from '../services/maintenance.service';
+import { ShipmentService } from '../services/shipment.service';
 import { approveVehicle, countVehicleRequests, getMyRegistration, listVehicleRequests, registerDriverVehicle, rejectVehicle, requestVehicleDocumentFixes } from '../services/vehicle-approval.service';
 import { createVehiclePhotoUploadUrl, deleteVehiclePhoto, listVehiclePhotos, removeVehiclePhotoFiles, saveVehiclePhoto } from '../services/vehicle-photos.service';
 import { createVehicleDocumentUploadUrl, saveVehicleDocument } from '../services/vehicle-documents.service';
@@ -178,6 +179,18 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 
     await cacheSet(cacheKey, vehicles, 30);
     res.json(vehicles);
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// Self-heal a vehicle's available_capacity_kg/current_load_kg from its real active shipments and
+// loads, for the rare case a direct incremental write to it drifted from reality. Superadmin only;
+// not a normal operational action.
+router.post('/recalculate-capacity', requireAuth, requireRole('superadmin'), async (req: Request, res: Response) => {
+  try {
+    const checked = await ShipmentService.recalculateAllVehicleCapacities();
+    res.json({ success: true, checked });
   } catch (e: any) {
     sendError(req, res, e);
   }
