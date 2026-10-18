@@ -45,8 +45,13 @@ describe('the staff menu', () => {
     expect(menuFor('superadmin').flatMap(s => s.children.map(c => c.to))).toEqual(expect.arrayContaining(['/return-trips?tab=partners', '/admin/audit']))
   })
 
-  it('puts KYC review in the platform section', () => {
+  it('puts KYC review and 3PL partners in the platform section - there is otherwise no menu path to either while acting as the platform', () => {
     const platform = menuFor('superadmin', 'platform').find(s => s.label === 'Platform')!
+    expect(platform.children.map(c => c.to)).toEqual(['/platform/organisations', '/admin/kyc', '/return-trips?tab=partners'])
+  })
+
+  it('does not offer 3PL partners to a platform admin who is not a superadmin - the page only lets a superadmin decide', () => {
+    const platform = menuFor('admin', 'platform').find(s => s.label === 'Platform')!
     expect(platform.children.map(c => c.to)).toEqual(['/platform/organisations', '/admin/kyc'])
   })
 
@@ -107,6 +112,16 @@ describe('finding the open section', () => {
     expect(at('/return-trips', '?tab=pool&view=match')).toEqual(['Return trips', 'Combine loads'])
     expect(at('/return-trips', '?tab=partners&status=active')).toEqual(['Return trips', '3PL partners'])
     expect(at('/3pl-partners/p1')).toEqual(['Return trips', null])
+  })
+
+  it('keeps 3PL partner review in the Platform section while acting as the platform', () => {
+    const platformSections = menuFor('superadmin', 'platform')
+    const atPlatform = (pathname: string, search = '') => {
+      const { section, child } = activeNav(platformSections, pathname, search)
+      return [section?.label ?? null, child?.label ?? null]
+    }
+    expect(atPlatform('/return-trips', '?tab=partners')).toEqual(['Platform', '3PL partners'])
+    expect(atPlatform('/3pl-partners/p1')).toEqual(['Platform', null])
   })
 
   it('matches nothing for an unknown page', () => {

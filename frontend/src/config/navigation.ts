@@ -140,10 +140,15 @@ export const navSections: NavSection[] = [
 /** The platform owner's section. Shown only while acting as the platform organisation. */
 export const platformSection: NavSection = {
   to: '/platform/organisations', label: 'Platform', icon: Building2, roles: admins, badge: 'pendingOrgs',
+  also: ['/3pl-partners'],
   children: [
     { to: '/platform/organisations', label: 'Organisations', roles: admins, badge: 'pendingOrgs' },
     // Vendor verification is the platform's, not a company's (docs/platform-model.md)
     { to: '/admin/kyc', label: 'KYC review', roles: admins, badge: 'kyc' },
+    // Was only reachable from the Return trips section, which the platform menu drops entirely
+    // (the platform owns no fleet or shipments) - leaving no menu path to 3PL review at all while
+    // acting as the platform. ReturnTripsPage only renders this tab for a superadmin.
+    { to: '/return-trips?tab=partners', label: '3PL partners', roles: superadmin, badge: 'pendingPartners' },
   ],
 }
 
