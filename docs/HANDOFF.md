@@ -248,6 +248,20 @@ registry `margixacr7m52h4t5it6og`.
   approved vendor), and only name/city/coordinates are returned, already pared down with a comment explaining why.
   The real gap was performance - it fetched every approved vendor nationwide before filtering by radius in memory.
   Fixed: a lat/lng bounding box is applied in the query itself before the exact haversine filter runs.)
+  (Checked/fixed 18 Oct 2026, reported bug: "as platform owner, no option to update an active 3PL partner's
+  documents". Root cause - once a 3PL partner/logistic company/vendor record is approved, every write path to
+  its documents either blocked the write outright (3PL's `updateApplication` only allows pending/rejected) or
+  silently demoted the record back to review on ANY edit, staff-initiated or not (vendor's `saveKycDocuments`).
+  Fixed all three the same way: an `asStaff` flag on the write (3PL `replaceDocument`, vendor `saveKycDocuments`;
+  logistic companies' `saveOrgDocuments` already had no such restriction, only a missing frontend control) that
+  staff-initiated calls set to skip both the status gate and the back-to-review demotion, since staff is already
+  the one who would have reviewed it - the vendor/partner's own self-service edit still goes back to review as
+  before. Added a "Replace" control next to each already-uploaded document on `TplPartnerDetailPage.tsx`,
+  `platform/OrganisationsPage.tsx` and `VendorReviewPage.tsx`, available at any status. Checked the same question
+  for vehicles and drivers (also explicitly named): neither has this gap - vehicle document/expiry fields
+  (`PATCH /vehicles/:id`) and driver documents (`POST /people/:id/documents`) were already built with "entity
+  operational status" and "per-document review status" as two separate things, so staff could already update
+  either at any time without forcing a re-approval.)
 - Not yet walked (no live/manual walkthrough): customer-app OTP, driver app on a device, a browser walkthrough of
   every screen, load testing.
   (Checked 17 Oct 2026: the three scheduler jobs - document expiry, driver-without-vehicle, quote escalation - are
