@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, formatDateTime, formatDay, formatKg, formatKm, formatMinutes, formatRupees, formatTime, formatPieces, isNotFoundError, serverFieldError, pluralize, tripNumber } from './display'
+import { errorMessage, formatDate, formatDateTime, formatDay, formatKg, formatKm, formatMinutes, formatRupees, formatTime, formatPieces, isNotFoundError, serverFieldError, pluralize, tripNumber } from './display'
+
+describe('errorMessage', () => {
+  it('reads the backend\'s own wording, whichever key the route used', () => {
+    expect(errorMessage({ response: { data: { error: 'An application with this email already exists.' } } }, 'fallback')).toBe('An application with this email already exists.')
+    expect(errorMessage({ response: { data: { detail: 'Not authorized' } } }, 'fallback')).toBe('Not authorized')
+  })
+  it('falls back to the given message on a server fault, never showing a raw 500', () => {
+    expect(errorMessage({ response: { status: 500, data: { error: 'Internal server error' } } }, 'fallback')).toBe('fallback')
+  })
+  it('falls back when there is no response at all, except a real client-side Error message', () => {
+    expect(errorMessage(new Error('Network Error'), 'fallback')).toBe('Network Error')
+    expect(errorMessage({ message: 'Request failed with status code 409' }, 'fallback')).toBe('fallback')
+    expect(errorMessage(null, 'fallback')).toBe('fallback')
+  })
+})
 
 describe('money and quantities', () => {
   it('shows whole rupees with lakh grouping and paise only when present', () => {

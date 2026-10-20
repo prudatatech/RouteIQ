@@ -10,6 +10,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { publicAPI, tplAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { loadAccount } from '@/services/account'
+import { errorMessage } from '@/utils/display'
 
 const STEPS = [
   'Contact Details',
@@ -305,7 +306,7 @@ export default function TplOnboardingPage() {
         setCreatedPartnerId(partnerId || null)
         setSubmitted(true)
       } catch (err) {
-        const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to onboard.'
+        const message = errorMessage(err, 'Failed to onboard.')
         toast.error(message)
         if (session?.user && /already exists/i.test(message)) {
           try {
