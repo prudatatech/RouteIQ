@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Download } from 'lucide-react'
+import { CheckCircle2, Clock, CreditCard, Download, Receipt } from 'lucide-react'
 import { vendorAPI } from '@/services/api'
 import { downloadInvoicePdf } from '@/services/vendorInvoicePdf'
 import { useVendorContext } from '@/components/vendor/vendorContext'
@@ -48,6 +48,7 @@ export default function VendorInvoicesPage() {
 
   const all = useMemo(() => invoices.data ?? [], [invoices.data])
   const unpaid = all.filter(isUnpaid)
+  const paidCount = all.filter(i => i.status === 'paid').length
   const owed = unpaid.reduce((s, i) => s + (Number(i.total) || 0), 0)
   const now = Date.now()
   const oldest = unpaid.reduce<number | null>((max, i) => Math.max(max ?? 0, daysSince(i.issued_at, now) ?? 0), null)
@@ -64,7 +65,7 @@ export default function VendorInvoicesPage() {
   const tabs: TabItem<(typeof FILTERS)[number]>[] = [
     { id: 'all', label: 'All', count: all.length },
     { id: 'unpaid', label: 'To pay', count: unpaid.length },
-    { id: 'paid', label: 'Paid', count: all.filter(i => i.status === 'paid').length },
+    { id: 'paid', label: 'Paid', count: paidCount },
   ]
 
   const columns: Column<VendorInvoice>[] = [
@@ -130,20 +131,51 @@ export default function VendorInvoicesPage() {
 
   return (
     <Page>
-      <PageHeader title="Invoices and proofs" description="An invoice is issued when your load is delivered. Each one links to its load and its proof of delivery.">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search by invoice or load" className="max-w-sm" />
+      <PageHeader title="Invoices & Proof of Delivery" description="Invoices issued on delivery, linked directly to consignment waybills, POD signatures, and payment settlement records.">
+        <div className="flex flex-wrap items-center gap-3">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by invoice or load" className="w-full sm:max-w-sm" />
+          {search && (
+            <Button variant="ghost" size="sm" onClick={() => setSearch('')}>
+              Clear
+            </Button>
+          )}
+        </div>
       </PageHeader>
 
-      <div className="grid grid-cols-2 gap-3 sm:max-w-2xl sm:grid-cols-3">
-        <Stat label="Invoices" loading={invoices.isLoading} value={all.length.toLocaleString('en-IN')} />
-        <Stat label="To pay" loading={invoices.isLoading} value={formatRupees(owed)} tone={owed > 0 ? 'warning' : 'default'} />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat
-          className="col-span-2 sm:col-span-1"
-          label="Oldest unpaid"
+          label="Total Invoices"
+          loading={invoices.isLoading}
+          value={all.length.toLocaleString('en-IN')}
+          icon={<Receipt size={18} />}
+          className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+        />
+        <Stat
+          label="Outstanding Due"
+          loading={invoices.isLoading}
+          value={formatRupees(owed)}
+          tone={owed > 0 ? 'warning' : 'default'}
+          icon={<CreditCard size={18} />}
+          hint={`${unpaid.length} invoices to pay`}
+          className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+        />
+        <Stat
+          label="Oldest Unpaid"
           loading={invoices.isLoading}
           value={oldest === null ? '—' : oldest === 0 ? 'Issued today' : pluralize(oldest, 'day') + ' old'}
           hint={nextDue ? `Due ${formatDate(nextDue)}` : undefined}
           tone={oldest !== null && oldest > 0 ? 'warning' : 'default'}
+          icon={<Clock size={18} />}
+          className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+        />
+        <Stat
+          label="Settled Invoices"
+          loading={invoices.isLoading}
+          value={paidCount.toLocaleString('en-IN')}
+          tone="success"
+          hint="Receipted and paid"
+          icon={<CheckCircle2 size={18} />}
+          className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
         />
       </div>
 

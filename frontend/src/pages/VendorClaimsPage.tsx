@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { CheckCircle2, Clock, FileWarning, Plus, ShieldAlert } from 'lucide-react'
 import { claimsAPI, type CargoClaim } from '@/services/cargo'
 import { vendorAPI } from '@/services/api'
 import { useVendorContext } from '@/components/vendor/vendorContext'
@@ -11,7 +11,7 @@ import ClaimDocuments from '@/components/cargo/ClaimDocuments'
 import { Steps } from '@/components/cargo/CargoBits'
 import { claimSteps, claimTypeLabel } from '@/components/cargo/logic'
 import {
-  Button, buttonClasses, DataTable, DetailList, EmptyState, Modal, Page, PageHeader, StatusPill, type Column,
+  Button, buttonClasses, DataTable, DetailList, EmptyState, Modal, Page, PageHeader, Stat, StatusPill, type Column,
 } from '@/components/ui'
 import { formatDate, formatRupees } from '@/utils/display'
 
@@ -74,6 +74,16 @@ export default function VendorClaimsPage() {
     [loads.data],
   )
 
+  const allClaims = useMemo(() => claims.data ?? [], [claims.data])
+  const activeClaims = useMemo(
+    () => allClaims.filter(c => !TERMINAL.includes(c.status)),
+    [allClaims],
+  )
+  const totalSettled = useMemo(
+    () => allClaims.reduce((s, c) => s + (c.settled_amount ?? c.approved_amount ?? 0), 0),
+    [allClaims],
+  )
+
   // A claim opened from a notification or a link; a claim raised a moment ago is on the list too
   const selected = (claims.data ?? []).find(c => c.id === openId) ?? null
   const setOpen = (id: string | null) => setParams(prev => {
@@ -114,10 +124,47 @@ export default function VendorClaimsPage() {
   return (
     <Page>
       <PageHeader
-        title="Claims"
-        description="Money you ask for when goods are damaged, short or lost. You can raise a claim within 7 days of delivery."
+        title="Cargo Claims & Insurance"
+        description="Formal claims for transit shortages, wet or damaged consignments, and surveyor settlements. Claims must be raised within 7 days of delivery."
         actions={<Button icon={<Plus size={16} />} disabled={claimable.length === 0} onClick={() => setRaising(true)}>Raise a claim</Button>}
       />
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat
+          label="Total Claims"
+          loading={claims.isLoading}
+          value={allClaims.length.toLocaleString('en-IN')}
+          icon={<ShieldAlert size={18} />}
+          className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+        />
+        <Stat
+          label="Active Claims"
+          loading={claims.isLoading}
+          value={activeClaims.length.toLocaleString('en-IN')}
+          tone={activeClaims.length > 0 ? 'warning' : 'default'}
+          hint={activeClaims.length > 0 ? 'Under review or surveyor inspection' : 'No open claims'}
+          icon={<Clock size={18} />}
+          className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+        />
+        <Stat
+          label="Recovered & Settled"
+          loading={claims.isLoading}
+          value={formatRupees(totalSettled)}
+          tone="success"
+          hint="Approved claim payouts"
+          icon={<CheckCircle2 size={18} />}
+          className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+        />
+        <Stat
+          label="Eligible Loads"
+          loading={loads.isLoading}
+          value={claimable.length.toLocaleString('en-IN')}
+          hint="Within 7-day claim window"
+          icon={<FileWarning size={18} />}
+          className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+        />
+      </div>
+
       {!loads.isLoading && claimable.length === 0 && (
         <p className="text-sm text-muted">No load can take a claim right now. A load can be claimed on once it is delivered, partly delivered or lost, for 7 days.</p>
       )}

@@ -268,14 +268,14 @@ export default function RouteDetailsPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Distance" value={distance > 0 ? formatKm(distance) : '—'} hint={distance > 0 && isEstimated ? 'Estimated' : undefined} />
-        <Stat label="ETA" value={duration > 0 ? formatMinutes(duration) : '—'} hint={duration > 0 && isEstimated ? 'Estimated' : undefined} />
-        <Stat label="Fuel" value={fuel > 0 ? `${fuel.toLocaleString('en-IN', { maximumFractionDigits: 1 })} L` : '—'} hint={fuel > 0 && isEstimated ? 'Estimated' : undefined} />
-        <Stat label="Vehicle" value={vehicleName} />
+        <Stat label="Distance" value={distance > 0 ? formatKm(distance) : '—'} hint={distance > 0 && isEstimated ? 'Estimated' : undefined} className="shadow-xs hover:shadow-raised transition-all" />
+        <Stat label="ETA" value={duration > 0 ? formatMinutes(duration) : '—'} hint={duration > 0 && isEstimated ? 'Estimated' : undefined} className="shadow-xs hover:shadow-raised transition-all" />
+        <Stat label="Fuel" value={fuel > 0 ? `${fuel.toLocaleString('en-IN', { maximumFractionDigits: 1 })} L` : '—'} hint={fuel > 0 && isEstimated ? 'Estimated' : undefined} className="shadow-xs hover:shadow-raised transition-all" />
+        <Stat label="Vehicle" value={vehicleName} className="shadow-xs hover:shadow-raised transition-all" />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        <Card className="overflow-hidden lg:col-span-7">
+        <Card className="overflow-hidden shadow-xs border border-border lg:col-span-7">
           <div className="h-96 lg:h-full">
             <MapView
               mode="route"

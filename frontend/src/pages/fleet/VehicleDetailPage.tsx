@@ -247,80 +247,156 @@ export default function VehicleDetailPage() {
 
       <TabPanel id={tab}>
         {tab === 'overview' && (
-          <div className="grid gap-4 lg:grid-cols-3">
-            {vehicle.status === 'archived' && vehicle.rejection_reason && (
-              <Alert tone="danger" title="Rejected" className="lg:col-span-3">{vehicle.rejection_reason}</Alert>
-            )}
-            <Card className="lg:col-span-2">
-              <CardHeader title="Load" description="What the vehicle carries against its capacity" />
-              <CardBody className="space-y-4">
-                <LoadBar vehicle={vehicle} />
-                <DetailList
-                  columns={3}
-                  items={[
-                    { label: 'Type', value: humanize(vehicle.vehicle_type) },
-                    { label: 'Model', value: vehicle.vehicle_model || 'Not recorded' },
-                    { label: 'Capacity', value: vehicle.capacity_kg ? formatKg(vehicle.capacity_kg) : 'Not recorded' },
-                    { label: 'Container size', value: size ?? 'Not recorded' },
-                    { label: 'Cargo types', value: <CargoChips types={vehicle.cargo_types} max={8} empty="Any cargo" /> },
-                    {
-                      label: 'Bidding window',
-                      value: vehicle.bidding_window_open
-                        ? `Open${vehicle.bidding_window_closes_at ? `, closes ${formatDateTime(vehicle.bidding_window_closes_at)}` : ''}`
-                        : 'Closed',
-                    },
-                  ]}
-                />
-              </CardBody>
-            </Card>
-            <Card>
-              <CardHeader title="Emergencies" description="SOS raised from this vehicle" />
-              <CardBody className="space-y-3">
-                <SosCountBadge counts={counts} loading={sosCounts.isLoading} />
-                <Button variant="secondary" size="sm" onClick={() => setTab('sos')}>See SOS history</Button>
-              </CardBody>
-            </Card>
-            <Card className="lg:col-span-2">
-              <CardHeader title="Condition" description="Location, fuel and service detail are on their own tabs" />
-              <CardBody>
-                <DetailList
-                  columns={3}
-                  items={[
-                    { label: 'Odometer', value: formatOdometer(vehicle.odometer_km) },
-                    {
-                      label: 'Health',
-                      value: healthRow
-                        ? (healthRow.score == null
-                          ? 'Not enough data'
-                          : <span className="inline-flex flex-wrap items-center gap-2"><span className="font-semibold tabular">{healthRow.score}</span><StatusPill tone={bandTone[healthRow.band as HealthBand]}>{bandLabel[healthRow.band as HealthBand]}</StatusPill></span>)
-                        : (health.isLoading ? '…' : '—'),
-                    },
-                    { label: 'GPS device', value: vehicle.spark_id || 'Not linked' },
-                  ]}
-                />
-              </CardBody>
-            </Card>
-            <Card>
-              <CardHeader title="Documents needing attention" />
-              <CardBody>
-                {attention === 0 ? (
-                  <p className="text-sm text-muted">Every document is on file, and none expires within 30 days.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {missing > 0 && <p className="text-sm text-warning">{missingDocumentsText(missing)}</p>}
-                    <div className="flex flex-wrap gap-1.5">
-                      {vehicleDocuments(vehicle).flatMap(d => {
-                        const s = expiryStatus(d.expiry)
-                        return s ? [<StatusPill key={d.key} tone={s.tone} dot={false}>{d.name.replace(/ \(.*\)/, '')}: {s.label}</StatusPill>] : []
-                      })}
+          <div className="space-y-4">
+            {/* Connected Vehicle Telemetry Strip */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-card border border-border bg-surface p-4 shadow-xs transition-all hover:border-brand/40 hover:shadow-raised">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-muted">GPS Tracking</span>
+                  {isLive ? (
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                    </span>
+                  ) : (
+                    <span className="h-2 w-2 rounded-full bg-muted/40" />
+                  )}
+                </div>
+                <div className="mt-2 text-lg font-bold text-text">
+                  {isLive ? 'Live On Highway' : 'Stationary'}
+                </div>
+                <p className="mt-0.5 text-xs text-muted truncate">
+                  {isLive ? 'Continuous beacon updates' : ping ? `Last seen ${formatRelative(ping, now)}` : 'No GPS signal reported'}
+                </p>
+              </div>
+
+              <div className="rounded-card border border-border bg-surface p-4 shadow-xs transition-all hover:border-brand/40 hover:shadow-raised">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-muted">Payload Load</span>
+                  <span className="text-xs font-semibold tabular text-brand">
+                    {vehicle.capacity_kg && vehicle.current_load_kg ? `${Math.min(100, Math.round((vehicle.current_load_kg / vehicle.capacity_kg) * 100))}%` : '0%'}
+                  </span>
+                </div>
+                <div className="mt-2 text-lg font-bold text-text">
+                  {vehicle.current_load_kg ? formatKg(vehicle.current_load_kg) : '0 kg'}
+                </div>
+                <p className="mt-0.5 text-xs text-muted truncate">
+                  Capacity: {vehicle.capacity_kg ? formatKg(vehicle.capacity_kg) : 'Unset'}
+                </p>
+              </div>
+
+              <div className="rounded-card border border-border bg-surface p-4 shadow-xs transition-all hover:border-brand/40 hover:shadow-raised">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-muted">Vehicle Health</span>
+                  {healthRow && healthRow.score != null ? (
+                    <StatusPill tone={bandTone[healthRow.band as HealthBand]}>{bandLabel[healthRow.band as HealthBand]}</StatusPill>
+                  ) : null}
+                </div>
+                <div className="mt-2 text-lg font-bold text-text">
+                  {healthRow && healthRow.score != null ? `${healthRow.score} / 100` : 'Calibrating'}
+                </div>
+                <p className="mt-0.5 text-xs text-muted truncate">
+                  Odometer: {formatOdometer(vehicle.odometer_km)}
+                </p>
+              </div>
+
+              <div className="rounded-card border border-border bg-surface p-4 shadow-xs transition-all hover:border-brand/40 hover:shadow-raised">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-muted">Compliance & SOS</span>
+                  {counts && counts.open > 0 ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-bold text-danger">
+                      <span className="h-2 w-2 rounded-full bg-danger animate-pulse" /> {counts.open} SOS
+                    </span>
+                  ) : attention > 0 ? (
+                    <span className="text-xs font-semibold text-warning">{attention} Attention</span>
+                  ) : (
+                    <span className="text-xs font-semibold text-emerald-600">Cleared</span>
+                  )}
+                </div>
+                <div className="mt-2 text-lg font-bold text-text">
+                  {attention === 0 && (!counts || counts.open === 0) ? 'Fully Compliant' : attention > 0 ? `${attention} Docs Issue` : `${counts?.open} Active SOS`}
+                </div>
+                <p className="mt-0.5 text-xs text-muted truncate">
+                  {attention === 0 ? 'All certificates on file' : missingDocumentsText(missing)}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-3">
+              {vehicle.status === 'archived' && vehicle.rejection_reason && (
+                <Alert tone="danger" title="Rejected" className="lg:col-span-3">{vehicle.rejection_reason}</Alert>
+              )}
+              <Card className="lg:col-span-2 shadow-xs transition-all hover:shadow-raised hover:border-brand/30">
+                <CardHeader title="Load & Capacity" description="What the vehicle carries against its certified capacity" />
+                <CardBody className="space-y-4">
+                  <LoadBar vehicle={vehicle} />
+                  <DetailList
+                    columns={3}
+                    items={[
+                      { label: 'Type', value: humanize(vehicle.vehicle_type) },
+                      { label: 'Model', value: vehicle.vehicle_model || 'Not recorded' },
+                      { label: 'Capacity', value: vehicle.capacity_kg ? formatKg(vehicle.capacity_kg) : 'Not recorded' },
+                      { label: 'Container size', value: size ?? 'Not recorded' },
+                      { label: 'Cargo types', value: <CargoChips types={vehicle.cargo_types} max={8} empty="Any cargo" /> },
+                      {
+                        label: 'Bidding window',
+                        value: vehicle.bidding_window_open
+                          ? `Open${vehicle.bidding_window_closes_at ? `, closes ${formatDateTime(vehicle.bidding_window_closes_at)}` : ''}`
+                          : 'Closed',
+                      },
+                    ]}
+                  />
+                </CardBody>
+              </Card>
+              <Card className="shadow-xs transition-all hover:shadow-raised hover:border-brand/30">
+                <CardHeader title="Emergencies" description="SOS raised from this vehicle" />
+                <CardBody className="space-y-3">
+                  <SosCountBadge counts={counts} loading={sosCounts.isLoading} />
+                  <Button variant="secondary" size="sm" onClick={() => setTab('sos')}>See SOS history</Button>
+                </CardBody>
+              </Card>
+              <Card className="lg:col-span-2 shadow-xs transition-all hover:shadow-raised hover:border-brand/30">
+                <CardHeader title="Condition & Telemetry" description="Location, fuel and service detail are on their own tabs" />
+                <CardBody>
+                  <DetailList
+                    columns={3}
+                    items={[
+                      { label: 'Odometer', value: formatOdometer(vehicle.odometer_km) },
+                      {
+                        label: 'Health score',
+                        value: healthRow
+                          ? (healthRow.score == null
+                            ? 'Not enough data'
+                            : <span className="inline-flex flex-wrap items-center gap-2"><span className="font-semibold tabular">{healthRow.score}</span><StatusPill tone={bandTone[healthRow.band as HealthBand]}>{bandLabel[healthRow.band as HealthBand]}</StatusPill></span>)
+                          : (health.isLoading ? '…' : '—'),
+                      },
+                      { label: 'GPS device', value: vehicle.spark_id || 'Not linked' },
+                    ]}
+                  />
+                </CardBody>
+              </Card>
+              <Card className="shadow-xs transition-all hover:shadow-raised hover:border-brand/30">
+                <CardHeader title="Documents needing attention" />
+                <CardBody>
+                  {attention === 0 ? (
+                    <p className="text-sm text-muted">Every document is on file, and none expires within 30 days.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {missing > 0 && <p className="text-sm text-warning">{missingDocumentsText(missing)}</p>}
+                      <div className="flex flex-wrap gap-1.5">
+                        {vehicleDocuments(vehicle).flatMap(d => {
+                          const s = expiryStatus(d.expiry)
+                          return s ? [<StatusPill key={d.key} tone={s.tone} dot={false}>{d.name.replace(/ \(.*\)/, '')}: {s.label}</StatusPill>] : []
+                        })}
+                      </div>
+                      <Button variant="secondary" size="sm" onClick={() => setTab('documents')}>Open documents</Button>
                     </div>
-                    <Button variant="secondary" size="sm" onClick={() => setTab('documents')}>Open documents</Button>
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-            <OnBoardCard vehicleId={vehicle.id} className="lg:col-span-3" />
-            <div className="lg:col-span-3"><VehiclePhotoCard key={`photos-${vehicle.id}`} vehicleId={vehicle.id} /></div>
+                  )}
+                </CardBody>
+              </Card>
+              <OnBoardCard vehicleId={vehicle.id} className="lg:col-span-3 shadow-xs" />
+              <div className="lg:col-span-3"><VehiclePhotoCard key={`photos-${vehicle.id}`} vehicleId={vehicle.id} /></div>
+            </div>
           </div>
         )}
 

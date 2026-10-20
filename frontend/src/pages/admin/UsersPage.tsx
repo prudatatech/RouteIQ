@@ -2,12 +2,12 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Building2, Download, Upload, UserPlus, UsersRound } from 'lucide-react'
+import { AlertCircle, Building2, Download, ShieldAlert, Upload, UserCheck, UserPlus, Users, UsersRound } from 'lucide-react'
 import { usersAPI, authAPI, peopleAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { useEffectiveRole } from '@/store/effectiveRole'
 import {
-  Button, buttonClasses, DataTable, Input, Modal, MoreMenu, Page, PageHeader, SearchInput, Select, StatusPill, Tabs, TabPanel,
+  Button, buttonClasses, DataTable, Input, Modal, MoreMenu, Page, PageHeader, SearchInput, Select, Stat, StatusPill, Tabs, TabPanel,
   parseSort, serializeSort, useConfirm, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { errorMessage, formatDate, formatRelative } from '@/utils/display'
@@ -115,6 +115,7 @@ export default function UsersPage() {
 
   const all = useMemo(() => people.data ?? [], [people.data])
   const counts = useMemo(() => Object.fromEntries(TAB_IDS.map(t => [t, all.filter(p => inTab(p, t)).length])) as Record<TabId, number>, [all])
+  const activeCount = useMemo(() => all.filter(p => p.status === 'active').length, [all])
   const rows = useMemo(() => all.filter(p => inTab(p, tab) && (!role || p.role === role)), [all, tab, role])
 
   const allColumns: Column<PersonRow>[] = [
@@ -175,8 +176,8 @@ export default function UsersPage() {
   return (
     <Page>
       <PageHeader
-        title="People"
-        description={myRole === 'superadmin' ? 'Drivers, staff and vendors: who they are, their documents, and how they work with us.' : 'Drivers and staff: who they are, their documents, and how they work with us.'}
+        title="People & Workforce"
+        description={myRole === 'superadmin' ? 'Drivers, operational staff, and partner vendors: directory, compliance credentials, and fleet allocations.' : 'Drivers and operations staff: directory, compliance credentials, and fleet allocations.'}
         actions={
           <div className="flex flex-wrap gap-2">
             {/* One main action; exports, import and the vendor form sit in the menu */}
@@ -194,7 +195,7 @@ export default function UsersPage() {
       >
         <div className="space-y-4">
           <Tabs label="Filter people" tabs={tabs} value={tab} onChange={setTab} />
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <SearchInput value={search} onChange={setSearch} label="Search people" placeholder="Search by name, email, phone or code" className="w-full sm:max-w-sm" />
             {tab !== 'vendors' && (
               <>
@@ -202,9 +203,50 @@ export default function UsersPage() {
                 <Select label="Role" hideLabel value={role} onChange={e => setRole(e.target.value)} placeholder="All roles" options={ROLE_FILTER} className="w-full sm:w-44" />
               </>
             )}
+            {filtered && (
+              <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setStatus(''); setRole('') }}>
+                Clear filters
+              </Button>
+            )}
           </div>
         </div>
       </PageHeader>
+
+      {/* People Operational Pulse */}
+      {tab !== 'vendors' && (
+        <section aria-label="Workforce summary pulse" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat
+            label="Total Roster"
+            value={people.isLoading ? '—' : counts.all.toLocaleString('en-IN')}
+            hint={`${counts.drivers} drivers · ${counts.staff} staff`}
+            icon={<Users size={18} />}
+            className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+          />
+          <Stat
+            label="Active On Duty"
+            value={people.isLoading ? '—' : activeCount.toLocaleString('en-IN')}
+            tone={activeCount > 0 ? 'success' : 'default'}
+            hint="Cleared for dispatch & operations"
+            icon={<UserCheck size={18} />}
+            className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+          />
+          <Stat
+            label="Needs Attention"
+            value={people.isLoading ? '—' : counts.attention.toLocaleString('en-IN')}
+            tone={counts.attention > 0 ? 'warning' : 'default'}
+            hint="Expired or missing compliance docs"
+            icon={<AlertCircle size={18} />}
+            className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+          />
+          <Stat
+            label="Supervised Drivers"
+            value={people.isLoading ? '—' : counts.drivers.toLocaleString('en-IN')}
+            hint="Assigned to highway routes"
+            icon={<ShieldAlert size={18} />}
+            className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+          />
+        </section>
+      )}
 
       <TabPanel id={tab}>
         {tab === 'vendors' ? (

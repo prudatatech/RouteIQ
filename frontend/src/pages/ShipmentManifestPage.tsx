@@ -352,7 +352,7 @@ export default function ShipmentManifestPage() {
 
 function ManifestCard({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
-    <Card className="break-inside-avoid">
+    <Card className="break-inside-avoid shadow-xs border border-border">
       <CardHeader title={title} description={description} />
       <CardBody>{children}</CardBody>
     </Card>

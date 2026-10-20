@@ -95,17 +95,26 @@ export default function LiveMapPage() {
           />
         ) : (
         <>
-        <div className="space-y-3 border-b border-border p-4">
+        <div className="space-y-3 border-b border-border p-4 bg-surface-subtle/50">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-lg font-semibold text-text">Live map</h1>
-              <p className="mt-0.5 text-sm text-muted">{isLoading ? 'Loading vehicles…' : `${liveCount.toLocaleString('en-IN')} of ${fleet.length.toLocaleString('en-IN')} vehicles live`}</p>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-bold tracking-tight text-text">Live Fleet Map</h1>
+                {liveCount > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> {liveCount} Live
+                  </span>
+                )}
+              </div>
+              <p className="mt-0.5 text-xs text-muted truncate">
+                {isLoading ? 'Loading vehicles…' : `${withPosition.length} mapped · ${fleet.length} active fleet`}
+              </p>
             </div>
             {isStaff && (
               <Button
                 variant="secondary"
                 size="sm"
-                className="shrink-0"
+                className="shrink-0 shadow-xs hover:border-brand/40"
                 icon={<RefreshCw size={14} />}
                 loading={syncGps.isPending}
                 onClick={() => syncGps.mutate()}
@@ -114,7 +123,16 @@ export default function LiveMapPage() {
               </Button>
             )}
           </div>
-          <SearchInput value={search} onChange={setSearch} placeholder="Search by plate number" label="Search vehicles" />
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <SearchInput value={search} onChange={setSearch} placeholder="Search plate (e.g. MH12)" label="Search vehicles" />
+            </div>
+            {search && (
+              <Button variant="ghost" size="sm" onClick={() => setSearch('')} className="shrink-0 text-xs">
+                Clear
+              </Button>
+            )}
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
@@ -127,25 +145,42 @@ export default function LiveMapPage() {
               icon={<Truck size={22} />}
               title={withPosition.length === 0 ? 'No vehicles reporting' : 'No matches'}
               description={withPosition.length === 0 ? 'Vehicles appear here once they send a GPS position.' : 'Try a different plate number.'}
+              action={search ? <Button variant="secondary" size="sm" onClick={() => setSearch('')}>Clear search</Button> : undefined}
             />
           ) : (
             <ul className="divide-y divide-border">
-              {filtered.map(v => (
-                <li key={v.id}>
-                  <button
-                    type="button"
-                    onClick={() => selectVehicle(v.id)}
-                    aria-current={selectedId === v.id ? 'true' : undefined}
-                    className={
-                      'flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm hover:bg-surface-subtle focus-visible:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand' +
-                      (selectedId === v.id ? ' bg-brand-soft hover:bg-brand-soft' : '')
-                    }
-                  >
-                    <span className="min-w-0 truncate font-medium text-text">{v.plate_number}</span>
-                    <StatusPill status={v.status} />
-                  </button>
-                </li>
-              ))}
+              {filtered.map(v => {
+                const live = isVehicleLive(v, liveMinutes)
+                const isSelected = selectedId === v.id
+                return (
+                  <li key={v.id}>
+                    <button
+                      type="button"
+                      onClick={() => selectVehicle(v.id)}
+                      aria-current={isSelected ? 'true' : undefined}
+                      className={
+                        'flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm transition-all hover:bg-surface-subtle focus-visible:bg-surface-subtle focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand ' +
+                        (isSelected
+                          ? 'border-l-4 border-brand bg-brand-soft/70 font-semibold shadow-xs'
+                          : 'border-l-4 border-transparent')
+                      }
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {live ? (
+                          <span className="relative flex h-2.5 w-2.5 shrink-0" title="Transmitting live telemetry">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                          </span>
+                        ) : (
+                          <span className="h-2 w-2 shrink-0 rounded-full bg-muted/40" title="Stationary or offline" />
+                        )}
+                        <span className="min-w-0 truncate font-mono text-sm tracking-wide text-text">{v.plate_number}</span>
+                      </div>
+                      <StatusPill status={v.status} />
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>
