@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import toast from 'react-hot-toast'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, Building2, ShieldCheck, Landmark, Clock, Route, FileText, RefreshCw } from 'lucide-react'
 import { Alert, Button, Drawer, IfscField, Input, Select } from '@/components/ui'
 import { DocUploadField } from '@/components/kyc/DocUploadField'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
@@ -9,6 +9,7 @@ import { uploadTplDocument } from '@/services/tplDocuments'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import { errorMessage } from '@/utils/display'
 import { gstinError } from '@/utils/gstin'
+import { validatePanFormat, validateGstinFormat } from '@/utils/taxValidation'
 import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
 import { OperationalTermsFields } from './OperationalTermsFields'
 import { CorridorEditor } from './CorridorEditor'
@@ -229,19 +230,40 @@ export function StaffCreateApplicationDrawer({ open, onClose, onCreated }: {
             )}
 
             <section aria-label="Partner ID">
-              <Input
-                label="3PL ID"
-                hint="Used for the partner's document folder and, later, to track the application. Suggested from the company name; edit if you like."
-                placeholder="e.g. acme_3pl"
-                value={form.customId}
-                onChange={e => { setCustomIdTouched(true); set('customId', e.target.value.toLowerCase()) }}
-                error={err('customId')}
-                className="font-mono"
-              />
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                <div className="flex-1">
+                  <Input
+                    label="3PL ID"
+                    hint="Used for the partner's document folder and tracking. Suggested from the company name; edit if you like."
+                    placeholder="e.g. acme_3pl"
+                    value={form.customId}
+                    onChange={e => { setCustomIdTouched(true); set('customId', e.target.value.toLowerCase()) }}
+                    error={err('customId')}
+                    className="font-mono"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  icon={<RefreshCw size={14} />}
+                  onClick={() => {
+                    const next = suggestCustomId(form.companyName || 'partner')
+                    set('customId', next)
+                    setCustomIdTouched(true)
+                  }}
+                  className="sm:mb-6 shrink-0"
+                >
+                  Regenerate
+                </Button>
+              </div>
             </section>
 
-            <section aria-label="Contact details">
-              <h3 className="mb-3 text-sm font-medium text-text">Contact details</h3>
+            <section aria-label="Contact details" className="border-t border-border pt-6">
+              <div className="flex items-center gap-2 mb-3.5">
+                <Building2 size={16} className="text-brand" />
+                <h3 className="text-sm font-semibold text-text">Contact details</h3>
+              </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Input label="Company name" required value={form.companyName} onChange={e => applyCompanyName(e.target.value)} error={err('companyName')} />
                 <Input label="Contact person" required value={form.contactName} onChange={e => set('contactName', e.target.value)} error={err('contactName')} />
@@ -251,13 +273,46 @@ export function StaffCreateApplicationDrawer({ open, onClose, onCreated }: {
             </section>
 
             <section aria-label="Company and tax details" className="border-t border-border pt-6">
-              <h3 className="mb-3 text-sm font-medium text-text">Company and tax details</h3>
+              <div className="flex items-center gap-2 mb-3.5">
+                <ShieldCheck size={16} className="text-brand" />
+                <h3 className="text-sm font-semibold text-text">Company and tax details</h3>
+              </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Input label="PAN" required value={form.pan} onChange={e => set('pan', e.target.value.toUpperCase())} maxLength={10} inputClassName="uppercase" error={err('pan')} />
-                <Input label="GSTIN" value={form.gst} onChange={e => set('gst', e.target.value.toUpperCase())} maxLength={15} inputClassName="uppercase" error={err('gst')} />
+                <div>
+                  <Input label="PAN" required value={form.pan} onChange={e => set('pan', e.target.value.toUpperCase())} maxLength={10} inputClassName="uppercase font-mono" error={err('pan')} />
+                  {form.pan && !err('pan') && (
+                    <p className="mt-1 text-xs text-muted flex items-center gap-1">
+                      {validatePanFormat(form.pan).valid ? (
+                        <span className="text-success flex items-center gap-1 font-medium">
+                          <CheckCircle2 size={12} /> {validatePanFormat(form.pan).hint}
+                        </span>
+                      ) : (
+                        <span>{validatePanFormat(form.pan).hint || '10 alphanumeric characters'}</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <Input label="GSTIN" value={form.gst} onChange={e => set('gst', e.target.value.toUpperCase())} maxLength={15} inputClassName="uppercase font-mono" error={err('gst')} />
+                  {form.gst && !err('gst') && (
+                    <p className="mt-1 text-xs text-muted">
+                      {validateGstinFormat(form.gst, form.pan).valid ? (
+                        <span className="text-success flex items-center gap-1 font-medium">
+                          <CheckCircle2 size={12} /> Valid GSTIN {form.pan ? '· Matches PAN' : ''}
+                        </span>
+                      ) : (
+                        <span className="text-danger font-medium">
+                          {validateGstinFormat(form.gst, form.pan).error}
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </div>
+
                 <Select label="Entity type" required options={ENTITY_TYPE_OPTIONS} value={form.entityType} onChange={e => set('entityType', e.target.value)} placeholder="Choose the entity type" error={err('entityType')} />
                 {requiresCin && (
-                  <Input label="CIN" required value={form.cin} onChange={e => set('cin', e.target.value.toUpperCase())} maxLength={21} inputClassName="uppercase" error={err('cin')} />
+                  <Input label="CIN" required value={form.cin} onChange={e => set('cin', e.target.value.toUpperCase())} maxLength={21} inputClassName="uppercase font-mono" error={err('cin')} />
                 )}
                 <Input label="Authorized signatory name" required value={form.authorizedSignatoryName} onChange={e => set('authorizedSignatoryName', e.target.value)} error={err('authorizedSignatoryName')} />
                 <Select label="MSME status" options={MSME_OPTIONS} value={form.msmeStatus} onChange={e => set('msmeStatus', e.target.value)} />
@@ -265,15 +320,21 @@ export function StaffCreateApplicationDrawer({ open, onClose, onCreated }: {
             </section>
 
             <section aria-label="Bank details" className="border-t border-border pt-6">
-              <h3 className="mb-3 text-sm font-medium text-text">Bank details</h3>
+              <div className="flex items-center gap-2 mb-3.5">
+                <Landmark size={16} className="text-brand" />
+                <h3 className="text-sm font-semibold text-text">Bank details</h3>
+              </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Input label="Bank account number" value={form.bankAccount} onChange={e => set('bankAccount', e.target.value.replace(/\D/g, '').slice(0, 18))} inputMode="numeric" hint="9 to 18 digits" error={err('bankAccount')} />
+                <Input label="Bank account number" value={form.bankAccount} onChange={e => set('bankAccount', e.target.value.replace(/\D/g, '').slice(0, 18))} inputMode="numeric" hint="9 to 18 digits" error={err('bankAccount')} className="font-mono" />
                 <IfscField label="IFSC code" value={form.bankIfsc} onChange={v => set('bankIfsc', v)} error={err('bankIfsc')} />
               </div>
             </section>
 
             <section aria-label="Service terms" className="border-t border-border pt-6">
-              <h3 className="mb-3 text-sm font-medium text-text">Service terms</h3>
+              <div className="flex items-center gap-2 mb-3.5">
+                <Clock size={16} className="text-brand" />
+                <h3 className="text-sm font-semibold text-text">Service terms</h3>
+              </div>
               <OperationalTermsFields
                 slaCommitment={form.slaCommitment}
                 taxTreatment={form.taxTreatment}
@@ -283,12 +344,19 @@ export function StaffCreateApplicationDrawer({ open, onClose, onCreated }: {
             </section>
 
             <section aria-label="Corridors" className="border-t border-border pt-6">
+              <div className="flex items-center gap-2 mb-3.5">
+                <Route size={16} className="text-brand" />
+                <h3 className="text-sm font-semibold text-text">Operating Corridors</h3>
+              </div>
               <CorridorEditor corridors={form.corridors} onChange={rows => set('corridors', rows)} />
             </section>
 
             <section aria-label="Documents" className="border-t border-border pt-6">
-              <h3 className="mb-3 text-sm font-medium text-text">Documents</h3>
-              <p className="mb-3 text-xs text-muted">
+              <div className="flex items-center gap-2 mb-1">
+                <FileText size={16} className="text-brand" />
+                <h3 className="text-sm font-semibold text-text">Documents</h3>
+              </div>
+              <p className="mb-3.5 text-xs text-muted">
                 {customIdValid
                   ? 'Optional here, but GSTIN, bank details and at least one document are all required before this application can be approved.'
                   : 'Choose a valid 3PL ID above to attach documents.'}

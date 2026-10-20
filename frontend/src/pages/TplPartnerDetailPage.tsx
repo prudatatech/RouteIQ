@@ -2,12 +2,13 @@ import { errorMessage, formatDateTime } from '@/utils/display'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, Download, Edit2, FileText, FlagTriangleRight, RefreshCw, ShieldCheck, Zap } from 'lucide-react'
+import { AlertCircle, Building2, Download, Edit2, FileText, FlagTriangleRight, RefreshCw, ShieldCheck, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { useEffectiveRole } from '@/store/effectiveRole'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import { uploadTplDocument } from '@/services/tplDocuments'
+import { entityTypeRequiresCin } from '@/utils/entityType'
 import {
   Alert, Button, Card, CardHeader, DetailList, EmptyState, ErrorState, FileButton, IfscVerifiedHint, Page, PageHeader, Spinner, StatusPill, humanize, useConfirm,
 } from '@/components/ui'
@@ -233,6 +234,11 @@ export default function TplPartnerDetailPage() {
   }
 
   const handleApprove = async () => {
+    if (!partner?.pending_updates && !isQuickOnboard && missingKyc.length > 0) {
+      toast.error(`Please complete missing compliance details first: ${missingKyc.join(', ')}`)
+      setEditKycOpen(true)
+      return
+    }
     const ok = await confirm({
       title: partner?.pending_updates ? 'Approve these updates?' : 'Approve this 3PL partner?',
       message: partner?.pending_updates
@@ -318,6 +324,7 @@ export default function TplPartnerDetailPage() {
   if (!partner.bank_account_no || !partner.bank_ifsc) missingKyc.push('Bank details')
   if (!partner.entity_type) missingKyc.push('Entity type')
   if (!partner.authorized_signatory_name) missingKyc.push('Authorized signatory')
+  if (entityTypeRequiresCin(partner.entity_type) && !partner.cin) missingKyc.push('CIN')
 
   return (
     <Page>
@@ -550,8 +557,19 @@ export default function TplPartnerDetailPage() {
                 Compliance fields pending ({missingKyc.join(', ')}). You can approve now and collect details, or click &ldquo;Edit KYC &amp; Details&rdquo; above.
               </p>
             )}
+            {!isQuickOnboard && missingKyc.length > 0 && (
+              <p className="mt-1.5 text-xs text-warning flex items-center gap-1.5 font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                Missing required compliance details ({missingKyc.join(', ')}). Complete details before approval.
+              </p>
+            )}
           </div>
-          <div className="flex shrink-0 gap-3">
+          <div className="flex shrink-0 flex-wrap items-center gap-3">
+            {!isQuickOnboard && missingKyc.length > 0 && (
+              <Button variant="secondary" size="md" icon={<Edit2 size={14} />} onClick={() => setEditKycOpen(true)}>
+                Complete KYC Details
+              </Button>
+            )}
             {!partner.pending_updates && (
               <Button variant="secondary" icon={<FlagTriangleRight size={16} />} disabled={busy} onClick={() => setFlagOpen(true)}>Flag documents</Button>
             )}

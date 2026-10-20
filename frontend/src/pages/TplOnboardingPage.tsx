@@ -1,6 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { Page, PageHeader, Card, Input, Button, Select, Alert, Stepper, IfscField } from '@/components/ui'
-import { CheckCircle2, ChevronLeft, ChevronRight, Truck, Blocks } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Truck, Blocks, Zap, ShieldCheck, Landmark, FileText, Building } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
@@ -17,6 +17,7 @@ import { uploadTplDocument } from '@/services/tplDocuments'
 import { getKycDocumentUrl } from '@/services/kycDocuments'
 import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
 import { gstinError } from '@/utils/gstin'
+import { validatePanFormat, validateGstinFormat } from '@/utils/taxValidation'
 import { TPL_DOCUMENT_TYPES, TPL_MSME_OPTIONS } from '@/components/tpl/constants'
 
 const QUICK_STEPS = [
@@ -521,6 +522,11 @@ export default function TplOnboardingPage() {
   }
 
   const selectedVehicle = vehicles?.find(v => v.key === truckType)
+  const totalTrucksCount = Object.values(multipleTruckCounts).reduce((a, b) => a + b, 0)
+  const totalTonnage = vehicles ? Object.entries(multipleTruckCounts).reduce((sum, [key, count]) => {
+    const v = vehicles.find(item => item.key === key)
+    return sum + (v && v.max_t ? v.max_t * count : 0)
+  }, 0) : 0
 
   if (submitted) {
     return (
@@ -577,140 +583,222 @@ export default function TplOnboardingPage() {
             
             {step === 0 && (
               <div className="space-y-6">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => { setOnboardingMode('quick'); if (step > 2) setStep(2) }}
-                    className={clsx(
-                      'flex flex-col items-start p-4 text-left border rounded-control transition-all',
-                      onboardingMode === 'quick'
-                        ? 'border-brand bg-brand-fill/40 ring-1 ring-brand'
-                        : 'border-border bg-surface hover:border-text/40'
-                    )}
-                  >
-                    <div className="flex items-center justify-between w-full">
-                      <span className="font-semibold text-sm text-text">Quick Onboard (2 mins)</span>
-                      <span className="text-xs font-semibold uppercase px-2 py-0.5 rounded-full bg-brand-soft text-brand">Fastest</span>
-                    </div>
-                    <p className="mt-1 text-xs text-muted">
-                      Submit fleet & contact details. Our team connects to finalize onboarding.
-                    </p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setOnboardingMode('full')}
-                    className={clsx(
-                      'flex flex-col items-start p-4 text-left border rounded-control transition-all',
-                      onboardingMode === 'full'
-                        ? 'border-brand bg-brand-fill/40 ring-1 ring-brand'
-                        : 'border-border bg-surface hover:border-text/40'
-                    )}
-                  >
-                    <div className="flex items-center justify-between w-full">
-                      <span className="font-semibold text-sm text-text">Complete Self-Onboarding</span>
-                      <span className="text-xs font-semibold uppercase px-2 py-0.5 rounded-full bg-surface-subtle text-muted">Direct Approval</span>
-                    </div>
-                    <p className="mt-1 text-xs text-muted">
-                      Enter PAN, GST, bank details and upload KYC documents upfront.
-                    </p>
-                  </button>
+                <div>
+                  <label className="text-xs font-semibold uppercase text-muted mb-2.5 block">
+                    Choose Onboarding Speed
+                  </label>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => { setOnboardingMode('quick'); if (step > 2) setStep(2) }}
+                      className={clsx(
+                        'flex flex-col items-start p-4 text-left border rounded-card transition-all duration-200 cursor-pointer',
+                        onboardingMode === 'quick'
+                          ? 'border-brand bg-brand-fill/40 ring-1 ring-brand shadow-xs'
+                          : 'border-border bg-surface hover:border-text/40'
+                      )}
+                    >
+                      <div className="flex items-center justify-between w-full mb-1">
+                        <div className="flex items-center gap-1.5">
+                          <Zap size={15} className="text-brand" />
+                          <span className="font-semibold text-sm text-text">Quick Onboard (2 mins)</span>
+                        </div>
+                        <span className="text-xs font-semibold uppercase px-2 py-0.5 rounded-full bg-brand-soft text-brand">Fastest</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted leading-relaxed">
+                        Submit fleet & contact details. Our team connects to finalize onboarding.
+                      </p>
+                      <div className="mt-3 flex items-center gap-2 text-xs text-muted font-medium">
+                        <span className="flex items-center gap-1 text-success"><CheckCircle2 size={12} /> 3 simple steps</span>
+                        <span>•</span>
+                        <span>Zero paperwork now</span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOnboardingMode('full')}
+                      className={clsx(
+                        'flex flex-col items-start p-4 text-left border rounded-card transition-all duration-200 cursor-pointer',
+                        onboardingMode === 'full'
+                          ? 'border-brand bg-brand-fill/40 ring-1 ring-brand shadow-xs'
+                          : 'border-border bg-surface hover:border-text/40'
+                      )}
+                    >
+                      <div className="flex items-center justify-between w-full mb-1">
+                        <div className="flex items-center gap-1.5">
+                          <ShieldCheck size={15} className="text-brand" />
+                          <span className="font-semibold text-sm text-text">Complete Self-Onboarding</span>
+                        </div>
+                        <span className="text-xs font-semibold uppercase px-2 py-0.5 rounded-full bg-surface-subtle text-muted">Direct Approval</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted leading-relaxed">
+                        Enter PAN, GST, bank details and upload KYC documents upfront.
+                      </p>
+                      <div className="mt-3 flex items-center gap-2 text-xs text-muted font-medium">
+                        <span className="flex items-center gap-1 text-brand"><CheckCircle2 size={12} /> Instant rate lock</span>
+                        <span>•</span>
+                        <span>Direct verification</span>
+                      </div>
+                    </button>
+                  </div>
                 </div>
 
-                <Input
-                  label="Company name"
-                  required
-                  placeholder="Registered business name"
-                  value={companyName}
-                  onChange={(e) => {
-                    setCompanyName(e.target.value)
-                    if (!customId) setCustomId(suggestCustomId(e.target.value))
-                  }}
-                />
-                <Input
-                  label="Contact person"
-                  required
-                  placeholder="Full name"
-                  value={ownerName}
-                  onChange={(e) => setOwnerName(e.target.value)}
-                />
-                <Input
-                  label="Email"
-                  required
-                  type="email"
-                  autoComplete="email"
-                  placeholder="you@company.com"
-                  hint={checkingEmail ? 'Checking…' : "This is where we'll send your application status and partner portal access."}
-                  error={emailTakenError}
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); setEmailTakenError(null) }}
-                  onBlur={(e) => checkEmailTaken(e.target.value)}
-                />
-                <Input
-                  label="Mobile number"
-                  required
-                  placeholder="10-digit mobile number"
-                  type="tel"
-                  maxLength={10}
-                  hint={checkingMobile ? 'Checking…' : undefined}
-                  error={mobileTakenError}
-                  value={mobile}
-                  onChange={(e) => { setMobile(e.target.value.replace(/\D/g, '')); setMobileTakenError(null) }}
-                  onBlur={(e) => checkMobileTaken(e.target.value)}
-                />
-                <Input
-                  label="Operating from"
-                  required
-                  placeholder="E.g., Mumbai, MH"
-                  hint="Your base location"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                />
+                <div className="border-t border-border pt-5 space-y-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Input
+                      label="Company name"
+                      required
+                      placeholder="Registered business name"
+                      value={companyName}
+                      onChange={(e) => {
+                        setCompanyName(e.target.value)
+                        if (!customId) setCustomId(suggestCustomId(e.target.value))
+                      }}
+                    />
+                    <Input
+                      label="Contact person"
+                      required
+                      placeholder="Full name"
+                      value={ownerName}
+                      onChange={(e) => setOwnerName(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <Input
+                        label="Email"
+                        required
+                        type="email"
+                        autoComplete="email"
+                        placeholder="you@company.com"
+                        hint={checkingEmail ? 'Checking availability…' : "This is where we'll send your application status and partner portal access."}
+                        error={emailTakenError}
+                        value={email}
+                        onChange={(e) => { setEmail(e.target.value); setEmailTakenError(null) }}
+                        onBlur={(e) => checkEmailTaken(e.target.value)}
+                      />
+                      {!emailTakenError && !checkingEmail && EMAIL_PATTERN.test(email.trim()) && (
+                        <p className="mt-1 text-xs text-success flex items-center gap-1">
+                          <CheckCircle2 size={12} /> Email address available
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Input
+                        label="Mobile number"
+                        required
+                        placeholder="10-digit mobile number"
+                        type="tel"
+                        maxLength={10}
+                        hint={checkingMobile ? 'Checking availability…' : undefined}
+                        error={mobileTakenError}
+                        value={mobile}
+                        onChange={(e) => { setMobile(e.target.value.replace(/\D/g, '')); setMobileTakenError(null) }}
+                        onBlur={(e) => checkMobileTaken(e.target.value)}
+                      />
+                      {!mobileTakenError && !checkingMobile && mobile.replace(/\D/g, '').length === 10 && (
+                        <p className="mt-1 text-xs text-success flex items-center gap-1">
+                          <CheckCircle2 size={12} /> Mobile number verified
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <Input
+                    label="Operating from"
+                    required
+                    placeholder="E.g., Mumbai, MH"
+                    hint="Your primary operating base or hub location"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                  />
+                </div>
               </div>
             )}
 
             {step === 1 && (
               <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    onClick={() => setFleetSize('single')}
-                    className={clsx(
-                      'flex flex-col items-center justify-center p-6 border rounded-control transition-colors',
-                      fleetSize === 'single' ? 'border-brand bg-brand-fill text-brand' : 'border-border text-muted hover:border-text hover:text-text'
-                    )}
-                  >
-                    <Truck size={32} className="mb-2" />
-                    <span className="font-semibold text-sm">Single Truck</span>
-                  </button>
-                  <button
-                    onClick={() => setFleetSize('multiple')}
-                    className={clsx(
-                      'flex flex-col items-center justify-center p-6 border rounded-control transition-colors',
-                      fleetSize === 'multiple' ? 'border-brand bg-brand-fill text-brand' : 'border-border text-muted hover:border-text hover:text-text'
-                    )}
-                  >
-                    <Blocks size={32} className="mb-2" />
-                    <span className="font-semibold text-sm">Multiple Trucks</span>
-                  </button>
+                <div>
+                  <label className="text-xs font-semibold uppercase text-muted mb-3 block">
+                    Select Fleet Scale
+                  </label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setFleetSize('single')}
+                      className={clsx(
+                        'flex flex-col items-center justify-center p-6 border rounded-card transition-all duration-200 cursor-pointer',
+                        fleetSize === 'single'
+                          ? 'border-brand bg-brand-fill/40 text-brand ring-1 ring-brand'
+                          : 'border-border bg-surface text-muted hover:border-text/40 hover:text-text'
+                      )}
+                    >
+                      <div className={clsx('p-2.5 rounded-full mb-2', fleetSize === 'single' ? 'bg-brand text-brand-fill' : 'bg-surface-subtle text-muted')}>
+                        <Truck size={28} />
+                      </div>
+                      <span className="font-semibold text-sm text-text">Single Truck</span>
+                      <span className="text-xs text-muted mt-0.5">Owner operator</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFleetSize('multiple')}
+                      className={clsx(
+                        'flex flex-col items-center justify-center p-6 border rounded-card transition-all duration-200 cursor-pointer',
+                        fleetSize === 'multiple'
+                          ? 'border-brand bg-brand-fill/40 text-brand ring-1 ring-brand'
+                          : 'border-border bg-surface text-muted hover:border-text/40 hover:text-text'
+                      )}
+                    >
+                      <div className={clsx('p-2.5 rounded-full mb-2', fleetSize === 'multiple' ? 'bg-brand text-brand-fill' : 'bg-surface-subtle text-muted')}>
+                        <Blocks size={28} />
+                      </div>
+                      <span className="font-semibold text-sm text-text">Multiple Trucks</span>
+                      <span className="text-xs text-muted mt-0.5">Fleet owner / agency</span>
+                    </button>
+                  </div>
                 </div>
 
                 {fleetSize === 'multiple' && (
                   <div className="space-y-4 pt-4 border-t border-border">
-                    <p className="text-sm font-medium text-text">Specify how many of each vehicle you have:</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <p className="text-sm font-medium text-text">Specify how many of each vehicle you have:</p>
+                      {totalTrucksCount > 0 && (
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-soft text-brand rounded-full text-xs font-semibold">
+                          <Truck size={13} />
+                          <span>{totalTrucksCount} Trucks · {totalTonnage.toFixed(1)} Tons Combined</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {vehicles?.map(v => {
-                        const count = multipleTruckCounts[v.key] || 0;
+                        const count = multipleTruckCounts[v.key] || 0
                         return (
-                          <div key={v.key} className={clsx("flex items-center justify-between p-3 border rounded-control transition-colors", count > 0 ? "border-brand bg-brand-fill/50" : "border-border")}>
-                            <span className="font-medium text-sm text-text">{v.name}</span>
-                            <div className="flex items-center space-x-3 bg-surface rounded-full border border-border px-2 py-1">
+                          <div
+                            key={v.key}
+                            className={clsx(
+                              'flex items-center justify-between p-3.5 border rounded-card transition-all duration-150',
+                              count > 0 ? 'border-brand bg-brand-fill/40 shadow-xs' : 'border-border bg-surface'
+                            )}
+                          >
+                            <div>
+                              <span className="font-medium text-sm text-text block">{v.name}</span>
+                              <span className="text-xs text-muted">{v.max_t} Tons capacity</span>
+                            </div>
+                            <div className="flex items-center space-x-2 bg-surface rounded-full border border-border px-2 py-1 shadow-2xs">
                               <button 
+                                type="button"
                                 onClick={() => setMultipleTruckCounts(p => ({...p, [v.key]: Math.max(0, count - 1)}))}
-                                className="w-6 h-6 flex items-center justify-center text-muted hover:text-text hover:bg-surface-subtle rounded-full transition-colors"
+                                className="w-6 h-6 flex items-center justify-center text-muted hover:text-text hover:bg-surface-subtle rounded-full transition-colors cursor-pointer text-sm font-semibold"
+                                disabled={count === 0}
                               >-</button>
-                              <span className="text-sm font-semibold w-4 text-center">{count}</span>
+                              <span className="text-sm font-semibold w-5 text-center text-text">{count}</span>
                               <button 
+                                type="button"
                                 onClick={() => setMultipleTruckCounts(p => ({...p, [v.key]: count + 1}))}
-                                className="w-6 h-6 flex items-center justify-center text-brand hover:bg-brand-fill rounded-full transition-colors"
+                                className="w-6 h-6 flex items-center justify-center text-brand hover:bg-brand-fill rounded-full transition-colors cursor-pointer text-sm font-semibold"
                               >+</button>
                             </div>
                           </div>
@@ -729,14 +817,17 @@ export default function TplOnboardingPage() {
                     >
                       <option value="" disabled>Select a truck type...</option>
                       {vehicles?.map(v => (
-                        <option key={v.key} value={v.key}>{v.name}</option>
+                        <option key={v.key} value={v.key}>{v.name} ({v.max_t} Tons)</option>
                       ))}
                     </Select>
                     
                     {selectedVehicle && (
-                      <div className="p-4 bg-surface-subtle border border-border rounded-control">
-                        <p className="text-sm font-medium text-text">Auto-detected Load Capacity:</p>
-                        <p className="text-2xl font-semibold text-brand mt-1">{selectedVehicle.max_t} Tons</p>
+                      <div className="p-4 bg-surface-subtle border border-border rounded-card flex items-center justify-between">
+                        <div>
+                          <p className="text-xs uppercase font-semibold text-muted">Auto-detected Load Capacity</p>
+                          <p className="text-lg font-semibold text-text mt-0.5">{selectedVehicle.name}</p>
+                        </div>
+                        <p className="text-2xl font-semibold text-brand">{selectedVehicle.max_t} Tons</p>
                       </div>
                     )}
                   </div>
@@ -746,44 +837,78 @@ export default function TplOnboardingPage() {
 
             {onboardingMode === 'full' && step === 2 && (
               <div className="space-y-5">
-                <Select
-                  label="Entity Type"
-                  required
-                  value={entityType}
-                  onChange={e => setEntityType(e.target.value)}
-                >
-                  <option value="" disabled>Select entity type...</option>
-                  {ENTITY_TYPE_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </Select>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Select
+                    label="Entity Type"
+                    required
+                    value={entityType}
+                    onChange={e => setEntityType(e.target.value)}
+                  >
+                    <option value="" disabled>Select entity type...</option>
+                    {ENTITY_TYPE_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </Select>
 
-                <Input
-                  label="Authorized Signatory Name"
-                  required
-                  placeholder="Full name of signatory"
-                  value={authorizedSignatoryName}
-                  onChange={e => setAuthorizedSignatoryName(e.target.value)}
-                />
+                  <Input
+                    label="Authorized Signatory Name"
+                    required
+                    placeholder="Full name of signatory"
+                    value={authorizedSignatoryName}
+                    onChange={e => setAuthorizedSignatoryName(e.target.value)}
+                  />
+                </div>
 
-                <Input
-                  label="PAN Number"
-                  required
-                  placeholder="ABCDE1234F"
-                  value={pan}
-                  maxLength={10}
-                  onChange={e => setPan(e.target.value.toUpperCase())}
-                  className="font-mono"
-                />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <Input
+                      label="PAN Number"
+                      required
+                      placeholder="ABCDE1234F"
+                      value={pan}
+                      maxLength={10}
+                      onChange={e => setPan(e.target.value.toUpperCase())}
+                      className="font-mono uppercase"
+                    />
+                    {pan && (
+                      <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+                        {validatePanFormat(pan).valid ? (
+                          <span className="text-success flex items-center gap-1 font-medium">
+                            <CheckCircle2 size={12} /> {validatePanFormat(pan).hint}
+                          </span>
+                        ) : (
+                          <span className="text-muted">
+                            {validatePanFormat(pan).hint || '10 alphanumeric characters'}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
-                <Input
-                  label="GSTIN (Optional)"
-                  placeholder="07ABCDE1234F1Z5"
-                  value={gst}
-                  maxLength={15}
-                  onChange={e => setGst(e.target.value.toUpperCase())}
-                  className="font-mono"
-                />
+                  <div>
+                    <Input
+                      label="GSTIN (Optional)"
+                      placeholder="07ABCDE1234F1Z5"
+                      value={gst}
+                      maxLength={15}
+                      onChange={e => setGst(e.target.value.toUpperCase())}
+                      className="font-mono uppercase"
+                    />
+                    {gst && (
+                      <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+                        {validateGstinFormat(gst, pan).valid ? (
+                          <span className="text-success flex items-center gap-1 font-medium">
+                            <CheckCircle2 size={12} /> Valid GSTIN {pan ? '· Matches PAN' : ''}
+                          </span>
+                        ) : (
+                          <span className="text-danger font-medium">
+                            {validateGstinFormat(gst, pan).error}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
 
                 {entityTypeRequiresCin(entityType) && (
                   <Input
@@ -793,7 +918,8 @@ export default function TplOnboardingPage() {
                     value={cin}
                     maxLength={21}
                     onChange={e => setCin(e.target.value.toUpperCase())}
-                    className="font-mono"
+                    className="font-mono uppercase"
+                    hint="21-character CIN from Certificate of Incorporation"
                   />
                 )}
 
@@ -811,6 +937,11 @@ export default function TplOnboardingPage() {
 
             {onboardingMode === 'full' && step === 3 && (
               <div className="space-y-5">
+                <div className="p-3.5 bg-brand-fill/20 border border-brand/20 rounded-card flex items-center gap-2.5 text-xs text-text">
+                  <Landmark size={16} className="text-brand shrink-0" />
+                  <span>Settlements and freight disbursements will be credited directly to this bank account.</span>
+                </div>
+
                 <Input
                   label="Bank Account Number"
                   required
@@ -818,7 +949,8 @@ export default function TplOnboardingPage() {
                   inputMode="numeric"
                   value={bankAccount}
                   onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
-                  className="font-mono"
+                  className="font-mono text-base"
+                  hint="Enter account number without spaces or special characters"
                 />
 
                 <IfscField
@@ -830,14 +962,16 @@ export default function TplOnboardingPage() {
 
             {onboardingMode === 'full' && step === 4 && (
               <div className="space-y-4">
-                <p className="text-xs text-muted">
-                  Upload clear scanned copies or photos (PDF, PNG, JPG up to 2MB).
-                </p>
+                <div className="p-3.5 bg-surface-subtle border border-border rounded-card flex items-center justify-between text-xs text-muted">
+                  <span>Upload clear scanned copies or photos (PDF, PNG, JPG up to 2MB).</span>
+                  <span className="font-semibold text-brand">PAN Card is required</span>
+                </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {TPL_DOCUMENT_TYPES.map(docType => (
                     <DocUploadField
                       key={docType}
                       label={docType}
+                      hint={docType === 'PAN Card' ? 'Required for verification' : 'Recommended for faster processing'}
                       path={docUrls[docType]}
                       busy={uploadingDocType === docType}
                       onUpload={file => uploadDoc(docType, file)}
@@ -853,84 +987,198 @@ export default function TplOnboardingPage() {
 
             {step === steps.length - 1 && (
               <div className="space-y-6">
-                <div className="p-6 bg-surface-subtle border border-border rounded-control space-y-4">
-                  <h3 className="font-semibold text-text">Application Summary</h3>
-                  
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-muted block mb-1">Company name</span>
-                      <span className="font-medium text-text">{companyName}</span>
+                <div className="space-y-4">
+                  {/* Contact Details Card */}
+                  <div className="p-4 bg-surface rounded-card border border-border">
+                    <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
+                      <div className="flex items-center gap-2">
+                        <Building size={16} className="text-brand" />
+                        <h4 className="text-sm font-semibold text-text">Contact & Business Details</h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setStep(0)}
+                        className="text-xs text-brand hover:underline font-medium cursor-pointer"
+                      >
+                        Edit
+                      </button>
                     </div>
-                    <div>
-                      <span className="text-muted block mb-1">Contact person</span>
-                      <span className="font-medium text-text">{ownerName}</span>
+                    <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+                      <div>
+                        <span className="text-muted block text-xs mb-0.5">Company name</span>
+                        <span className="font-medium text-text">{companyName}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted block text-xs mb-0.5">Contact person</span>
+                        <span className="font-medium text-text">{ownerName}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted block text-xs mb-0.5">Email</span>
+                        <span className="font-medium text-text">{email}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted block text-xs mb-0.5">Mobile number</span>
+                        <span className="font-medium text-text">{mobile}</span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-muted block text-xs mb-0.5">Operating from</span>
+                        <span className="font-medium text-text">{location}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted block mb-1">Email</span>
-                      <span className="font-medium text-text">{email}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted block mb-1">Mobile number</span>
-                      <span className="font-medium text-text">{mobile}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted block mb-1">Operating from</span>
-                      <span className="font-medium text-text">{location}</span>
-                    </div>
+                  </div>
 
-                    {onboardingMode === 'full' && (
-                      <>
-                        <div>
-                          <span className="text-muted block mb-1">Entity type</span>
-                          <span className="font-medium text-text">{entityType}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted block mb-1">PAN</span>
-                          <span className="font-medium font-mono text-text">{pan}</span>
-                        </div>
-                        {gst && (
-                          <div>
-                            <span className="text-muted block mb-1">GSTIN</span>
-                            <span className="font-medium font-mono text-text">{gst}</span>
-                          </div>
-                        )}
-                        <div>
-                          <span className="text-muted block mb-1">Bank Account</span>
-                          <span className="font-medium font-mono text-text">{bankAccount ? `****${bankAccount.slice(-4)}` : '—'}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted block mb-1">IFSC</span>
-                          <span className="font-medium font-mono text-text">{bankIfsc}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted block mb-1">Uploaded Documents</span>
-                          <span className="font-medium text-text">{Object.keys(docUrls).join(', ') || 'None'}</span>
-                        </div>
-                      </>
-                    )}
-                    
-                    <div className="col-span-2 pt-4 border-t border-border">
-                      <span className="text-muted block mb-3">Selected Trucks</span>
+                  {/* Fleet Details Card */}
+                  <div className="p-4 bg-surface rounded-card border border-border">
+                    <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
+                      <div className="flex items-center gap-2">
+                        <Truck size={16} className="text-brand" />
+                        <h4 className="text-sm font-semibold text-text">Fleet Specifications</h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setStep(1)}
+                        className="text-xs text-brand hover:underline font-medium cursor-pointer"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                    <div>
                       {fleetSize === 'single' && truckType ? (
-                        <div className="inline-flex items-center px-3 py-1 bg-surface border border-border rounded-full font-medium">
-                          1x {vehicles?.find(v => v.key === truckType)?.name}
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-surface-subtle border border-border rounded-full font-medium text-xs text-text">
+                            <Truck size={13} /> 1x {vehicles?.find(v => v.key === truckType)?.name}
+                          </span>
+                          <span className="text-xs text-muted">
+                            ({vehicles?.find(v => v.key === truckType)?.max_t} Tons capacity)
+                          </span>
                         </div>
                       ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {Object.entries(multipleTruckCounts).filter(([_, count]) => count > 0).map(([key, count]) => (
-                            <div key={key} className="inline-flex items-center px-3 py-1 bg-brand-fill text-brand border border-brand rounded-full font-medium">
-                              {count}x {vehicles?.find(v => v.key === key)?.name || key}
-                            </div>
-                          ))}
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            {Object.entries(multipleTruckCounts).filter(([_, count]) => count > 0).map(([key, count]) => (
+                              <div key={key} className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-fill text-brand border border-brand/40 rounded-full font-medium text-xs">
+                                <Truck size={13} /> {count}x {vehicles?.find(v => v.key === key)?.name || key}
+                              </div>
+                            ))}
+                          </div>
+                          {totalTrucksCount > 0 && (
+                            <p className="text-xs text-muted">
+                              Total: {totalTrucksCount} vehicles · {totalTonnage.toFixed(1)} Tons aggregate capacity
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
                   </div>
+
+                  {/* Full Onboarding Cards */}
+                  {onboardingMode === 'full' && (
+                    <>
+                      <div className="p-4 bg-surface rounded-card border border-border">
+                        <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck size={16} className="text-brand" />
+                            <h4 className="text-sm font-semibold text-text">Identity & Tax Information</h4>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setStep(2)}
+                            className="text-xs text-brand hover:underline font-medium cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+                          <div>
+                            <span className="text-muted block text-xs mb-0.5">Entity type</span>
+                            <span className="font-medium text-text">{entityType}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted block text-xs mb-0.5">Authorized Signatory</span>
+                            <span className="font-medium text-text">{authorizedSignatoryName}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted block text-xs mb-0.5">PAN</span>
+                            <span className="font-mono font-medium text-text">{pan}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted block text-xs mb-0.5">GSTIN</span>
+                            <span className="font-mono font-medium text-text">{gst || '—'}</span>
+                          </div>
+                          {cin && (
+                            <div>
+                              <span className="text-muted block text-xs mb-0.5">CIN</span>
+                              <span className="font-mono font-medium text-text">{cin}</span>
+                            </div>
+                          )}
+                          <div>
+                            <span className="text-muted block text-xs mb-0.5">MSME</span>
+                            <span className="font-medium text-text">{msmeStatus}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-surface rounded-card border border-border">
+                        <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
+                          <div className="flex items-center gap-2">
+                            <Landmark size={16} className="text-brand" />
+                            <h4 className="text-sm font-semibold text-text">Bank Account for Payouts</h4>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setStep(3)}
+                            className="text-xs text-brand hover:underline font-medium cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+                          <div>
+                            <span className="text-muted block text-xs mb-0.5">Account number</span>
+                            <span className="font-mono font-medium text-text">
+                              {bankAccount ? `••••••••${bankAccount.slice(-4)}` : '—'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-muted block text-xs mb-0.5">IFSC code</span>
+                            <span className="font-mono font-medium text-text">{bankIfsc || '—'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-surface rounded-card border border-border">
+                        <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
+                          <div className="flex items-center gap-2">
+                            <FileText size={16} className="text-brand" />
+                            <h4 className="text-sm font-semibold text-text">Uploaded KYC Documents</h4>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setStep(4)}
+                            className="text-xs text-brand hover:underline font-medium cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.keys(docUrls).length > 0 ? (
+                            Object.keys(docUrls).map(d => (
+                              <span key={d} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-success/10 text-success font-medium">
+                                <CheckCircle2 size={12} /> {d}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-muted">No documents uploaded</span>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
                 
-                <p className="text-sm text-muted text-center">
+                <p className="text-xs text-muted text-center pt-2">
                   {onboardingMode === 'full'
-                    ? 'Review your details above, then submit. Once verified by dispatch, you will be directly activated.'
+                    ? 'Review your details above, then submit. Once verified by dispatch, your account will be directly activated.'
                     : 'Review your details above, then submit. You can complete PAN, GST and bank details anytime from your partner portal.'}
                 </p>
               </div>

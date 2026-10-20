@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { Eye, FileText, UploadCloud } from 'lucide-react'
 import { Alert, Button, Card, CardHeader, EmptyState, FileButton, PageHeader, useConfirm } from '@/components/ui'
+import { DocUploadField } from '@/components/kyc/DocUploadField'
 import { tplAPI } from '@/services/api'
 import { openKycDocument } from '@/services/kycDocuments'
 import { uploadTplDocument } from '@/services/tplDocuments'
@@ -89,24 +90,15 @@ export default function DocumentsPage() {
           />
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             {missingDocTypes.map(docType => (
-              <div key={docType} className="flex flex-col justify-between rounded-control border border-border bg-surface-subtle p-4">
-                <div>
-                  <h3 className="text-sm font-medium text-text">{docType}</h3>
-                  <p className="mt-1 text-xs text-muted">Required KYC document</p>
-                </div>
-                <div className="mt-4">
-                  <FileButton
-                    variant="primary"
-                    size="sm"
-                    icon={<UploadCloud size={14} />}
-                    loading={uploading === docType}
-                    accept=".pdf,.png,.jpg,.jpeg"
-                    onFile={file => uploadNew(docType, file)}
-                  >
-                    Upload {docType}
-                  </FileButton>
-                </div>
-              </div>
+              <DocUploadField
+                key={docType}
+                label={docType}
+                hint="Required KYC document"
+                busy={uploading === docType}
+                onUpload={file => uploadNew(docType, file)}
+                onRemove={() => {}}
+                onView={() => {}}
+              />
             ))}
           </div>
         </Card>

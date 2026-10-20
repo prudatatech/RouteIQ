@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { Modal, Button, Input, Select, IfscField } from '@/components/ui'
+import { ShieldCheck, Landmark, Building2, CheckCircle2 } from 'lucide-react'
+import clsx from 'clsx'
 import { tplAPI } from '@/services/api'
 import { errorMessage } from '@/utils/display'
 import { gstinError } from '@/utils/gstin'
 import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
+import { validatePanFormat, validateGstinFormat, getPanCategory } from '@/utils/taxValidation'
 import { TPL_MSME_OPTIONS, SLA_COMMITMENT_OPTIONS, TAX_TREATMENT_OPTIONS } from './constants'
 
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
@@ -21,6 +24,7 @@ interface PartnerLike {
   gstin?: string | null
   entity_type?: string | null
   cin?: string | null
+  authorizedSignatoryName?: string | null
   authorized_signatory_name?: string | null
   msme_status?: string | null
   bank_account_no?: string | null
@@ -35,6 +39,8 @@ const MSME_OPTIONS = TPL_MSME_OPTIONS.map(v => ({ value: v, label: v }))
 const SLA_OPTIONS = SLA_COMMITMENT_OPTIONS.map(v => ({ value: v, label: v }))
 const TAX_OPTIONS = TAX_TREATMENT_OPTIONS.map(v => ({ value: v, label: v }))
 
+type TabKey = 'identity' | 'bank' | 'operations'
+
 export function EditTplPartnerModal({
   open,
   onClose,
@@ -48,6 +54,7 @@ export function EditTplPartnerModal({
   onSaved: () => void
   isPartnerPortal?: boolean
 }) {
+  const [activeTab, setActiveTab] = useState<TabKey>('identity')
   const [companyName, setCompanyName] = useState(partner.company_name || '')
   const [contactName, setContactName] = useState(partner.contact_name || '')
   const [phone, setPhone] = useState(partner.phone || '')
@@ -56,7 +63,9 @@ export function EditTplPartnerModal({
   const [gst, setGst] = useState(partner.gstin || '')
   const [entityType, setEntityType] = useState(partner.entity_type || '')
   const [cin, setCin] = useState(partner.cin || '')
-  const [authorizedSignatoryName, setAuthorizedSignatoryName] = useState(partner.authorized_signatory_name || '')
+  const [authorizedSignatoryName, setAuthorizedSignatoryName] = useState(
+    partner.authorized_signatory_name || partner.authorizedSignatoryName || ''
+  )
   const [msmeStatus, setMsmeStatus] = useState(partner.msme_status || 'Not Registered')
   const [bankAccount, setBankAccount] = useState(partner.bank_account_no || '')
   const [bankIfsc, setBankIfsc] = useState(partner.bank_ifsc || '')
@@ -77,13 +86,16 @@ export function EditTplPartnerModal({
       setGst(partner.gstin || '')
       setEntityType(partner.entity_type || '')
       setCin(partner.cin || '')
-      setAuthorizedSignatoryName(partner.authorized_signatory_name || '')
+      setAuthorizedSignatoryName(
+        partner.authorized_signatory_name || partner.authorizedSignatoryName || ''
+      )
       setMsmeStatus(partner.msme_status || 'Not Registered')
       setBankAccount(partner.bank_account_no || '')
       setBankIfsc(partner.bank_ifsc || '')
       setSlaCommitment(partner.sla_commitment || '2 Hours')
       setTaxTreatment(partner.tax_treatment || '12% GTA (With ITC) - Forward Charge')
       setAttempted(false)
+      setActiveTab('identity')
     }
   }, [open, partner])
 
@@ -110,6 +122,10 @@ export function EditTplPartnerModal({
   }
 
   const err = (key: string) => (attempted ? errors[key] : undefined)
+
+  const panValidation = validatePanFormat(pan)
+  const panCategory = getPanCategory(pan)
+  const gstValidation = validateGstinFormat(gst, pan)
 
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault?.()
@@ -174,128 +190,193 @@ export function EditTplPartnerModal({
       )}
     >
       <div className="space-y-6">
-        <div>
-          <h3 className="mb-3 text-xs font-semibold uppercase text-muted">Legal & Identity</h3>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              label="Company PAN"
-              value={pan}
-              onChange={e => setPan(e.target.value.toUpperCase().slice(0, 10))}
-              placeholder="ABCDE1234F"
-              maxLength={10}
-              className="font-mono"
-              error={err('pan')}
-            />
-            <Input
-              label="GSTIN"
-              value={gst}
-              onChange={e => setGst(e.target.value.toUpperCase().slice(0, 15))}
-              placeholder="07ABCDE1234F1Z5"
-              maxLength={15}
-              className="font-mono"
-              error={err('gst')}
-            />
-            <Select
-              label="Entity Type"
-              value={entityType}
-              onChange={e => setEntityType(e.target.value)}
-              options={ENTITY_TYPE_OPTIONS}
-              placeholder="Select entity type"
-            />
-            <Input
-              label="Authorized Signatory Name"
-              value={authorizedSignatoryName}
-              onChange={e => setAuthorizedSignatoryName(e.target.value)}
-              placeholder="Signatory full name"
-            />
-            {requiresCin && (
-              <Input
-                label="CIN"
-                value={cin}
-                onChange={e => setCin(e.target.value.toUpperCase().slice(0, 21))}
-                placeholder="U74999DL2019PTC123456"
-                maxLength={21}
-                className="font-mono"
-                error={err('cin')}
-              />
+        {/* Tab Navigation */}
+        <div className="flex border-b border-border -mx-1">
+          <button
+            type="button"
+            onClick={() => setActiveTab('identity')}
+            className={clsx(
+              'flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors',
+              activeTab === 'identity'
+                ? 'border-brand text-brand'
+                : 'border-transparent text-muted hover:text-text'
             )}
-            <Select
-              label="MSME Registration"
-              value={msmeStatus}
-              onChange={e => setMsmeStatus(e.target.value)}
-              options={MSME_OPTIONS}
-            />
-          </div>
+          >
+            <ShieldCheck size={14} />
+            Legal & Tax
+            {pan && <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('bank')}
+            className={clsx(
+              'flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors',
+              activeTab === 'bank'
+                ? 'border-brand text-brand'
+                : 'border-transparent text-muted hover:text-text'
+            )}
+          >
+            <Landmark size={14} />
+            Bank & Payout
+            {bankAccount && <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />}
+          </button>
+          {!isPartnerPortal && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('operations')}
+              className={clsx(
+                'flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors',
+                activeTab === 'operations'
+                  ? 'border-brand text-brand'
+                  : 'border-transparent text-muted hover:text-text'
+              )}
+            >
+              <Building2 size={14} />
+              Operations & Profile
+            </button>
+          )}
         </div>
 
-        <div className="border-t border-border pt-4">
-          <h3 className="mb-3 text-xs font-semibold uppercase text-muted">Bank Details</h3>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              label="Bank Account Number"
-              value={bankAccount}
-              onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
-              placeholder="9 to 18 digits"
-              inputMode="numeric"
-              className="font-mono"
-              error={err('bankAccount')}
-            />
-            <IfscField
-              value={bankIfsc}
-              onChange={setBankIfsc}
-            />
-          </div>
-        </div>
-
-        <div className="border-t border-border pt-4">
-          <h3 className="mb-3 text-xs font-semibold uppercase text-muted">Company & Operations</h3>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              label="Company Name"
-              required
-              value={companyName}
-              onChange={e => setCompanyName(e.target.value)}
-              error={err('companyName')}
-            />
-            <Input
-              label="Contact Person"
-              required
-              value={contactName}
-              onChange={e => setContactName(e.target.value)}
-              error={err('contactName')}
-            />
-            <Input
-              label="Phone Number"
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              placeholder="+91..."
-            />
-            {!isPartnerPortal && (
-              <>
+        {/* Tab 1: Legal & Tax */}
+        {activeTab === 'identity' && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
                 <Input
-                  label="3PL ID"
-                  value={customId}
-                  onChange={e => setCustomId(e.target.value.toLowerCase().slice(0, 20))}
-                  placeholder="e.g. nilons_1234"
-                  className="font-mono"
-                  error={err('customId')}
+                  label="Company PAN"
+                  value={pan}
+                  onChange={e => setPan(e.target.value.toUpperCase().slice(0, 10))}
+                  placeholder="ABCDE1234F"
+                  maxLength={10}
+                  className="font-mono uppercase"
+                  error={err('pan')}
+                  hint={panValidation.valid && panCategory ? `${panCategory}` : 'e.g. ABCDE1234F'}
+                  trailing={panValidation.valid ? <CheckCircle2 size={16} className="text-success" /> : undefined}
                 />
-                <Select
-                  label="SLA Commitment"
-                  value={slaCommitment}
-                  onChange={e => setSlaCommitment(e.target.value)}
-                  options={SLA_OPTIONS}
+              </div>
+
+              <div>
+                <Input
+                  label="GSTIN"
+                  value={gst}
+                  onChange={e => setGst(e.target.value.toUpperCase().slice(0, 15))}
+                  placeholder="07ABCDE1234F1Z5"
+                  maxLength={15}
+                  className="font-mono uppercase"
+                  error={err('gst') || (gst.trim() && gstValidation.error ? gstValidation.error : undefined)}
+                  hint="15 characters (Optional)"
+                  trailing={gst.trim() && gstValidation.valid ? <CheckCircle2 size={16} className="text-success" /> : undefined}
                 />
-                <Select
-                  label="GTA Tax Treatment"
-                  value={taxTreatment}
-                  onChange={e => setTaxTreatment(e.target.value)}
-                  options={TAX_OPTIONS}
+              </div>
+
+              <Select
+                label="Entity Type"
+                value={entityType}
+                onChange={e => setEntityType(e.target.value)}
+                options={ENTITY_TYPE_OPTIONS}
+                placeholder="Select entity type"
+              />
+
+              <Input
+                label="Authorized Signatory Name"
+                value={authorizedSignatoryName}
+                onChange={e => setAuthorizedSignatoryName(e.target.value)}
+                placeholder="Full name of signatory"
+              />
+
+              {requiresCin && (
+                <Input
+                  label="Corporate Identification Number (CIN)"
+                  value={cin}
+                  onChange={e => setCin(e.target.value.toUpperCase().slice(0, 21))}
+                  placeholder="U74999DL2019PTC123456"
+                  maxLength={21}
+                  className="font-mono uppercase"
+                  error={err('cin')}
+                  hint="21 characters (required for Pvt Ltd/LLP)"
                 />
-              </>
-            )}
+              )}
+
+              <Select
+                label="MSME Registration"
+                value={msmeStatus}
+                onChange={e => setMsmeStatus(e.target.value)}
+                options={MSME_OPTIONS}
+              />
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Tab 2: Bank & Payout */}
+        {activeTab === 'bank' && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Bank Account Number"
+                value={bankAccount}
+                onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
+                placeholder="9 to 18 digits"
+                inputMode="numeric"
+                className="font-mono"
+                error={err('bankAccount')}
+                hint={bankAccount ? `${bankAccount.length} digits entered` : '9 to 18 digits'}
+              />
+              <IfscField
+                value={bankIfsc}
+                onChange={setBankIfsc}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Operations & Profile (Staff Only) */}
+        {!isPartnerPortal && activeTab === 'operations' && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Company Name"
+                required
+                value={companyName}
+                onChange={e => setCompanyName(e.target.value)}
+                error={err('companyName')}
+              />
+              <Input
+                label="Contact Person"
+                required
+                value={contactName}
+                onChange={e => setContactName(e.target.value)}
+                error={err('contactName')}
+              />
+              <Input
+                label="Phone Number"
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                placeholder="+91..."
+              />
+              <Input
+                label="3PL ID"
+                value={customId}
+                onChange={e => setCustomId(e.target.value.toLowerCase().slice(0, 20))}
+                placeholder="e.g. nilons_1234"
+                className="font-mono"
+                error={err('customId')}
+                hint="5-20 lowercase alphanumeric characters"
+              />
+              <Select
+                label="SLA Commitment"
+                value={slaCommitment}
+                onChange={e => setSlaCommitment(e.target.value)}
+                options={SLA_OPTIONS}
+              />
+              <Select
+                label="GTA Tax Treatment"
+                value={taxTreatment}
+                onChange={e => setTaxTreatment(e.target.value)}
+                options={TAX_OPTIONS}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </Modal>
   )
