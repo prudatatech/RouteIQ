@@ -72,17 +72,21 @@ function authHeaders() {
   };
 }
 
-/** Submits the check, then reads its result. Cashfree's RC check answers synchronously in practice. */
+/**
+ * Submits the check, then reads its result. Cashfree's RC check answers synchronously in practice.
+ * CASHFREE_VERIFICATION_BASE_URL already ends in /verification (e.g. https://api.cashfree.com/verification),
+ * so only /vehicle-rc is appended here - doubling it up 404s with "Route Not Found".
+ */
 async function submitAndFetch(verificationId: string, rcNumber: string): Promise<CashfreeRcResponse> {
   const base = settings.CASHFREE_VERIFICATION_BASE_URL!.replace(/\/+$/, '');
   const headers = authHeaders();
-  const submitted = await axios.post(`${base}/verification/vehicle-rc`, { verification_id: verificationId, vehicle_number: rcNumber }, {
+  const submitted = await axios.post(`${base}/vehicle-rc`, { verification_id: verificationId, vehicle_number: rcNumber }, {
     headers, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true,
   });
   if (submitted.status < 200 || submitted.status >= 300) {
     throw Object.assign(new Error(`Cashfree rejected the verification request (${submitted.status})`), { status: submitted.status });
   }
-  const fetched = await axios.get(`${base}/verification/vehicle-rc`, {
+  const fetched = await axios.get(`${base}/vehicle-rc`, {
     params: { verification_id: verificationId }, headers, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true,
   });
   if (fetched.status < 200 || fetched.status >= 300) {

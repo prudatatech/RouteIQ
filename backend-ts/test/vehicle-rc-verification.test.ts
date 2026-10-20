@@ -87,11 +87,11 @@ describe('creating or updating a vehicle checks its RC', () => {
     // Pre-fills the vehicle's own document fields from a confirmed check
     expect(supabaseMock.rows('vehicles')[0]).toMatchObject({ rc_expiry: '2035-08-15', insurance_expiry: '2027-01-01', puc_expiry: '2026-06-01' });
     expect(post).toHaveBeenCalledWith(
-      expect.stringContaining('/verification/vehicle-rc'),
+      expect.stringContaining('/vehicle-rc'),
       expect.objectContaining({ vehicle_number: 'KA06AZ6020' }),
       expect.objectContaining({ headers: expect.objectContaining({ 'x-client-id': 'cf-client', 'x-client-secret': 'cf-secret' }) }),
     );
-    expect(get).toHaveBeenCalledWith(expect.stringContaining('/verification/vehicle-rc'), expect.objectContaining({ params: { verification_id: expect.any(String) } }));
+    expect(get).toHaveBeenCalledWith(expect.stringContaining('/vehicle-rc'), expect.objectContaining({ params: { verification_id: expect.any(String) } }));
   });
 
   it('marks invalid when Cashfree says INVALID, and unavailable when it cannot be reached', async () => {
