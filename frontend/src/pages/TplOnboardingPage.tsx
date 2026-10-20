@@ -49,6 +49,12 @@ export default function TplOnboardingPage() {
   const [email, setEmail] = useState('')
   const [mobile, setMobile] = useState('')
   const [location, setLocation] = useState('')
+  // Checked as the applicant fills the form in, so a duplicate is caught right at the field instead
+  // of only after they finish every step and submit.
+  const [emailTakenError, setEmailTakenError] = useState<string | null>(null)
+  const [mobileTakenError, setMobileTakenError] = useState<string | null>(null)
+  const [checkingEmail, setCheckingEmail] = useState(false)
+  const [checkingMobile, setCheckingMobile] = useState(false)
   
   // Step 2
   const [fleetSize, setFleetSize] = useState<'single' | 'multiple' | null>(null)
@@ -252,6 +258,39 @@ export default function TplOnboardingPage() {
     )
   }
 
+  // Checked onBlur for instant feedback, and again before advancing in case the field was never
+  // blurred (e.g. pasted and the button clicked some other way). Never blocks on a check that itself
+  // fails - the backend still enforces this at submit time either way.
+  const checkEmailTaken = async (value: string) => {
+    const trimmed = value.trim()
+    if (!EMAIL_PATTERN.test(trimmed)) { setEmailTakenError(null); return false }
+    setCheckingEmail(true)
+    try {
+      const { taken } = await tplAPI.checkAvailability('email', trimmed)
+      setEmailTakenError(taken ? 'An application with this email already exists. Use your tracking ID to view it.' : null)
+      return taken
+    } catch {
+      return false
+    } finally {
+      setCheckingEmail(false)
+    }
+  }
+
+  const checkMobileTaken = async (value: string) => {
+    const digits = value.replace(/\D/g, '')
+    if (digits.length < 10) { setMobileTakenError(null); return false }
+    setCheckingMobile(true)
+    try {
+      const { taken } = await tplAPI.checkAvailability('phone', digits)
+      setMobileTakenError(taken ? 'An application with this mobile number already exists. Use your tracking ID to view it.' : null)
+      return taken
+    } catch {
+      return false
+    } finally {
+      setCheckingMobile(false)
+    }
+  }
+
   const next = async () => {
     setDirection('forward')
     if (step === 0) {
@@ -268,6 +307,8 @@ export default function TplOnboardingPage() {
         toast.error('Please enter a valid 10-digit mobile number.')
         return
       }
+      const [emailTaken, mobileTaken] = await Promise.all([checkEmailTaken(email), checkMobileTaken(mobile)])
+      if (emailTaken || mobileTaken) return
     }
     if (step === 1 && fleetSize === 'single' && !truckType) {
       toast.error('Please select a truck type.')
@@ -421,9 +462,11 @@ export default function TplOnboardingPage() {
                   type="email"
                   autoComplete="email"
                   placeholder="you@company.com"
-                  hint="This is where we'll send your application status and, once approved, your partner portal access."
+                  hint={checkingEmail ? 'Checking…' : "This is where we'll send your application status and, once approved, your partner portal access."}
+                  error={emailTakenError}
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => { setEmail(e.target.value); setEmailTakenError(null) }}
+                  onBlur={(e) => checkEmailTaken(e.target.value)}
                 />
                 <Input
                   label="Mobile number"
@@ -431,8 +474,11 @@ export default function TplOnboardingPage() {
                   placeholder="10-digit mobile number"
                   type="tel"
                   maxLength={10}
+                  hint={checkingMobile ? 'Checking…' : undefined}
+                  error={mobileTakenError}
                   value={mobile}
-                  onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
+                  onChange={(e) => { setMobile(e.target.value.replace(/\D/g, '')); setMobileTakenError(null) }}
+                  onBlur={(e) => checkMobileTaken(e.target.value)}
                 />
                 <Input
                   label="Operating from"

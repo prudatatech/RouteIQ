@@ -1075,6 +1075,9 @@ export const tplAPI = {
   /** Lightweight check for existing partner — works even for fresh OAuth users without a `users` row. */
   checkPartner: (data: { user_id?: string; email?: string }): Promise<{ id: string; status: string } | null> =>
     api.post('/tpl/check-partner', data).then(r => r.data),
+  /** Whether an email or phone is already on an application - read-only, so the onboarding form can ask as it is typed. */
+  checkAvailability: (field: 'email' | 'phone', value: string): Promise<{ taken: boolean }> =>
+    api.post('/tpl/check-availability', { field, value }).then(r => r.data),
   onboard: (data: Record<string, unknown>) => api.post('/tpl/onboard', data).then(r => r.data),
   /** Superadmin only: enters a 3PL application on behalf of someone who phoned/WhatsApp'd their details in, instead of using the public wizard themselves. Same fields as onboard(); no account is linked yet. */
   adminCreate: (data: Record<string, unknown>) => api.post('/tpl/admin/create', data).then(r => r.data),

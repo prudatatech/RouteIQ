@@ -108,6 +108,29 @@ async function ifscColumns(ifsc: unknown): Promise<{ columns: Record<string, any
 
 export const tplService = {
   /**
+   * Whether an email or phone is already on an application - read-only, so the onboarding form can
+   * ask as the applicant fills it in and correct them before they finish the whole form, instead of
+   * only after they submit it. Mirrors the duplicate checks onboard() itself enforces.
+   */
+  async checkAvailability(field: 'email' | 'phone', value: unknown): Promise<{ taken: boolean }> {
+    if (field === 'email') {
+      const email = typeof value === 'string' ? value.trim().toLowerCase() : '';
+      if (!EMAIL_PATTERN.test(email)) return { taken: false };
+      const { data } = await supabase.from('tpl_partners').select('id').eq('email', email).maybeSingle();
+      return { taken: !!data };
+    }
+    let phone: string | null;
+    try {
+      phone = parseMobile(value);
+    } catch {
+      return { taken: false };
+    }
+    if (!phone) return { taken: false };
+    const { data } = await supabase.from('tpl_partners').select('id').eq('phone', phone).maybeSingle();
+    return { taken: !!data };
+  },
+
+  /**
    * Submit a new 3PL onboarding application
    */
   async onboard(data: any) {
@@ -130,6 +153,11 @@ export const tplService = {
 
     const { data: duplicate } = await supabase.from('tpl_partners').select('id').eq('email', email).maybeSingle();
     if (duplicate) throw new HttpError(409, 'An application with this email already exists. Use your tracking ID to view it.');
+
+    if (phone) {
+      const { data: phoneDuplicate } = await supabase.from('tpl_partners').select('id').eq('phone', phone).maybeSingle();
+      if (phoneDuplicate) throw new HttpError(409, 'An application with this mobile number already exists. Use your tracking ID to view it.');
+    }
 
     // custom_id names the partner's document folder, so it must be unique
     if (custom_id) {

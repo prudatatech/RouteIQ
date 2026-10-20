@@ -12,6 +12,7 @@ const PARTNER = {
   company_name: 'Acme',
   status: 'pending',
   email: 'ops@acme.in',
+  phone: '9876543210',
   pan_number: 'ABCDE1234F',
   user_id: 'partner-user',
   tpl_corridors: [],
@@ -301,5 +302,37 @@ describe('3PL applicant phone', () => {
     });
     expect(res.status).toBe(400);
     expect(res.body.detail ?? res.body.error).toMatch(/mobile/i);
+  });
+
+  it('rejects a mobile number already on another application, the same as a duplicate email', async () => {
+    const res = await request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Acme Logistics', contactName: 'New Contact', email: 'new-partner@acme.in', pan: 'ABCDE1234F', gst: '27ABCDE1234F1Z0', phone: '9876543210',
+      entityType: 'Proprietorship', authorizedSignatoryName: 'New Contact',
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.detail ?? res.body.error).toMatch(/mobile number already exists/i);
+  });
+});
+
+describe('POST /tpl/check-availability', () => {
+  const check = (field: string, value: unknown) => request(app).post('/api/v1/tpl/check-availability').send({ field, value });
+
+  it('flags an email or phone already on an application', async () => {
+    expect((await check('email', 'ops@acme.in')).body).toEqual({ taken: true });
+    expect((await check('phone', '9876543210')).body).toEqual({ taken: true });
+  });
+
+  it('says an unused email or phone is free', async () => {
+    expect((await check('email', 'fresh@example.com')).body).toEqual({ taken: false });
+    expect((await check('phone', '9000000000')).body).toEqual({ taken: false });
+  });
+
+  it('is quiet about a value that is not even a valid email or phone yet - nothing to flag mid-type', async () => {
+    expect((await check('email', 'still-typin')).body).toEqual({ taken: false });
+    expect((await check('phone', '987')).body).toEqual({ taken: false });
+  });
+
+  it('rejects an unknown field', async () => {
+    expect((await check('username', 'x')).status).toBe(400);
   });
 });

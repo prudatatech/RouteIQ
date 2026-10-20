@@ -143,6 +143,18 @@ router.post('/check-partner', rateLimitByIp('tpl-check', 30, 60), optionalAuth, 
   }
 });
 
+// POST /api/v1/tpl/check-availability — the onboarding form asks as the applicant types, to catch
+// a duplicate email or phone right there instead of only after they finish and submit the whole form.
+router.post('/check-availability', rateLimitByIp('tpl-check-availability', 30, 60), async (req, res) => {
+  try {
+    const field = req.body?.field;
+    if (field !== 'email' && field !== 'phone') throw new HttpError(400, 'field must be "email" or "phone"');
+    res.json(await tplService.checkAvailability(field, req.body?.value));
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // POST /api/v1/tpl/onboard
 router.post('/onboard', rateLimitByIp('tpl-onboard', 20, 60 * 60), async (req, res) => {
   try {
