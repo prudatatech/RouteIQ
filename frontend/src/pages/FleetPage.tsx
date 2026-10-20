@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import clsx from 'clsx'
 import { Download, Plus, Truck, Fuel, BarChart2, Pencil, Trash2, MapPin } from 'lucide-react'
 import { vehiclesAPI, telemetryWS, shipmentsAPI, routesAPI } from '@/services/api'
 import { formatRelative } from '@/utils/display'
@@ -482,27 +483,56 @@ export default function FleetPage() {
       >
         <Tabs tabs={viewTabs} value={view} onChange={setView} label="Fleet sections" />
         {view === 'vehicles' && (
-        <div className="flex flex-wrap items-center gap-3">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search by plate, model, driver or cargo" label="Search vehicles" className="w-full sm:w-80" />
-          <div role="group" aria-label="Filter by status" className="flex flex-wrap gap-1.5">
-            {STATUS_FILTERS.map(s => (
-              <button
-                key={s}
-                type="button"
-                aria-pressed={filter === s}
-                onClick={() => setFilter(s)}
-                className={
-                  'rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ' +
-                  (filter === s ? 'bg-brand-soft text-brand' : 'bg-neutral-soft text-muted hover:text-text')
-                }
-              >
-                {STATUS_FILTER_LABELS[s]} · {counts[s] ?? 0}
-              </button>
-            ))}
+          <div className="flex flex-col gap-3 pt-1">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <SearchInput value={search} onChange={setSearch} placeholder="Search by plate, model, driver or cargo" label="Search vehicles" className="w-full sm:w-80" />
+              {search && (
+                <Button variant="ghost" size="sm" onClick={() => setSearch('')} className="text-xs shrink-0 self-start sm:self-auto">
+                  Clear search
+                </Button>
+              )}
+            </div>
+            <div role="group" aria-label="Filter by status" className="flex flex-wrap gap-1.5">
+              {STATUS_FILTERS.map(s => (
+                <button
+                  key={s}
+                  type="button"
+                  aria-pressed={filter === s}
+                  onClick={() => setFilter(s)}
+                  className={clsx(
+                    'rounded-full px-3 py-1.5 text-xs font-medium transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
+                    filter === s ? 'bg-brand-soft text-brand border border-brand/30 shadow-xs font-semibold' : 'bg-surface-subtle text-muted hover:text-text border border-border'
+                  )}
+                >
+                  {STATUS_FILTER_LABELS[s]} · {counts[s] ?? 0}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
         )}
       </PageHeader>
+
+      {/* Fleet KPI Quick Pulse */}
+      {view === 'vehicles' && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+            <span className="text-xs font-semibold text-muted uppercase tracking-wider">Total Active Fleet</span>
+            <p className="mt-1 text-2xl font-bold tabular text-text">{isLoading ? '–' : (counts.all ?? 0).toLocaleString('en-IN')}</p>
+          </div>
+          <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+            <span className="text-xs font-semibold text-info uppercase tracking-wider">On Active Trips</span>
+            <p className="mt-1 text-2xl font-bold tabular text-info">{isLoading ? '–' : (counts.on_route ?? 0).toLocaleString('en-IN')}</p>
+          </div>
+          <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+            <span className="text-xs font-semibold text-success uppercase tracking-wider">Available / Idle</span>
+            <p className="mt-1 text-2xl font-bold tabular text-success">{isLoading ? '–' : (counts.idle ?? 0).toLocaleString('en-IN')}</p>
+          </div>
+          <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+            <span className="text-xs font-semibold text-warning uppercase tracking-wider">Service / Attention</span>
+            <p className="mt-1 text-2xl font-bold tabular text-warning">{isLoading ? '–' : ((counts.maintenance ?? 0) + (counts.offline ?? 0)).toLocaleString('en-IN')}</p>
+          </div>
+        </div>
+      )}
 
       <TabPanel id={view}>
       {view === 'analytics' && <FleetAnalyticsView />}

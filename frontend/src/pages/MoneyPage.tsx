@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { financeAPI } from '@/services/api'
 import type { InvoiceSummary } from '@/utils/finance'
+import { formatRupees } from '@/utils/display'
 import {
   DateRangeControl, Page, PageHeader, presetRange, TabPanel, Tabs, useOpenOnWork, useTabParam, type DateRangeValue, type TabItem,
 } from '@/components/ui'
@@ -39,6 +40,8 @@ export default function MoneyPage() {
     { id: 'driver-pay', label: 'Driver pay' },
   ]
 
+  const inv = invoiceSummary.data
+
   return (
     <Page>
       <PageHeader title="Money" description="Price deliveries, follow invoices, and keep track of costs, claims and driver pay.">
@@ -47,6 +50,39 @@ export default function MoneyPage() {
           {RANGED.includes(tab) && <DateRangeControl value={range} onChange={setRange} />}
         </div>
       </PageHeader>
+
+      {/* Financial Pulse KPIs */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-warning uppercase tracking-wider">Outstanding Invoices</span>
+          <p className="mt-1 text-2xl font-bold tabular text-warning">
+            {invoiceSummary.isLoading ? '–' : formatRupees(inv?.outstanding ?? 0)}
+          </p>
+          <p className="mt-0.5 text-xs text-muted">{inv?.outstanding_count ?? 0} invoices awaiting payment</p>
+        </div>
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-danger uppercase tracking-wider">Overdue Invoices</span>
+          <p className="mt-1 text-2xl font-bold tabular text-danger">
+            {invoiceSummary.isLoading ? '–' : formatRupees(inv?.overdue ?? 0)}
+          </p>
+          <p className="mt-0.5 text-xs text-muted">{inv?.overdue_count ?? 0} past due</p>
+        </div>
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-success uppercase tracking-wider">Settled This Month</span>
+          <p className="mt-1 text-2xl font-bold tabular text-success">
+            {invoiceSummary.isLoading ? '–' : formatRupees(inv?.collected_this_month ?? 0)}
+          </p>
+          <p className="mt-0.5 text-xs text-muted">{inv?.collected_count ?? 0} collected</p>
+        </div>
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-brand uppercase tracking-wider">Pending Pricing</span>
+          <p className="mt-1 text-2xl font-bold tabular text-brand">
+            {unpriced.isLoading ? '–' : (unpriced.data?.length ?? 0)}
+          </p>
+          <p className="mt-0.5 text-xs text-muted">Ready to rate and bill</p>
+        </div>
+      </div>
+
       <TabPanel id={tab}>
         {tab === 'to-price' && <ToPriceTab range={range} />}
         {tab === 'invoices' && <InvoicesTab range={range} />}

@@ -105,29 +105,36 @@ export default function MobileTrackPage() {
     : []
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-bg px-4 py-8 text-text">
-      <div className="w-full max-w-sm space-y-6">
+    <div className="flex min-h-screen flex-col items-center bg-bg px-4 py-8 text-text selection:bg-brand/20">
+      <div className="w-full max-w-sm space-y-5">
         <div className="text-center">
-          <p className="text-xs font-medium uppercase text-brand">MargixIndia</p>
-          <h1 className="mt-1 text-2xl font-semibold text-text">Share your location</h1>
-          {session && <p className="mt-1 text-sm text-muted">Vehicle: <span className="font-medium text-text">{session.plate}</span></p>}
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-soft text-brand text-xs font-bold uppercase tracking-wider mb-2">
+            <Navigation size={13} className={isActive ? 'animate-spin-slow' : ''} /> MargixIndia Telemetry
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-text">Live Vehicle GPS</h1>
+          {session && (
+            <p className="mt-1 text-sm text-muted">
+              Vehicle plate: <span className="font-mono font-bold text-text bg-surface-subtle px-2 py-0.5 rounded-control border border-border">{session.plate}</span>
+            </p>
+          )}
         </div>
 
         {status === 'loading' && (
-          <Card padded className="flex flex-col items-center gap-3 py-10">
-            <Spinner size={28} label="Loading tracking link" />
+          <Card padded className="flex flex-col items-center gap-3 py-10 shadow-raised">
+            <Spinner size={32} label="Loading tracking link" />
+            <p className="text-xs text-muted">Connecting to fleet dispatch…</p>
           </Card>
         )}
 
         {status === 'session-invalid' && (
-          <Card padded>
+          <Card padded className="shadow-raised">
             <ErrorState title="This link doesn't work" description={errorMessage} />
           </Card>
         )}
 
         {status !== 'loading' && status !== 'session-invalid' && (
           <>
-            <Card padded className="space-y-4">
+            <Card padded className="space-y-4 shadow-raised">
               {status === 'denied' && (
                 <Alert tone="danger" title="Permission denied">{errorMessage}</Alert>
               )}
@@ -135,68 +142,86 @@ export default function MobileTrackPage() {
                 <Alert tone="danger" title="Could not get your location">{errorMessage}</Alert>
               )}
               {status === 'tracking' && (
-                <Alert tone="success" title="Sharing your live location" />
+                <div className="flex items-center justify-between rounded-control border border-success/30 bg-success-soft px-3 py-2 text-xs font-medium text-success">
+                  <span className="flex items-center gap-2">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-success"></span>
+                    </span>
+                    Live GPS broadcasting active
+                  </span>
+                  <span className="font-mono">{formatTime(new Date(), { seconds: true })}</span>
+                </div>
               )}
               {isActive && pushFailing && (
                 <Alert tone="warning" title="Dispatch cannot see your location right now">
-                  Check your mobile data. We keep trying while this page is open.
+                  Check your mobile data connection. We keep trying while this page is open.
                 </Alert>
               )}
               {status === 'connecting' && (
-                <div className="flex items-center gap-2 text-sm text-muted">
-                  <Spinner size={16} /> Getting a GPS fix…
+                <div className="flex items-center justify-center gap-2 rounded-control border border-border bg-surface-subtle p-3 text-sm text-muted">
+                  <Spinner size={16} /> Acquiring satellite GPS fix…
                 </div>
               )}
               {status === 'ready' && (
-                <div className="flex flex-col items-center gap-3 py-4 text-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-soft text-muted">
-                    <MapPin size={26} aria-hidden="true" />
+                <div className="flex flex-col items-center gap-3 py-5 text-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-soft text-brand shadow-xs">
+                    <MapPin size={30} aria-hidden="true" />
                   </div>
-                  <p className="text-sm text-muted">Tap the button below to start sharing your live location with dispatch.</p>
+                  <div>
+                    <h3 className="text-base font-bold text-text">Ready to transmit</h3>
+                    <p className="mt-1 text-xs text-muted leading-relaxed">Tap start below to transmit real-time road telemetry directly to operations.</p>
+                  </div>
                 </div>
               )}
 
               {coords && (
                 <dl className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-control border border-border bg-surface-subtle p-3">
-                    <dt className="text-xs text-muted">Speed</dt>
-                    <dd className="mt-0.5 font-medium text-text">{Math.round(coords.speed * 3.6)} km/h</dd>
+                  <div className="rounded-card border border-border bg-surface-subtle p-3.5 shadow-xs">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-muted">Speed</dt>
+                    <dd className="mt-1 font-mono text-xl font-extrabold text-text">
+                      {Math.round(coords.speed * 3.6)} <span className="text-xs font-normal text-muted">km/h</span>
+                    </dd>
                   </div>
-                  <div className="rounded-control border border-border bg-surface-subtle p-3">
-                    <dt className="text-xs text-muted">Accuracy</dt>
-                    <dd className="mt-0.5 font-medium text-text">±{coords.accuracy.toFixed(0)} m</dd>
+                  <div className="rounded-card border border-border bg-surface-subtle p-3.5 shadow-xs">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-muted">Accuracy</dt>
+                    <dd className="mt-1 font-mono text-xl font-extrabold text-text">
+                      ±{coords.accuracy.toFixed(0)} <span className="text-xs font-normal text-muted">meters</span>
+                    </dd>
                   </div>
                 </dl>
               )}
 
               {pushCount > 0 && (
-                <p className="flex items-center justify-between text-xs text-muted">
-                  <span className="flex items-center gap-1"><CheckCircle2 size={14} className="text-success" aria-hidden="true" /> {pushCount} updates sent</span>
-                  {lastPush && <span>Last: {formatTime(lastPush, { seconds: true })}</span>}
-                </p>
+                <div className="flex items-center justify-between text-xs text-muted border-t border-border pt-3">
+                  <span className="flex items-center gap-1.5 font-medium text-text">
+                    <CheckCircle2 size={15} className="text-success shrink-0" aria-hidden="true" /> {pushCount} telemetry packets sent
+                  </span>
+                  {lastPush && <span className="text-[11px] tabular">Last: {formatTime(lastPush, { seconds: true })}</span>}
+                </div>
               )}
 
               {!isActive ? (
-                <Button fullWidth size="lg" icon={<Navigation size={18} />} disabled={!session} onClick={startTracking}>
+                <Button fullWidth size="lg" icon={<Navigation size={18} />} disabled={!session} onClick={startTracking} className="font-bold py-3">
                   Start sharing location
                 </Button>
               ) : (
-                <Button fullWidth size="lg" variant="danger" icon={<WifiOff size={18} />} onClick={stopTracking}>
+                <Button fullWidth size="lg" variant="danger" icon={<WifiOff size={18} />} onClick={stopTracking} className="font-bold py-3">
                   Stop sharing
                 </Button>
               )}
             </Card>
 
             {coords && (
-              <Card className="overflow-hidden">
-                <MapView mode="tracking" height={200} interactive={false} vehicles={vehicles} />
+              <Card className="overflow-hidden border border-border shadow-raised">
+                <MapView mode="tracking" height={220} interactive={false} vehicles={vehicles} />
               </Card>
             )}
           </>
         )}
 
-        <p className="text-center text-xs text-muted">
-          Your location is only shared while this page is open.
+        <p className="text-center text-xs text-muted leading-relaxed">
+          Your location is only transmitted securely while this browser page remains open.
         </p>
       </div>
     </div>

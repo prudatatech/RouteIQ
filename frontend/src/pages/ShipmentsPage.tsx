@@ -293,6 +293,11 @@ export default function ShipmentsPage() {
     downloadCsv(`shipments-${new Date().toISOString().slice(0, 10)}.csv`, csv)
   }
 
+  const inTransitCount = (counts['in_transit'] ?? 0) + (counts['out_for_delivery'] ?? 0)
+  const pendingCount = (counts['pending'] ?? 0) + (counts['assigned'] ?? 0)
+  const deliveredCount = counts['delivered'] ?? 0
+  const activeCount = counts['all'] ?? 0
+
   return (
     <Page>
       <PageHeader
@@ -305,24 +310,53 @@ export default function ShipmentsPage() {
           </>
         )}
       >
-        <Tabs
-          label="Filter by status"
-          value={tab}
-          onChange={setTab}
-          tabs={TAB_IDS.filter(id => !QUIET_TABS.includes(id) || id === tab || (counts[id] ?? 0) > 0).map(id => ({
-            id,
-            label: id === 'all' ? 'All' : shipmentStatusLabel(id),
-            count: isLoading ? undefined : counts[id] ?? 0,
-          }))}
-        />
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          label="Search shipments"
-          placeholder="Search by tracking ID, place, vehicle or driver"
-          className="max-w-md"
-        />
+        <div className="flex flex-col gap-3">
+          <Tabs
+            label="Filter by status"
+            value={tab}
+            onChange={setTab}
+            tabs={TAB_IDS.filter(id => !QUIET_TABS.includes(id) || id === tab || (counts[id] ?? 0) > 0).map(id => ({
+              id,
+              label: id === 'all' ? 'All' : shipmentStatusLabel(id),
+              count: isLoading ? undefined : counts[id] ?? 0,
+            }))}
+          />
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              label="Search shipments"
+              placeholder="Search by tracking ID, place, vehicle or driver"
+              className="w-full sm:max-w-md"
+            />
+            {filtering && (
+              <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setTab('all') }} className="text-xs shrink-0 self-start sm:self-auto">
+                Clear filters
+              </Button>
+            )}
+          </div>
+        </div>
       </PageHeader>
+
+      {/* Operational Pulse Cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-muted uppercase tracking-wider">Total Consignments</span>
+          <p className="mt-1 text-2xl font-bold tabular text-text">{isLoading ? '–' : activeCount.toLocaleString('en-IN')}</p>
+        </div>
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-info uppercase tracking-wider">In Transit</span>
+          <p className="mt-1 text-2xl font-bold tabular text-info">{isLoading ? '–' : inTransitCount.toLocaleString('en-IN')}</p>
+        </div>
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-warning uppercase tracking-wider">Awaiting Dispatch</span>
+          <p className="mt-1 text-2xl font-bold tabular text-warning">{isLoading ? '–' : pendingCount.toLocaleString('en-IN')}</p>
+        </div>
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-success uppercase tracking-wider">Delivered</span>
+          <p className="mt-1 text-2xl font-bold tabular text-success">{isLoading ? '–' : deliveredCount.toLocaleString('en-IN')}</p>
+        </div>
+      </div>
 
       <DataTable
         caption="Shipments"

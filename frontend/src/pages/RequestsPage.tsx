@@ -411,19 +411,48 @@ export default function RequestsPage() {
       >
         <div className="space-y-4">
           <Tabs label="Filter requests by stage" tabs={tabs} value={tab} onChange={setTab} />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <SearchInput value={search} onChange={setSearch} label="Search requests" placeholder="Search by requester, place or tracking ID" className="w-full sm:max-w-sm" />
-            <Select
-              label="Source"
-              hideLabel
-              className="w-full sm:w-56"
-              value={source}
-              onChange={e => setSource(e.target.value as SourceFilter)}
-              options={SOURCE_FILTERS.map(s => ({ value: s, label: `${SOURCE_LABELS[s]}${loading ? '' : ` (${sourceCounts[s]})`}` }))}
-            />
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+              <SearchInput value={search} onChange={setSearch} label="Search requests" placeholder="Search by requester, place or tracking ID" className="w-full sm:max-w-sm" />
+              <Select
+                label="Source"
+                hideLabel
+                className="w-full sm:w-56"
+                value={source}
+                onChange={e => setSource(e.target.value as SourceFilter)}
+                options={SOURCE_FILTERS.map(s => ({ value: s, label: `${SOURCE_LABELS[s]}${loading ? '' : ` (${sourceCounts[s]})`}` }))}
+              />
+            </div>
+            {search && (
+              <Button variant="ghost" size="sm" onClick={() => setSearch('')} className="text-xs shrink-0 self-start sm:self-auto">
+                Clear search
+              </Button>
+            )}
           </div>
         </div>
       </PageHeader>
+
+      {/* Intake Queue Quick Pulse */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-warning uppercase tracking-wider">Awaiting Decision</span>
+          <p className="mt-1 text-2xl font-bold tabular text-warning">{loading ? '–' : (counts.accept ?? 0).toLocaleString('en-IN')}</p>
+        </div>
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-info uppercase tracking-wider">Accepted · Needs Truck</span>
+          <p className="mt-1 text-2xl font-bold tabular text-info">{loading ? '–' : (counts.accepted ?? 0).toLocaleString('en-IN')}</p>
+        </div>
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-brand uppercase tracking-wider">Active In Progress</span>
+          <p className="mt-1 text-2xl font-bold tabular text-brand">{loading ? '–' : (counts.progress ?? 0).toLocaleString('en-IN')}</p>
+        </div>
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-muted uppercase tracking-wider">Customer / Vendor Split</span>
+          <p className="mt-1 text-lg font-bold tabular text-text">
+            {allBookings.length} <span className="text-xs font-normal text-muted">cust</span> · {allLoads.length} <span className="text-xs font-normal text-muted">vendor</span>
+          </p>
+        </div>
+      </div>
 
       <p className="text-sm text-muted">
         Shipments that staff create go straight to <Link to="/shipments" className="font-medium text-brand hover:underline">Shipments</Link> and do not appear here.

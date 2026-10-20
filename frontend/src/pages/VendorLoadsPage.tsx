@@ -38,10 +38,10 @@ function ActionStrip({ items }: { items: ActionItem[] }) {
 function LoadCard({ load }: { load: VendorLoad }) {
   const action = nextAction(load)
   return (
-    <Card padded className="flex flex-col gap-3 !p-4 sm:flex-row sm:items-start sm:justify-between">
+    <Card padded className="flex flex-col gap-3 !p-4 sm:flex-row sm:items-start sm:justify-between shadow-xs hover:shadow-raised hover:border-brand/40 transition-all duration-200">
       <div className="min-w-0 space-y-1.5">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <Link to={loadPath(load.id)} className="font-mono text-sm font-medium text-brand hover:underline">{load.code}</Link>
+          <Link to={loadPath(load.id)} className="font-mono text-sm font-semibold text-brand hover:underline">{load.code}</Link>
           {load.kind === 'space' && <span className="rounded-full bg-info-soft px-2 py-0.5 text-xs font-medium text-info">Return trip</span>}
           <ProblemPill count={load.problems.length} />
           <span className="text-xs text-muted">{formatDate(load.created_at)}</span>
@@ -49,7 +49,7 @@ function LoadCard({ load }: { load: VendorLoad }) {
         <Route pickup={load.pickup} drop={load.drop} className="text-sm font-medium text-text" />
         <p className="text-sm text-muted"><LoadFacts load={load} /></p>
         {load.truck && <p className="text-sm text-text"><TruckLine truck={load.truck} /></p>}
-        {load.rejection_reason && <p className="text-sm text-danger">Not accepted: {load.rejection_reason}</p>}
+        {load.rejection_reason && <p className="text-sm text-danger font-medium">Not accepted: {load.rejection_reason}</p>}
       </div>
       <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end sm:text-right">
         <ActionCell action={action} className="text-sm sm:text-right" />
@@ -132,7 +132,14 @@ export default function VendorLoadsPage() {
 
       <BulkUpload />
 
-      <SearchInput value={search} onChange={setSearch} placeholder="Search by code, place or truck" className="max-w-sm" />
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search by code, place or truck" className="max-w-sm" />
+        {search && (
+          <Button variant="ghost" size="sm" onClick={() => setSearch('')} className="text-xs shrink-0 self-start sm:self-auto">
+            Clear search
+          </Button>
+        )}
+      </div>
 
       {loads.isLoading ? (
         <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}</div>

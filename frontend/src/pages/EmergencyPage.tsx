@@ -317,8 +317,27 @@ export default function EmergencyPage() {
         description={isLoading ? 'Driver SOS calls and where they are.' : activeAlerts.length === 0 ? 'No active SOS.' : `${activeAlerts.length.toLocaleString('en-IN')} active ${activeAlerts.length === 1 ? 'SOS' : 'SOS calls'}`}
       />
 
+      {activeAlerts.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-card border border-danger/40 bg-danger-soft/20 p-4 shadow-xs">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-danger-soft text-danger shrink-0">
+              <ShieldAlert size={20} className="animate-pulse" />
+            </span>
+            <div>
+              <h2 className="text-sm font-bold text-text">
+                {activeAlerts.length} Active Emergency {activeAlerts.length === 1 ? 'Dispatch Call' : 'Dispatch Calls'}
+              </h2>
+              <p className="text-xs text-muted">Acknowledge or contact drivers immediately. Coordinate road assistance or maintenance.</p>
+            </div>
+          </div>
+          <span className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-danger-soft text-danger text-xs font-bold uppercase tracking-wider">
+            Immediate Attention
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[380px_1fr]">
-        <div className="rounded-card border border-border bg-surface">
+        <div className="rounded-card border border-border bg-surface shadow-xs overflow-hidden">
           <div className="max-h-[70vh] divide-y divide-border overflow-y-auto">
             {isLoading ? (
               <div className="space-y-3 p-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}</div>

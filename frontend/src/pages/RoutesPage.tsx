@@ -220,6 +220,11 @@ export default function RoutesPage() {
     downloadCsv(`routes-${new Date().toISOString().slice(0, 10)}.csv`, csv)
   }
 
+  const toSendCount = routes.filter(r => r.status === 'pending').length
+  const activeCount = routes.filter(r => r.status === 'active').length
+  const completedCount = routes.filter(r => r.status === 'completed').length
+  const totalCount = routes.length
+
   return (
     <Page>
       <PageHeader
@@ -229,9 +234,36 @@ export default function RoutesPage() {
       >
         <div className="space-y-4">
           <Tabs label="Filter trips by status" tabs={tabs} value={status} onChange={setStatus} />
-          <SearchInput value={q} onChange={setQ} placeholder="Search by trip, vehicle or shipment" className="max-w-sm" />
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <SearchInput value={q} onChange={setQ} placeholder="Search by trip, vehicle or shipment" className="w-full sm:max-w-sm" />
+            {q && (
+              <Button variant="ghost" size="sm" onClick={() => setQ('')} className="text-xs shrink-0 self-start sm:self-auto">
+                Clear search
+              </Button>
+            )}
+          </div>
         </div>
       </PageHeader>
+
+      {/* Trips & Dispatch Pulse KPIs */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-muted uppercase tracking-wider">Total Scheduled Trips</span>
+          <p className="mt-1 text-2xl font-bold tabular text-text">{isLoading ? '–' : totalCount.toLocaleString('en-IN')}</p>
+        </div>
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-info uppercase tracking-wider">Active On Road</span>
+          <p className="mt-1 text-2xl font-bold tabular text-info">{isLoading ? '–' : activeCount.toLocaleString('en-IN')}</p>
+        </div>
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-warning uppercase tracking-wider">To Dispatch</span>
+          <p className="mt-1 text-2xl font-bold tabular text-warning">{isLoading ? '–' : toSendCount.toLocaleString('en-IN')}</p>
+        </div>
+        <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
+          <span className="text-xs font-semibold text-success uppercase tracking-wider">Completed</span>
+          <p className="mt-1 text-2xl font-bold tabular text-success">{isLoading ? '–' : completedCount.toLocaleString('en-IN')}</p>
+        </div>
+      </div>
 
       <TabPanel id={status}>
         <DataTable
