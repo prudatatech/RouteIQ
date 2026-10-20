@@ -62,7 +62,7 @@ describe('StaffCreateApplicationDrawer', () => {
     // Documents render in TPL_DOCUMENT_TYPES order; the first slot is "PAN Card".
     // The drawer portals into document.body, outside the render() container.
     const fileInputs = document.body.querySelectorAll('input[type="file"]')
-    expect(fileInputs.length).toBe(4)
+    expect(fileInputs.length).toBe(3)
     const file = new File(['dummy'], 'pan.pdf', { type: 'application/pdf' })
     fireEvent.change(fileInputs[0], { target: { files: [file] } })
 

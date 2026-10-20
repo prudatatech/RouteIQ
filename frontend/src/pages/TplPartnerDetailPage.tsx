@@ -2,7 +2,7 @@ import { errorMessage, formatDateTime } from '@/utils/display'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, Download, FileText, FlagTriangleRight, RefreshCw, ShieldCheck, Zap } from 'lucide-react'
+import { Building2, Download, Edit2, FileText, FlagTriangleRight, RefreshCw, ShieldCheck, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { useEffectiveRole } from '@/store/effectiveRole'
@@ -20,6 +20,7 @@ import { GstinStatus } from '@/components/tpl/GstinStatus'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { FlagDocumentsModal } from '@/components/admin/FlagDocumentsModal'
 import { HistorySection } from '@/components/admin/vendor-review/ReviewSections'
+import { EditTplPartnerModal } from '@/components/tpl/EditTplPartnerModal'
 
 interface TplDocument { id: string; doc_type: string; file_url: string }
 interface TplCorridor { id: string; corridor_name: string; vehicle_types: string[] | null; proposed_rate: string | null; rate_amount?: number | null; rate_unit?: RateUnit | null; priority: number | null }
@@ -137,6 +138,7 @@ export default function TplPartnerDetailPage() {
   const canDecide = useEffectiveRole().role === 'superadmin'
   const [preview, setPreview] = useState<{ url: string, name: string } | null>(null)
   const [flagOpen, setFlagOpen] = useState(false)
+  const [editKycOpen, setEditKycOpen] = useState(false)
   const [uploadingType, setUploadingType] = useState<string | null>(null)
   const [replacingDocId, setReplacingDocId] = useState<string | null>(null)
 
@@ -309,6 +311,14 @@ export default function TplPartnerDetailPage() {
 
   const busy = approve.isPending || reject.isPending
 
+  const isQuickOnboard = !!partner.fleet_size
+  const missingKyc: string[] = []
+  if (!partner.pan_number) missingKyc.push('PAN')
+  if (!partner.gstin) missingKyc.push('GSTIN')
+  if (!partner.bank_account_no || !partner.bank_ifsc) missingKyc.push('Bank details')
+  if (!partner.entity_type) missingKyc.push('Entity type')
+  if (!partner.authorized_signatory_name) missingKyc.push('Authorized signatory')
+
   return (
     <Page>
       <PageHeader
@@ -347,8 +357,41 @@ export default function TplPartnerDetailPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card padded>
-          <CardHeader title="Identity and KYC" className="-mx-4 -mt-4 sm:-mx-6" actions={<ShieldCheck size={18} className="text-brand" />} />
+          <CardHeader
+            title="Identity and KYC"
+            className="-mx-4 -mt-4 sm:-mx-6"
+            actions={(
+              <div className="flex items-center gap-2">
+                {canDecide && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={<Edit2 size={14} />}
+                    onClick={() => setEditKycOpen(true)}
+                  >
+                    Edit KYC & Details
+                  </Button>
+                )}
+                <ShieldCheck size={18} className="text-brand" />
+              </div>
+            )}
+          />
           <div className="pt-6">
+            {missingKyc.length > 0 && (partner.status === 'pending' || partner.status === 'rejected') && (
+              <div className="mb-4 rounded-control border border-warning/30 bg-warning/5 p-3.5 text-xs text-warning">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <span className="font-semibold">{isQuickOnboard ? 'Quick Onboard — KYC Pending' : 'Incomplete KYC'}:</span> Missing{' '}
+                    {missingKyc.join(', ')}. {isQuickOnboard ? 'You can approve to talk to them, or enter their details manually.' : 'Please complete these compliance details.'}
+                  </div>
+                  {canDecide && (
+                    <Button variant="secondary" size="sm" onClick={() => setEditKycOpen(true)} className="shrink-0">
+                      Enter KYC Details
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
             <DetailList
               columns={2}
               items={[
@@ -494,11 +537,20 @@ export default function TplPartnerDetailPage() {
 
       {partner.status === 'pending' && canDecide && (
         <Card padded className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-          <p className="text-sm text-muted">
-            {partner.pending_updates
-              ? 'Review the requested updates above before approving or rejecting them.'
-              : 'Review the KYC documents and operational terms above before approving or rejecting this application.'}
-          </p>
+          <div>
+            <p className="text-sm text-muted">
+              {partner.pending_updates
+                ? 'Review the requested updates above before approving or rejecting them.'
+                : isQuickOnboard
+                  ? 'Quick onboard application: Talk to the partner and approve, or enter their compliance details manually.'
+                  : 'Review the KYC documents and operational terms above before approving or rejecting this application.'}
+            </p>
+            {isQuickOnboard && missingKyc.length > 0 && (
+              <p className="mt-1 text-xs text-warning">
+                Compliance fields pending ({missingKyc.join(', ')}). You can approve now and collect details, or click &ldquo;Edit KYC &amp; Details&rdquo; above.
+              </p>
+            )}
+          </div>
           <div className="flex shrink-0 gap-3">
             {!partner.pending_updates && (
               <Button variant="secondary" icon={<FlagTriangleRight size={16} />} disabled={busy} onClick={() => setFlagOpen(true)}>Flag documents</Button>
@@ -545,6 +597,17 @@ export default function TplPartnerDetailPage() {
           busy={flagDocuments.isPending}
           onClose={() => setFlagOpen(false)}
           onSubmit={issues => flagDocuments.mutate(issues)}
+        />
+      )}
+      {editKycOpen && (
+        <EditTplPartnerModal
+          open
+          partner={partner}
+          onClose={() => setEditKycOpen(false)}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
+            refetch()
+          }}
         />
       )}
     </Page>

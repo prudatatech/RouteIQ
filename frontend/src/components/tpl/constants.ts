@@ -1,6 +1,6 @@
 import { formatRupees } from '@/utils/display'
 /** Documents a 3PL applicant or partner can upload; matches backend TPL_DOCUMENT_TYPES. */
-export const TPL_DOCUMENT_TYPES = ['PAN Card', 'GST Certificate', 'Cancelled Cheque', 'Signed Rate Agreement'] as const
+export const TPL_DOCUMENT_TYPES = ['PAN Card', 'GST Certificate', 'Cancelled Cheque'] as const
 
 export const SLA_COMMITMENT_OPTIONS = ['2 Hours', '4 Hours', '6 Hours', '12 Hours']
 

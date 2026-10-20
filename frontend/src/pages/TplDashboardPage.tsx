@@ -187,6 +187,21 @@ export default function TplDashboardPage() {
         </header>
 
         <main className="mx-auto max-w-content space-y-6 px-4 py-6 sm:px-6 lg:py-8">
+          {(!partner.pan_number || !partner.bank_account_no) && (
+            <Alert
+              tone="warning"
+              title="Action required: Complete KYC & Bank Details"
+              action={
+                <NavLink to={`${base}/settings`} className={clsx(
+                  'inline-flex items-center justify-center rounded-control border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-subtle transition-colors'
+                )}>
+                  Complete details
+                </NavLink>
+              }
+            >
+              Your account is missing compliance details (PAN, GSTIN, and Bank Payout details). Please complete them to ensure seamless operations and settlements.
+            </Alert>
+          )}
           {partner.status !== 'active' && (
             <Alert tone={partner.status === 'rejected' ? 'danger' : 'warning'} title={statusTitle[partner.status] ?? 'Your account is not active'}>
               {partner.status === 'pending'

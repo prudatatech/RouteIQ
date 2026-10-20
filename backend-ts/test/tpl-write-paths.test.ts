@@ -222,6 +222,13 @@ describe('staff decisions on partners', () => {
     expect(supabaseMock.rows('tpl_partners')[0].status).toBe('pending');
   });
 
+  it('approves a quick-onboarded application (fleet_size set) so staff can connect and complete details', async () => {
+    reset('pending', { fleet_size: 'single', pan_number: null, gstin: null, bank_account_no: null, bank_ifsc: null, entity_type: null, authorized_signatory_name: null });
+    const res = await act(`approve/${PID}`);
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('active');
+  });
+
   it('still approves a profile-update request even if PAN/GST/bank are missing', async () => {
     // The compliance gate only applies to a first-time approval; a profile-update request (settings
     // changes, which move status back to 'pending' while open) was already activated once and is not

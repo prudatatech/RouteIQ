@@ -100,3 +100,19 @@ describe('TplOnboardingPage duplicate email/phone', () => {
     expect(screen.queryByText(/already exists/i)).toBeNull()
   })
 })
+
+describe('TplOnboardingPage onboarding modes', () => {
+  it('defaults to Quick Onboard mode and allows toggling to Complete Self-Onboarding', async () => {
+    show()
+    expect(await screen.findByText('Quick Onboard (2 mins)')).toBeTruthy()
+    expect(screen.getByText('Complete Self-Onboarding')).toBeTruthy()
+
+    // Default has 3 steps (Contact, Fleet, Review)
+    expect(screen.queryByText('Business & Identity')).toBeNull()
+
+    // Toggle to Complete Self-Onboarding
+    fireEvent.click(screen.getByText('Complete Self-Onboarding'))
+    expect(screen.getByText('Business & Identity')).toBeTruthy()
+    expect(screen.getByText('KYC Documents')).toBeTruthy()
+  })
+})

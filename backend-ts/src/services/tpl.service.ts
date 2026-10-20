@@ -25,7 +25,7 @@ const otpKey = (email: string) => `otp:tpl:${email.toLowerCase()}`;
 const CUSTOM_ID_PATTERN = /^[a-z0-9_]{5,20}$/;
 
 /** Documents a 3PL applicant or partner can upload. */
-export const TPL_DOCUMENT_TYPES = ['PAN Card', 'GST Certificate', 'Cancelled Cheque', 'Signed Rate Agreement'] as const;
+export const TPL_DOCUMENT_TYPES = ['PAN Card', 'GST Certificate', 'Cancelled Cheque'] as const;
 
 /** Accepted upload formats and the file extension each is stored under. */
 export const TPL_UPLOAD_CONTENT_TYPES: Record<string, string> = {
@@ -379,7 +379,7 @@ export const tplService = {
   /**
    * Update an existing 3PL partner application (only if pending)
    */
-  async updateApplication(id: string, data: any) {
+  async updateApplication(id: string, data: any, asStaff: boolean = false) {
     const { custom_id, companyName, contactName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents, entityType, cin, authorizedSignatoryName } = data;
     if (data.email !== undefined && !EMAIL_PATTERN.test(String(data.email).trim())) throw new HttpError(400, 'Enter a valid email address, for example name@company.in');
     assertApplicationFields(data ?? {}, true);
@@ -388,7 +388,8 @@ export const tplService = {
       .select('id, status, custom_id, pan_number, document_issues, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
     if (currentErr) throw new Error(`Failed to load 3PL partner: ${currentErr.message}`);
     if (!current) throw new HttpError(404, 'Application not found');
-    if (!['pending', 'rejected'].includes(current.status)) throw new HttpError(409, 'Only a pending or rejected application can be edited');
+    const allowedStatuses = asStaff ? ['pending', 'rejected', 'active', 'paused'] : ['pending', 'rejected', 'active'];
+    if (!allowedStatuses.includes(current.status)) throw new HttpError(409, 'Only a pending, rejected, or active application can be edited');
     const wasRejected = current.status === 'rejected';
     // A GSTIN carries the PAN: check it against the new PAN, or the one on record
     const gstProblem = gst !== undefined ? gstinError(gst, pan ?? current.pan_number) : undefined;
@@ -565,11 +566,13 @@ export const tplService = {
     }
 
     const updates = partner.pending_updates;
-    // The quick-onboard form (fleet_size set) defers PAN, GST, bank and documents to a self-service step
-    // after registering, so it writes a 'pending' partner with none of them - do not let a first-time
-    // approval activate a partner that never actually came back and completed that step. (Approving a
-    // pending_updates change on an already-active partner is a different, later action: not gated here.)
-    if (!updates) {
+    const isQuick = !!partner.fleet_size;
+    // Flow 1 (Self Onboard): Applicant enters complete business & compliance details upfront, so
+    // we validate that compliance fields and documents are completed before activation.
+    // Flow 2 (Quick Onboard): Applicant enters initial contact & fleet details; staff approves and
+    // connects with them, after which compliance details are completed by the partner or entered
+    // manually by staff console.
+    if (!updates && !isQuick) {
       const missing: string[] = [];
       if (!partner.pan_number) missing.push('PAN');
       if (!partner.gstin) missing.push('GSTIN');

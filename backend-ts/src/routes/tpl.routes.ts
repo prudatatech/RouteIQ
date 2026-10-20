@@ -293,17 +293,19 @@ router.put('/:id/flag-documents', requireAuth, requireRole('superadmin'), async 
   }
 });
 
-// PATCH /api/v1/tpl/:id  — staff, or the applicant proving ownership with the PAN
+// PATCH /api/v1/tpl/:id  — staff, or the applicant proving ownership with the PAN or user session
 router.patch('/:id', ...optionalOrgAuth, async (req, res) => {
   try {
     uuidParam(req.params.id, 'Application not found');
-    if (!(await actsAsPlatform(req))) {
+    const asStaff = await actsAsPlatform(req);
+    if (!asStaff) {
       const partner = await tplService.getPartner(req.params.id);
-      if (!(await panMatches(req, partner, req.body.verify_pan))) {
+      const isOwner = !!(req.user && partner.user_id && partner.user_id === req.user.user_id);
+      if (!isOwner && !(await panMatches(req, partner, req.body.verify_pan))) {
         throw new HttpError(403, 'PAN does not match this application');
       }
     }
-    const { warnings } = await tplService.updateApplication(req.params.id, req.body);
+    const { warnings } = await tplService.updateApplication(req.params.id, req.body, asStaff);
     res.json({ success: true, data: true, ...withWarnings({}, warnings) });
   } catch (error) {
     sendError(req, res, error, 'error');

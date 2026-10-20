@@ -39,6 +39,13 @@ import { ConfirmProvider } from '@/components/ui'
 interface PartnerOverrides {
   status?: string
   tpl_documents?: { id: string; doc_type: string; file_url: string }[]
+  fleet_size?: string | null
+  pan_number?: string | null
+  gstin?: string | null
+  bank_account_no?: string | null
+  bank_ifsc?: string | null
+  entity_type?: string | null
+  authorized_signatory_name?: string | null
 }
 
 function fixture(over: PartnerOverrides = {}) {
@@ -98,7 +105,7 @@ describe('TplPartnerDetailPage document upload', () => {
     expect(screen.getByText('GST Certificate')).toBeTruthy()
 
     const fileInputs = document.body.querySelectorAll('input[type="file"]')
-    expect(fileInputs.length).toBe(4)
+    expect(fileInputs.length).toBe(3)
     const file = new File(['dummy'], 'pan.pdf', { type: 'application/pdf' })
     fireEvent.change(fileInputs[0], { target: { files: [file] } })
 
@@ -196,5 +203,32 @@ describe('TplPartnerDetailPage history', () => {
     await screen.findByRole('heading', { name: /Acme Logistics/ })
     expect(api.getPartnerHistory).not.toHaveBeenCalled()
     expect(screen.queryByText('History')).toBeNull()
+  })
+})
+
+describe('TplPartnerDetailPage KYC editing', () => {
+  it('opens the Edit KYC modal and saves updated details', async () => {
+    api.getPartner.mockResolvedValue(fixture({ status: 'pending', fleet_size: 'single', pan_number: null, gstin: null }))
+    api.updateApplication.mockResolvedValue({ success: true, data: true })
+
+    show()
+    await screen.findByRole('heading', { name: /Acme Logistics/ })
+
+    expect(screen.getByText(/Quick Onboard — KYC Pending/)).toBeTruthy()
+    const editBtn = screen.getByRole('button', { name: /Edit KYC & Details/ })
+    fireEvent.click(editBtn)
+
+    expect(await screen.findByText(/Edit details: Acme Logistics/)).toBeTruthy()
+
+    const panInput = screen.getByLabelText('Company PAN')
+    fireEvent.change(panInput, { target: { value: 'ABCDE1234F' } })
+
+    const saveBtn = screen.getByRole('button', { name: /Save Details/ })
+    fireEvent.click(saveBtn)
+
+    await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1))
+    expect(api.updateApplication).toHaveBeenCalledWith('p1', expect.objectContaining({
+      pan: 'ABCDE1234F',
+    }))
   })
 })

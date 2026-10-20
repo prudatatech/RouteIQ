@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Building2 } from 'lucide-react'
+import { Building2, Edit } from 'lucide-react'
 import { Alert, Button, Card, CardHeader, IfscVerifiedHint, PageHeader, useConfirm } from '@/components/ui'
 import { tplAPI } from '@/services/api'
 import { CorridorEditor } from '@/components/tpl/CorridorEditor'
 import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
 import { corridorToFormRow, emptyCorridorRow, type CorridorFormRow } from '@/components/tpl/constants'
+import { EditTplPartnerModal } from '@/components/tpl/EditTplPartnerModal'
 import { errorMessage } from '@/utils/display'
 import { usePortal } from './portalContext'
 
@@ -19,6 +20,7 @@ export default function SettingsPage() {
   const { confirm } = useConfirm()
   const [form, setForm] = useState<SettingsForm | null>(null)
   const [saving, setSaving] = useState(false)
+  const [editKycOpen, setEditKycOpen] = useState(false)
 
   // Start from the request waiting for approval, else from the live terms
   useEffect(() => {
@@ -63,6 +65,8 @@ export default function SettingsPage() {
     }
   }
 
+  const isMissingKyc = !partner.pan_number || !partner.bank_account_no
+
   const details: [string, string | null | undefined][] = [
     ['PAN', partner.pan_number],
     ['GSTIN', partner.gstin],
@@ -76,8 +80,34 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <PageHeader title="Settings" description="Your company details, service terms and lanes." />
 
+      {isMissingKyc && (
+        <Alert
+          tone="warning"
+          title="Complete your KYC & Bank Details"
+          action={
+            <Button size="sm" onClick={() => setEditKycOpen(true)}>
+              Complete Details
+            </Button>
+          }
+        >
+          Your account is missing compliance details (PAN, GSTIN, and Bank Payout details). Please submit them to enable invoice settlement and load assignments.
+        </Alert>
+      )}
+
       <Card padded>
-        <h2 className="mb-4 flex items-center gap-2 text-sm font-medium text-text"><Building2 size={16} className="text-brand" /> Company details</h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-sm font-medium text-text">
+            <Building2 size={16} className="text-brand" /> Company details
+          </h2>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<Edit size={14} />}
+            onClick={() => setEditKycOpen(true)}
+          >
+            Edit KYC & Bank Details
+          </Button>
+        </div>
         <dl className="space-y-3 text-sm">
           {details.map(([label, value]) => (
             <div key={label} className="flex items-center justify-between gap-4">
@@ -87,8 +117,15 @@ export default function SettingsPage() {
           ))}
         </dl>
         {partner.bank_ifsc && <p className="mt-2 text-right"><IfscVerifiedHint verifiedAt={partner.bank_ifsc_verified_at} /></p>}
-        <p className="mt-4 text-xs text-muted">To change these, contact MargixIndia dispatch.</p>
       </Card>
+
+      <EditTplPartnerModal
+        open={editKycOpen}
+        onClose={() => setEditKycOpen(false)}
+        partner={partner}
+        onSaved={reload}
+        isPartnerPortal
+      />
 
       {form && (
         <Card padded>

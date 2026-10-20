@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react'
-import { Page, PageHeader, Card, Input, Button, Select, Alert, Stepper } from '@/components/ui'
+import { Page, PageHeader, Card, Input, Button, Select, Alert, Stepper, IfscField } from '@/components/ui'
 import { CheckCircle2, ChevronLeft, ChevronRight, Truck, Blocks } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
@@ -11,15 +11,40 @@ import { publicAPI, tplAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { loadAccount } from '@/services/account'
 import { errorMessage } from '@/utils/display'
+import { DocUploadField } from '@/components/kyc/DocUploadField'
+import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
+import { uploadTplDocument } from '@/services/tplDocuments'
+import { getKycDocumentUrl } from '@/services/kycDocuments'
+import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
+import { gstinError } from '@/utils/gstin'
+import { TPL_DOCUMENT_TYPES, TPL_MSME_OPTIONS } from '@/components/tpl/constants'
 
-const STEPS = [
+const QUICK_STEPS = [
   'Contact Details',
   'Fleet Details',
   'Review',
 ]
 
+const FULL_STEPS = [
+  'Contact Details',
+  'Fleet Details',
+  'Business & Identity',
+  'Bank Details',
+  'KYC Documents',
+  'Review',
+]
+
 const MIN_PASSWORD_LENGTH = 8
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
+const ACCOUNT_PATTERN = /^\d{9,18}$/
+const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/i
+
+function suggestCustomId(companyName: string): string {
+  const base = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 14) || 'partner'
+  const suffix = Math.floor(1000 + Math.random() * 9000)
+  return `${base}_${suffix}`.slice(0, 20)
+}
 
 function GoogleIcon() {
   return (
@@ -56,6 +81,24 @@ export default function TplOnboardingPage() {
   const [checkingEmail, setCheckingEmail] = useState(false)
   const [checkingMobile, setCheckingMobile] = useState(false)
   
+  // Flow mode: Quick Onboard (contact + fleet) vs Complete Self-Onboarding (PAN, GSTIN, Bank, KYC docs)
+  const [onboardingMode, setOnboardingMode] = useState<'quick' | 'full'>('quick')
+  const steps = onboardingMode === 'quick' ? QUICK_STEPS : FULL_STEPS
+
+  // Full onboarding fields
+  const [customId, setCustomId] = useState('')
+  const [pan, setPan] = useState('')
+  const [gst, setGst] = useState('')
+  const [entityType, setEntityType] = useState('')
+  const [cin, setCin] = useState('')
+  const [authorizedSignatoryName, setAuthorizedSignatoryName] = useState('')
+  const [msmeStatus, setMsmeStatus] = useState('Not Registered')
+  const [bankAccount, setBankAccount] = useState('')
+  const [bankIfsc, setBankIfsc] = useState('')
+  const [docUrls, setDocUrls] = useState<Record<string, string>>({})
+  const [uploadingDocType, setUploadingDocType] = useState<string | null>(null)
+  const [viewer, setViewer] = useState<{ url: string; name: string } | null>(null)
+
   // Step 2
   const [fleetSize, setFleetSize] = useState<'single' | 'multiple' | null>(null)
   const [truckType, setTruckType] = useState('')
@@ -68,6 +111,40 @@ export default function TplOnboardingPage() {
   const [createdPartnerId, setCreatedPartnerId] = useState<string | null>(null)
 
   const { data: vehicles } = useQuery({ queryKey: ['public', 'vehicle-classes'], queryFn: () => publicAPI.vehicleClasses() })
+
+  const uploadDoc = async (docType: string, file: File) => {
+    let targetCustomId = customId
+    if (!targetCustomId) {
+      targetCustomId = suggestCustomId(companyName)
+      setCustomId(targetCustomId)
+    }
+    setUploadingDocType(docType)
+    try {
+      const path = await uploadTplDocument(file, docType, { customId: targetCustomId })
+      setDocUrls(u => ({ ...u, [docType]: path }))
+      toast.success(`${docType} uploaded`)
+    } catch (err) {
+      toast.error(errorMessage(err, `Failed to upload ${docType}.`))
+    } finally {
+      setUploadingDocType(null)
+    }
+  }
+
+  const removeDoc = (docType: string) => {
+    setDocUrls(u => {
+      const next = { ...u }
+      delete next[docType]
+      return next
+    })
+  }
+
+  const openDocViewer = async (path: string, name: string) => {
+    try {
+      setViewer({ url: await getKycDocumentUrl(path), name })
+    } catch {
+      toast.error('Could not open document.')
+    }
+  }
 
   useEffect(() => {
     let isMounted = true
@@ -318,20 +395,77 @@ export default function TplOnboardingPage() {
       toast.error('Please select at least one truck.')
       return
     }
+
+    if (onboardingMode === 'full') {
+      if (step === 2) {
+        if (!entityType) {
+          toast.error('Please select an entity type.')
+          return
+        }
+        if (!authorizedSignatoryName.trim()) {
+          toast.error('Please enter the authorized signatory name.')
+          return
+        }
+        if (!pan.trim() || !PAN_PATTERN.test(pan.trim().toUpperCase())) {
+          toast.error('Please enter a valid PAN (e.g. ABCDE1234F).')
+          return
+        }
+        if (entityTypeRequiresCin(entityType) && (!cin.trim() || !isCinFormat(cin.trim().toUpperCase()))) {
+          toast.error('Please enter a valid 21-digit CIN.')
+          return
+        }
+        if (gst.trim()) {
+          const gstErr = gstinError(gst.trim().toUpperCase(), pan.trim().toUpperCase())
+          if (gstErr) {
+            toast.error(gstErr)
+            return
+          }
+        }
+      }
+      if (step === 3) {
+        if (!bankAccount.trim() || !ACCOUNT_PATTERN.test(bankAccount.trim())) {
+          toast.error('Please enter a valid 9 to 18 digit bank account number.')
+          return
+        }
+        if (!bankIfsc.trim() || !IFSC_PATTERN.test(bankIfsc.trim().toUpperCase())) {
+          toast.error('Please enter a valid 11-character IFSC code.')
+          return
+        }
+      }
+      if (step === 4) {
+        if (!docUrls['PAN Card']) {
+          toast.error('Please upload your PAN Card to proceed.')
+          return
+        }
+      }
+    }
     
-    if (step === STEPS.length - 1) {
+    if (step === steps.length - 1) {
       setIsSubmitting(true)
       try {
-        const res = await tplAPI.onboard({
-          companyName: companyName,
-          contactName: ownerName,
+        const payload: Record<string, unknown> = {
+          companyName: companyName.trim(),
+          contactName: ownerName.trim(),
           phone: mobile,
           email: email.trim() || session?.user?.email || '',
           operatingFrom: location,
           fleetSize,
           truckType: fleetSize === 'single' ? truckType : JSON.stringify(multipleTruckCounts),
-          user_id: session?.user?.id
-        })
+          user_id: session?.user?.id,
+        }
+        if (onboardingMode === 'full') {
+          payload.custom_id = customId || suggestCustomId(companyName)
+          payload.pan = pan.trim().toUpperCase()
+          payload.gst = gst.trim() ? gst.trim().toUpperCase() : undefined
+          payload.entityType = entityType
+          payload.cin = cin.trim() ? cin.trim().toUpperCase() : undefined
+          payload.authorizedSignatoryName = authorizedSignatoryName.trim()
+          payload.msmeStatus = msmeStatus
+          payload.bankAccount = bankAccount.trim()
+          payload.bankIfsc = bankIfsc.trim().toUpperCase()
+          payload.documents = Object.entries(docUrls).map(([type, url]) => ({ type, url }))
+        }
+        const res = await tplAPI.onboard(payload)
         toast.success('Successfully onboarded!')
         const partnerId = res?.partner?.id
         if (partnerId && session) {
@@ -370,7 +504,7 @@ export default function TplOnboardingPage() {
       }
       return
     }
-    setStep((s) => Math.min(STEPS.length - 1, s + 1))
+    setStep((s) => Math.min(steps.length - 1, s + 1))
   }
 
   const back = () => {
@@ -386,7 +520,6 @@ export default function TplOnboardingPage() {
     setUserLoading(false)
   }
 
-
   const selectedVehicle = vehicles?.find(v => v.key === truckType)
 
   if (submitted) {
@@ -398,7 +531,9 @@ export default function TplOnboardingPage() {
           </div>
           <h2 className="text-2xl font-semibold text-text">Application Submitted!</h2>
           <p className="text-muted">
-            Your truck details have been successfully registered.
+            {onboardingMode === 'full'
+              ? 'Your company, bank details, and KYC documents have been submitted for review.'
+              : 'Your truck details have been successfully registered.'}
           </p>
           <div className="p-4 bg-surface-subtle border border-border rounded-control">
             <p className="font-medium text-text">
@@ -418,7 +553,7 @@ export default function TplOnboardingPage() {
     <Page width="form" className="!space-y-4 py-8 overflow-hidden">
       <PageHeader
         title="Join Margix as a Truck Partner"
-        description="Register in under a minute. Tell us about your fleet, you can upload documents later."
+        description="Register in minutes. Choose fast lead onboarding or complete self-service verification."
         back={{ to: '/', label: 'Cancel and go home' }}
         actions={
           <button type="button" onClick={switchAccount} className="text-sm text-muted underline hover:text-text">
@@ -427,7 +562,7 @@ export default function TplOnboardingPage() {
         }
       />
 
-      <Stepper steps={STEPS} current={step} />
+      <Stepper steps={steps} current={step} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 relative">
         <div
@@ -438,16 +573,58 @@ export default function TplOnboardingPage() {
           key={step}
         >
           <Card padded className="min-h-[400px]">
-            <h2 className="text-lg font-semibold mb-6">{STEPS[step]}</h2>
+            <h2 className="text-lg font-semibold mb-6">{steps[step]}</h2>
             
             {step === 0 && (
               <div className="space-y-6">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => { setOnboardingMode('quick'); if (step > 2) setStep(2) }}
+                    className={clsx(
+                      'flex flex-col items-start p-4 text-left border rounded-control transition-all',
+                      onboardingMode === 'quick'
+                        ? 'border-brand bg-brand-fill/40 ring-1 ring-brand'
+                        : 'border-border bg-surface hover:border-text/40'
+                    )}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="font-semibold text-sm text-text">Quick Onboard (2 mins)</span>
+                      <span className="text-xs font-semibold uppercase px-2 py-0.5 rounded-full bg-brand-soft text-brand">Fastest</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted">
+                      Submit fleet & contact details. Our team connects to finalize onboarding.
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOnboardingMode('full')}
+                    className={clsx(
+                      'flex flex-col items-start p-4 text-left border rounded-control transition-all',
+                      onboardingMode === 'full'
+                        ? 'border-brand bg-brand-fill/40 ring-1 ring-brand'
+                        : 'border-border bg-surface hover:border-text/40'
+                    )}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="font-semibold text-sm text-text">Complete Self-Onboarding</span>
+                      <span className="text-xs font-semibold uppercase px-2 py-0.5 rounded-full bg-surface-subtle text-muted">Direct Approval</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted">
+                      Enter PAN, GST, bank details and upload KYC documents upfront.
+                    </p>
+                  </button>
+                </div>
+
                 <Input
                   label="Company name"
                   required
                   placeholder="Registered business name"
                   value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
+                  onChange={(e) => {
+                    setCompanyName(e.target.value)
+                    if (!customId) setCustomId(suggestCustomId(e.target.value))
+                  }}
                 />
                 <Input
                   label="Contact person"
@@ -462,7 +639,7 @@ export default function TplOnboardingPage() {
                   type="email"
                   autoComplete="email"
                   placeholder="you@company.com"
-                  hint={checkingEmail ? 'Checking…' : "This is where we'll send your application status and, once approved, your partner portal access."}
+                  hint={checkingEmail ? 'Checking…' : "This is where we'll send your application status and partner portal access."}
                   error={emailTakenError}
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); setEmailTakenError(null) }}
@@ -567,7 +744,114 @@ export default function TplOnboardingPage() {
               </div>
             )}
 
-            {step > 1 && (
+            {onboardingMode === 'full' && step === 2 && (
+              <div className="space-y-5">
+                <Select
+                  label="Entity Type"
+                  required
+                  value={entityType}
+                  onChange={e => setEntityType(e.target.value)}
+                >
+                  <option value="" disabled>Select entity type...</option>
+                  {ENTITY_TYPE_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </Select>
+
+                <Input
+                  label="Authorized Signatory Name"
+                  required
+                  placeholder="Full name of signatory"
+                  value={authorizedSignatoryName}
+                  onChange={e => setAuthorizedSignatoryName(e.target.value)}
+                />
+
+                <Input
+                  label="PAN Number"
+                  required
+                  placeholder="ABCDE1234F"
+                  value={pan}
+                  maxLength={10}
+                  onChange={e => setPan(e.target.value.toUpperCase())}
+                  className="font-mono"
+                />
+
+                <Input
+                  label="GSTIN (Optional)"
+                  placeholder="07ABCDE1234F1Z5"
+                  value={gst}
+                  maxLength={15}
+                  onChange={e => setGst(e.target.value.toUpperCase())}
+                  className="font-mono"
+                />
+
+                {entityTypeRequiresCin(entityType) && (
+                  <Input
+                    label="Corporate Identification Number (CIN)"
+                    required
+                    placeholder="U74999DL2019PTC123456"
+                    value={cin}
+                    maxLength={21}
+                    onChange={e => setCin(e.target.value.toUpperCase())}
+                    className="font-mono"
+                  />
+                )}
+
+                <Select
+                  label="MSME Registration"
+                  value={msmeStatus}
+                  onChange={e => setMsmeStatus(e.target.value)}
+                >
+                  {TPL_MSME_OPTIONS.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </Select>
+              </div>
+            )}
+
+            {onboardingMode === 'full' && step === 3 && (
+              <div className="space-y-5">
+                <Input
+                  label="Bank Account Number"
+                  required
+                  placeholder="9 to 18 digits"
+                  inputMode="numeric"
+                  value={bankAccount}
+                  onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
+                  className="font-mono"
+                />
+
+                <IfscField
+                  value={bankIfsc}
+                  onChange={setBankIfsc}
+                />
+              </div>
+            )}
+
+            {onboardingMode === 'full' && step === 4 && (
+              <div className="space-y-4">
+                <p className="text-xs text-muted">
+                  Upload clear scanned copies or photos (PDF, PNG, JPG up to 2MB).
+                </p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {TPL_DOCUMENT_TYPES.map(docType => (
+                    <DocUploadField
+                      key={docType}
+                      label={docType}
+                      path={docUrls[docType]}
+                      busy={uploadingDocType === docType}
+                      onUpload={file => uploadDoc(docType, file)}
+                      onRemove={() => removeDoc(docType)}
+                      onView={() => {
+                        if (docUrls[docType]) void openDocViewer(docUrls[docType], docType)
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {step === steps.length - 1 && (
               <div className="space-y-6">
                 <div className="p-6 bg-surface-subtle border border-border rounded-control space-y-4">
                   <h3 className="font-semibold text-text">Application Summary</h3>
@@ -593,6 +877,37 @@ export default function TplOnboardingPage() {
                       <span className="text-muted block mb-1">Operating from</span>
                       <span className="font-medium text-text">{location}</span>
                     </div>
+
+                    {onboardingMode === 'full' && (
+                      <>
+                        <div>
+                          <span className="text-muted block mb-1">Entity type</span>
+                          <span className="font-medium text-text">{entityType}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted block mb-1">PAN</span>
+                          <span className="font-medium font-mono text-text">{pan}</span>
+                        </div>
+                        {gst && (
+                          <div>
+                            <span className="text-muted block mb-1">GSTIN</span>
+                            <span className="font-medium font-mono text-text">{gst}</span>
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-muted block mb-1">Bank Account</span>
+                          <span className="font-medium font-mono text-text">{bankAccount ? `****${bankAccount.slice(-4)}` : '—'}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted block mb-1">IFSC</span>
+                          <span className="font-medium font-mono text-text">{bankIfsc}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted block mb-1">Uploaded Documents</span>
+                          <span className="font-medium text-text">{Object.keys(docUrls).join(', ') || 'None'}</span>
+                        </div>
+                      </>
+                    )}
                     
                     <div className="col-span-2 pt-4 border-t border-border">
                       <span className="text-muted block mb-3">Selected Trucks</span>
@@ -614,8 +929,9 @@ export default function TplOnboardingPage() {
                 </div>
                 
                 <p className="text-sm text-muted text-center">
-                  Review your details above, then submit. You can add PAN, GST and other documents from
-                  your partner portal once your application is approved.
+                  {onboardingMode === 'full'
+                    ? 'Review your details above, then submit. Once verified by dispatch, you will be directly activated.'
+                    : 'Review your details above, then submit. You can complete PAN, GST and bank details anytime from your partner portal.'}
                 </p>
               </div>
             )}
@@ -627,7 +943,7 @@ export default function TplOnboardingPage() {
             <h3 className="text-sm font-semibold text-white">What happens after you apply</h3>
             <ol className="mt-4 space-y-4">
               {[
-                ['Submit your application', 'Takes under a minute — you can add documents later.'],
+                ['Submit your application', onboardingMode === 'full' ? 'Complete verification documents submitted.' : 'Takes under a minute — add documents later.'],
                 ['Our team reviews it', 'Usually within one business day.'],
                 ["You're in", "We'll email you, and you can start getting load offers."],
               ].map(([title, body], i) => (
@@ -669,12 +985,21 @@ export default function TplOnboardingPage() {
           <Button variant="secondary" onClick={back} disabled={step === 0} icon={<ChevronLeft size={16} />}>
             Back
           </Button>
-          <Button onClick={next} disabled={isSubmitting} variant={step === STEPS.length - 1 ? 'primary' : 'secondary'}>
-            {step === STEPS.length - 1 ? (isSubmitting ? 'Submitting...' : 'Submit') : 'Next'}
-            {step !== STEPS.length - 1 && <ChevronRight size={16} className="ml-1" />}
+          <Button onClick={next} disabled={isSubmitting} variant={step === steps.length - 1 ? 'primary' : 'secondary'}>
+            {step === steps.length - 1 ? (isSubmitting ? 'Submitting...' : 'Submit Application') : 'Next'}
+            {step !== steps.length - 1 && <ChevronRight size={16} className="ml-1" />}
           </Button>
         </div>
       </Card>
+
+      {viewer && (
+        <DocumentViewerModal
+          isOpen={!!viewer}
+          onClose={() => setViewer(null)}
+          fileUrl={viewer.url}
+          fileName={viewer.name}
+        />
+      )}
       
       <style>{`
         @keyframes slideInRight {

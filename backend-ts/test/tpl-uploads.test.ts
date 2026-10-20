@@ -267,7 +267,7 @@ describe('attaching uploaded documents', () => {
     });
   });
 
-  it('refuses to edit an application that is neither pending nor rejected', async () => {
+  it('lets staff edit an active or paused application, not just pending/rejected', async () => {
     supabaseMock.reset({
       users: [{ id: 'partner-user', role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
       vendor_profiles: [],
@@ -276,10 +276,28 @@ describe('attaching uploaded documents', () => {
       tpl_corridors: [],
     });
     // Staff auth, not verify_pan: the PAN check has its own rate limit, already exercised above in this file.
-    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`)
-      .set('Authorization', `Bearer ${supabaseMock.signUserToken('super-1')}`)
-      .send({ companyName: 'Acme' });
-    expect(res.status).toBe(409);
+    const patch = (body: Record<string, unknown>) => request(app).patch(`/api/v1/tpl/${PARTNER.id}`)
+      .set('Authorization', `Bearer ${supabaseMock.signUserToken('super-1')}`).send(body);
+    expect((await patch({ companyName: 'Acme Renamed' })).status).toBe(200);
+
+    supabaseMock.rows('tpl_partners')[0].status = 'paused';
+    expect((await patch({ companyName: 'Acme' })).status).toBe(200);
+  });
+
+  it('lets the applicant\'s own session edit their active application, but not once it is paused', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'partner-user', role: 'vendor', is_active: true }],
+      vendor_profiles: [],
+      tpl_partners: [{ ...PARTNER, status: 'active' }],
+      tpl_documents: [],
+      tpl_corridors: [],
+    });
+    const patch = (body: Record<string, unknown>) => request(app).patch(`/api/v1/tpl/${PARTNER.id}`)
+      .set('Authorization', `Bearer ${supabaseMock.signUserToken('partner-user')}`).send(body);
+    expect((await patch({ companyName: 'Acme Renamed' })).status).toBe(200);
+
+    supabaseMock.rows('tpl_partners')[0].status = 'paused';
+    expect((await patch({ companyName: 'Acme' })).status).toBe(409);
   });
 });
 

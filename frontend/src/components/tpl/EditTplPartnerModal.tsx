@@ -1,0 +1,302 @@
+import { useState, useEffect } from 'react'
+import toast from 'react-hot-toast'
+import { Modal, Button, Input, Select, IfscField } from '@/components/ui'
+import { tplAPI } from '@/services/api'
+import { errorMessage } from '@/utils/display'
+import { gstinError } from '@/utils/gstin'
+import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
+import { TPL_MSME_OPTIONS, SLA_COMMITMENT_OPTIONS, TAX_TREATMENT_OPTIONS } from './constants'
+
+const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
+const ACCOUNT_PATTERN = /^\d{9,18}$/
+const CUSTOM_ID_PATTERN = /^[a-z0-9_]{5,20}$/
+
+interface PartnerLike {
+  id: string
+  company_name: string
+  contact_name?: string | null
+  phone?: string | null
+  custom_id?: string | null
+  pan_number?: string | null
+  gstin?: string | null
+  entity_type?: string | null
+  cin?: string | null
+  authorized_signatory_name?: string | null
+  msme_status?: string | null
+  bank_account_no?: string | null
+  bank_ifsc?: string | null
+  bank_name?: string | null
+  bank_branch?: string | null
+  sla_commitment?: string | null
+  tax_treatment?: string | null
+}
+
+const MSME_OPTIONS = TPL_MSME_OPTIONS.map(v => ({ value: v, label: v }))
+const SLA_OPTIONS = SLA_COMMITMENT_OPTIONS.map(v => ({ value: v, label: v }))
+const TAX_OPTIONS = TAX_TREATMENT_OPTIONS.map(v => ({ value: v, label: v }))
+
+export function EditTplPartnerModal({
+  open,
+  onClose,
+  partner,
+  onSaved,
+  isPartnerPortal = false,
+}: {
+  open: boolean
+  onClose: () => void
+  partner: PartnerLike
+  onSaved: () => void
+  isPartnerPortal?: boolean
+}) {
+  const [companyName, setCompanyName] = useState(partner.company_name || '')
+  const [contactName, setContactName] = useState(partner.contact_name || '')
+  const [phone, setPhone] = useState(partner.phone || '')
+  const [customId, setCustomId] = useState(partner.custom_id || '')
+  const [pan, setPan] = useState(partner.pan_number || '')
+  const [gst, setGst] = useState(partner.gstin || '')
+  const [entityType, setEntityType] = useState(partner.entity_type || '')
+  const [cin, setCin] = useState(partner.cin || '')
+  const [authorizedSignatoryName, setAuthorizedSignatoryName] = useState(partner.authorized_signatory_name || '')
+  const [msmeStatus, setMsmeStatus] = useState(partner.msme_status || 'Not Registered')
+  const [bankAccount, setBankAccount] = useState(partner.bank_account_no || '')
+  const [bankIfsc, setBankIfsc] = useState(partner.bank_ifsc || '')
+  const [slaCommitment, setSlaCommitment] = useState(partner.sla_commitment || '2 Hours')
+  const [taxTreatment, setTaxTreatment] = useState(partner.tax_treatment || '12% GTA (With ITC) - Forward Charge')
+
+  const [saving, setSaving] = useState(false)
+  const [attempted, setAttempted] = useState(false)
+
+  // Reset fields when partner or open status changes
+  useEffect(() => {
+    if (open) {
+      setCompanyName(partner.company_name || '')
+      setContactName(partner.contact_name || '')
+      setPhone(partner.phone || '')
+      setCustomId(partner.custom_id || '')
+      setPan(partner.pan_number || '')
+      setGst(partner.gstin || '')
+      setEntityType(partner.entity_type || '')
+      setCin(partner.cin || '')
+      setAuthorizedSignatoryName(partner.authorized_signatory_name || '')
+      setMsmeStatus(partner.msme_status || 'Not Registered')
+      setBankAccount(partner.bank_account_no || '')
+      setBankIfsc(partner.bank_ifsc || '')
+      setSlaCommitment(partner.sla_commitment || '2 Hours')
+      setTaxTreatment(partner.tax_treatment || '12% GTA (With ITC) - Forward Charge')
+      setAttempted(false)
+    }
+  }, [open, partner])
+
+  const requiresCin = entityTypeRequiresCin(entityType)
+
+  const errors: Record<string, string> = {}
+  if (!companyName.trim()) errors.companyName = 'Company name is required'
+  if (!contactName.trim()) errors.contactName = 'Contact person is required'
+  if (pan.trim() && !PAN_PATTERN.test(pan.trim().toUpperCase())) {
+    errors.pan = 'PAN looks incorrect (e.g. ABCDE1234F)'
+  }
+  if (gst.trim()) {
+    const err = gstinError(gst.trim().toUpperCase(), pan.trim().toUpperCase() || undefined)
+    if (err) errors.gst = err
+  }
+  if (requiresCin && cin.trim() && !isCinFormat(cin.trim().toUpperCase())) {
+    errors.cin = 'CIN must be 21 letters/digits (e.g. U74999DL2019PTC123456)'
+  }
+  if (bankAccount.trim() && !ACCOUNT_PATTERN.test(bankAccount.trim())) {
+    errors.bankAccount = 'Account number must be 9 to 18 digits'
+  }
+  if (customId.trim() && !CUSTOM_ID_PATTERN.test(customId.trim())) {
+    errors.customId = '3PL ID must be 5-20 lowercase letters, numbers or underscores'
+  }
+
+  const err = (key: string) => (attempted ? errors[key] : undefined)
+
+  const handleSave = async (e?: React.FormEvent) => {
+    e?.preventDefault?.()
+    setAttempted(true)
+    if (Object.keys(errors).length > 0) {
+      toast.error('Please fix the errors before saving.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const payload: Record<string, unknown> = {
+        companyName: companyName.trim(),
+        contactName: contactName.trim(),
+        phone: phone.trim() || undefined,
+        pan: pan.trim() ? pan.trim().toUpperCase() : null,
+        gst: gst.trim() ? gst.trim().toUpperCase() : null,
+        entityType: entityType || null,
+        cin: cin.trim() ? cin.trim().toUpperCase() : null,
+        authorizedSignatoryName: authorizedSignatoryName.trim() || null,
+        msmeStatus,
+        bankAccount: bankAccount.trim() || null,
+        bankIfsc: bankIfsc.trim() ? bankIfsc.trim().toUpperCase() : null,
+      }
+      if (!isPartnerPortal) {
+        payload.custom_id = customId.trim() || undefined
+        payload.slaCommitment = slaCommitment
+        payload.taxTreatment = taxTreatment
+      }
+      await tplAPI.updateApplication(partner.id, payload)
+      toast.success(isPartnerPortal ? 'KYC details submitted' : 'Partner details updated')
+      onSaved()
+      onClose()
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, 'Failed to update partner details.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="lg"
+      title={isPartnerPortal ? 'Complete KYC & Bank Details' : `Edit details: ${partner.company_name}`}
+      description={
+        isPartnerPortal
+          ? 'Enter your company PAN, GST, and bank account for verification and payouts.'
+          : 'Update compliance, identity, bank, and operational details for this partner.'
+      }
+      onSubmit={handleSave}
+      footer={(
+        <>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="submit" loading={saving}>
+            Save Details
+          </Button>
+        </>
+      )}
+    >
+      <div className="space-y-6">
+        <div>
+          <h3 className="mb-3 text-xs font-semibold uppercase text-muted">Legal & Identity</h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Company PAN"
+              value={pan}
+              onChange={e => setPan(e.target.value.toUpperCase().slice(0, 10))}
+              placeholder="ABCDE1234F"
+              maxLength={10}
+              className="font-mono"
+              error={err('pan')}
+            />
+            <Input
+              label="GSTIN"
+              value={gst}
+              onChange={e => setGst(e.target.value.toUpperCase().slice(0, 15))}
+              placeholder="07ABCDE1234F1Z5"
+              maxLength={15}
+              className="font-mono"
+              error={err('gst')}
+            />
+            <Select
+              label="Entity Type"
+              value={entityType}
+              onChange={e => setEntityType(e.target.value)}
+              options={ENTITY_TYPE_OPTIONS}
+              placeholder="Select entity type"
+            />
+            <Input
+              label="Authorized Signatory Name"
+              value={authorizedSignatoryName}
+              onChange={e => setAuthorizedSignatoryName(e.target.value)}
+              placeholder="Signatory full name"
+            />
+            {requiresCin && (
+              <Input
+                label="CIN"
+                value={cin}
+                onChange={e => setCin(e.target.value.toUpperCase().slice(0, 21))}
+                placeholder="U74999DL2019PTC123456"
+                maxLength={21}
+                className="font-mono"
+                error={err('cin')}
+              />
+            )}
+            <Select
+              label="MSME Registration"
+              value={msmeStatus}
+              onChange={e => setMsmeStatus(e.target.value)}
+              options={MSME_OPTIONS}
+            />
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <h3 className="mb-3 text-xs font-semibold uppercase text-muted">Bank Details</h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Bank Account Number"
+              value={bankAccount}
+              onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
+              placeholder="9 to 18 digits"
+              inputMode="numeric"
+              className="font-mono"
+              error={err('bankAccount')}
+            />
+            <IfscField
+              value={bankIfsc}
+              onChange={setBankIfsc}
+            />
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <h3 className="mb-3 text-xs font-semibold uppercase text-muted">Company & Operations</h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Company Name"
+              required
+              value={companyName}
+              onChange={e => setCompanyName(e.target.value)}
+              error={err('companyName')}
+            />
+            <Input
+              label="Contact Person"
+              required
+              value={contactName}
+              onChange={e => setContactName(e.target.value)}
+              error={err('contactName')}
+            />
+            <Input
+              label="Phone Number"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              placeholder="+91..."
+            />
+            {!isPartnerPortal && (
+              <>
+                <Input
+                  label="3PL ID"
+                  value={customId}
+                  onChange={e => setCustomId(e.target.value.toLowerCase().slice(0, 20))}
+                  placeholder="e.g. nilons_1234"
+                  className="font-mono"
+                  error={err('customId')}
+                />
+                <Select
+                  label="SLA Commitment"
+                  value={slaCommitment}
+                  onChange={e => setSlaCommitment(e.target.value)}
+                  options={SLA_OPTIONS}
+                />
+                <Select
+                  label="GTA Tax Treatment"
+                  value={taxTreatment}
+                  onChange={e => setTaxTreatment(e.target.value)}
+                  options={TAX_OPTIONS}
+                />
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
