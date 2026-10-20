@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -257,6 +257,24 @@ export default function LandingPage() {
     window.scrollTo(0, 0)
   }, [])
 
+  const mobileMenuPanel = useRef<HTMLDivElement>(null)
+  const mobileMenuToggle = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileMenuOpen(false) }
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (mobileMenuPanel.current?.contains(target) || mobileMenuToggle.current?.contains(target)) return
+      setMobileMenuOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onPointerDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onPointerDown)
+    }
+  }, [mobileMenuOpen])
+
   const handleQuickTrack = (e: FormEvent) => {
     e.preventDefault()
     if (quickTrackId.trim()) {
@@ -324,10 +342,12 @@ export default function LandingPage() {
 
             {/* Mobile menu button */}
             <button
+              ref={mobileMenuToggle}
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="md:hidden flex h-9 w-9 items-center justify-center rounded-control text-white/80 hover:text-white hover:bg-white/10"
               aria-label="Toggle navigation"
+              aria-expanded={mobileMenuOpen}
             >
               {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
@@ -336,7 +356,7 @@ export default function LandingPage() {
 
         {/* Mobile menu dropdown */}
         {mobileMenuOpen && (
-          <div className="md:hidden border-t border-white/10 bg-[#121216] px-4 py-5 space-y-4 animate-fade-in text-sm">
+          <div ref={mobileMenuPanel} className="md:hidden border-t border-white/10 bg-[#121216] px-4 py-5 space-y-4 animate-fade-in text-sm">
             <div className="flex flex-col gap-2.5 text-white/80 font-medium">
               <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 rounded-control hover:bg-white/5 hover:text-white">How it works</a>
               <a href="#calculator" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 rounded-control hover:bg-white/5 hover:text-white">Rate Estimator</a>

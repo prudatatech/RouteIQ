@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { LogIn, LogOut, Menu, X } from 'lucide-react'
@@ -100,12 +100,24 @@ export default function VendorLayout() {
     return () => { cancelled = true }
   }, [vendorProfile?.company_logo])
 
+  const menuPanel = useRef<HTMLDivElement>(null)
+  const menuToggle = useRef<HTMLButtonElement>(null)
+
   useEffect(() => { setMenuOpen(false) }, [location.pathname])
   useEffect(() => {
     if (!menuOpen) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (menuPanel.current?.contains(target) || menuToggle.current?.contains(target)) return
+      setMenuOpen(false)
+    }
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onPointerDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onPointerDown)
+    }
   }, [menuOpen])
 
   const signOut = async () => {
@@ -189,6 +201,7 @@ export default function VendorLayout() {
           <div className="flex items-center gap-1 lg:hidden">
             {isVendor && <NotificationsBell placement="right" />}
             <IconButton
+              ref={menuToggle}
               label={menuOpen ? 'Close menu' : 'Open menu'}
               icon={menuOpen ? <X size={20} /> : <Menu size={20} />}
               aria-expanded={menuOpen}
@@ -197,7 +210,7 @@ export default function VendorLayout() {
           </div>
         </div>
         {menuOpen && (
-          <div className="border-t border-border bg-surface px-4 py-3 lg:hidden">
+          <div ref={menuPanel} className="border-t border-border bg-surface px-4 py-3 lg:hidden">
             <nav aria-label="Vendor" className="flex flex-col gap-1">{navLinks(true)}</nav>
             <div className="mt-3 border-t border-border pt-3">{account(true)}</div>
           </div>
