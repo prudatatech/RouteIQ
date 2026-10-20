@@ -125,7 +125,7 @@ export default function CustomerTrackingPage() {
               Real-time highway tracking powered by connected on-board GPS, electronic proof of delivery (EPOD), and automated traffic-aware arrival countdowns.
             </p>
 
-            {/* High Impact Search Input */}
+            {/* Ultra-Modern Search Console Pill */}
             <form
               onSubmit={e => {
                 e.preventDefault()
@@ -133,42 +133,43 @@ export default function CustomerTrackingPage() {
               }}
               className="pt-2"
             >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="relative flex-1">
+              <div className="group relative flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-0 rounded-2xl sm:rounded-full border border-border-strong sm:border-border bg-surface p-1.5 shadow-raised transition-all duration-200 focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/15 hover:border-border-strong">
+                <div className="relative flex flex-1 items-center min-w-0 pl-3.5 sm:pl-4 pr-2">
                   <Search
-                    size={20}
+                    size={22}
                     aria-hidden="true"
-                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted"
+                    className="pointer-events-none text-muted transition-colors group-focus-within:text-brand shrink-0"
                   />
                   <input
                     type="text"
                     value={searchId}
                     onChange={e => setSearchId(e.target.value)}
-                    placeholder="Enter Tracking ID (e.g. RTX-1A2B3C4D or CM-LOAD78)"
+                    placeholder="Enter Tracking ID (e.g. RTX-MUM-BLR-01 or CM-LOAD-7824)"
                     autoCapitalize="characters"
                     autoComplete="off"
                     spellCheck={false}
                     aria-label="Tracking ID"
-                    className="h-13 w-full rounded-2xl border-2 border-border-strong bg-surface pl-12 pr-10 text-base font-mono font-bold uppercase tracking-wider text-text placeholder:font-sans placeholder:font-normal placeholder:normal-case placeholder:text-placeholder shadow-xs transition-all focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/20 sm:text-sm"
+                    className="w-full bg-transparent px-3 py-3 sm:py-3.5 text-base font-semibold tracking-wide text-text placeholder:text-muted/65 placeholder:font-normal placeholder:tracking-normal focus:outline-none"
                   />
                   {searchId && (
                     <button
                       type="button"
                       onClick={() => setSearchId('')}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted hover:bg-surface-subtle hover:text-text transition-colors"
-                      aria-label="Clear search"
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-surface-subtle hover:text-text transition-colors"
+                      aria-label="Clear tracking search"
                     >
                       <X size={16} />
                     </button>
                   )}
                 </div>
+
                 <Button
                   type="submit"
                   size="lg"
                   disabled={!searchId.trim()}
-                  className="h-13 px-8 text-base font-extrabold tracking-wide justify-center shrink-0 rounded-2xl shadow-raised hover:scale-[1.02] active:scale-[0.98] transition-all"
+                  className="h-12 px-7 text-sm font-bold tracking-wide justify-center shrink-0 rounded-xl sm:rounded-full shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99]"
                 >
-                  Track Consignment <ArrowRight size={18} className="ml-2" />
+                  Track Consignment <ArrowRight size={16} className="ml-1.5" />
                 </Button>
               </div>
             </form>

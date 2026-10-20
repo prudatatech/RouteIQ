@@ -446,21 +446,36 @@ export default function LandingPage() {
                 </div>
 
                 {/* Quick Consignment Search Input */}
-                <div className="pt-3 max-w-md">
-                  <form onSubmit={handleQuickTrack} className="flex items-center gap-2 rounded-control bg-white/5 border border-white/15 p-1.5 backdrop-blur-md shadow-xs focus-within:border-brand-fill focus-within:ring-2 focus-within:ring-brand-fill/20 transition-all">
-                    <Search size={16} className="text-white/50 ml-2.5 shrink-0" />
+                <div className="pt-3 max-w-lg">
+                  <form onSubmit={handleQuickTrack} className="group flex items-center rounded-2xl bg-white/10 border border-white/20 p-1.5 backdrop-blur-md shadow-lg transition-all focus-within:border-brand-fill focus-within:ring-4 focus-within:ring-brand-fill/25 hover:border-white/30">
+                    <Search size={18} className="text-white/60 ml-3 shrink-0 group-focus-within:text-brand-fill transition-colors" />
                     <input
                       type="text"
                       value={quickTrackId}
                       onChange={e => setQuickTrackId(e.target.value)}
-                      placeholder="Enter Tracking ID (e.g. TRK-98124)"
-                      className="bg-transparent border-0 text-xs sm:text-sm text-white placeholder-white/40 focus:outline-none flex-1 font-mono uppercase px-1"
+                      placeholder="Enter Tracking ID (e.g. RTX-MUM-BLR-01)"
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                      spellCheck={false}
+                      aria-label="Tracking ID"
+                      className="bg-transparent border-0 text-sm font-semibold tracking-wide text-white placeholder:text-white/50 placeholder:font-normal placeholder:tracking-normal focus:outline-none flex-1 px-3 py-2"
                     />
+                    {quickTrackId && (
+                      <button
+                        type="button"
+                        onClick={() => setQuickTrackId('')}
+                        className="p-1 rounded-full text-white/50 hover:text-white hover:bg-white/10 transition-colors mr-1 cursor-pointer"
+                        aria-label="Clear tracking input"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
                     <button
                       type="submit"
-                      className="px-3 py-1.5 rounded-control text-xs font-bold text-white bg-white/15 hover:bg-brand-fill hover:text-on-brand transition-colors shrink-0 cursor-pointer"
+                      disabled={!quickTrackId.trim()}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-on-brand bg-brand-fill hover:bg-brand-fill-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs shrink-0 cursor-pointer flex items-center gap-1.5"
                     >
-                      Track
+                      Track <ArrowRight size={13} />
                     </button>
                   </form>
                 </div>
