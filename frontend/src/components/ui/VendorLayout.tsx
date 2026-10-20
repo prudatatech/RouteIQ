@@ -187,18 +187,18 @@ export default function VendorLayout() {
       <header className="sticky top-0 z-40 border-b border-border bg-surface">
         <div className="mx-auto flex h-16 max-w-content items-center justify-between gap-4 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-4 xl:gap-6">
-            <NavLink to={session ? '/vendor/loads' : '/vendor/request'} className="flex items-center gap-2.5">
-              <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
-              <span className="text-lg font-semibold text-text">MargixIndia</span>
-              <span className="hidden text-sm text-muted xl:inline">for vendors</span>
+            <NavLink to={session ? '/vendor/loads' : '/vendor/request'} className="flex shrink-0 items-center gap-2.5">
+              <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain shrink-0" />
+              <span className="text-lg font-semibold text-text whitespace-nowrap">MargixIndia</span>
+              <span className="hidden text-sm text-muted xl:inline whitespace-nowrap">for vendors</span>
             </NavLink>
-            <nav aria-label="Vendor" className="hidden items-center gap-1 lg:flex">{navLinks(false)}</nav>
+            <nav aria-label="Vendor" className="hidden items-center gap-1 lg:flex shrink-0">{navLinks(false)}</nav>
           </div>
-          <div className="hidden items-center gap-3 lg:flex">
+          <div className="hidden shrink-0 items-center gap-3 lg:flex">
             {isVendor && <NotificationsBell placement="right" />}
             {account(false)}
           </div>
-          <div className="flex items-center gap-1 lg:hidden">
+          <div className="flex shrink-0 items-center gap-1 lg:hidden">
             {isVendor && <NotificationsBell placement="right" />}
             <IconButton
               ref={menuToggle}

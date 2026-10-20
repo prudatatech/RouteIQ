@@ -298,44 +298,44 @@ export default function LandingPage() {
       {/* Top Navbar */}
       <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0e0e11]/90 backdrop-blur-md transition-all">
         <div className="mx-auto flex h-16 max-w-content items-center justify-between gap-4 px-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <Link to="/" className="flex min-w-0 items-center gap-2.5 rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-fill">
+          <div className="flex shrink-0 items-center gap-3">
+            <Link to="/" className="flex shrink-0 min-w-0 items-center gap-2.5 rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-fill">
               <img src="/margix-logo.png" alt="Margix" className="h-8 w-8 shrink-0 object-contain" />
-              <span className="text-lg font-bold tracking-tight text-white">
+              <span className="text-lg font-bold tracking-tight text-white whitespace-nowrap">
                 Margix<span className="text-brand-fill">India</span>
               </span>
             </Link>
-            <span className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-white/70">
+            <span className="hidden 2xl:inline-flex shrink-0 items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-white/70">
               <Truck size={12} className="text-brand-fill" /> Freight Operating System
             </span>
           </div>
 
-          <nav aria-label="Main" className="hidden md:flex items-center gap-6 text-sm font-medium text-white/75">
-            <a href="#how-it-works" className="hover:text-white transition-colors">How it works</a>
-            <a href="#calculator" className="hover:text-white transition-colors">Rate Estimator</a>
-            <a href="#audiences" className="hover:text-white transition-colors">Solutions</a>
-            <a href="#network" className="hover:text-white transition-colors">Corridors</a>
-            <a href="#features" className="hover:text-white transition-colors">Console Features</a>
-            <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
+          <nav aria-label="Main" className="hidden xl:flex items-center gap-5 2xl:gap-7 text-sm font-medium text-white/75 shrink-0">
+            <a href="#how-it-works" className="hover:text-white transition-colors whitespace-nowrap">How it works</a>
+            <a href="#calculator" className="hover:text-white transition-colors whitespace-nowrap">Rate Estimator</a>
+            <a href="#audiences" className="hover:text-white transition-colors whitespace-nowrap">Solutions</a>
+            <a href="#network" className="hover:text-white transition-colors whitespace-nowrap">Corridors</a>
+            <a href="#features" className="hover:text-white transition-colors whitespace-nowrap">Console Features</a>
+            <a href="#faq" className="hover:text-white transition-colors whitespace-nowrap">FAQ</a>
           </nav>
 
-          <div className="flex items-center gap-3">
-            <a href="tel:+9102248901234" className="hidden lg:flex items-center gap-1.5 text-xs text-white/60 hover:text-white transition-colors">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <a href="tel:+9102248901234" className="hidden 2xl:flex shrink-0 items-center gap-1.5 text-xs text-white/60 hover:text-white transition-colors">
               <Phone size={13} className="text-brand-fill" /> +91 (022) 4890-1234
             </a>
-            <div className="hidden lg:block h-4 w-px bg-white/15" />
-            <Link to="/track" className="hidden sm:inline-flex text-xs font-semibold text-white/80 hover:text-white transition-colors px-2.5 py-1.5 rounded-control">
+            <div className="hidden 2xl:block shrink-0 h-4 w-px bg-white/15" />
+            <Link to="/track" className="hidden md:inline-flex shrink-0 text-xs font-semibold text-white/80 hover:text-white transition-colors px-2.5 py-1.5 rounded-control whitespace-nowrap">
               Track a shipment
             </Link>
             <Link
               to="/login"
-              className="px-3.5 py-1.5 rounded-control text-xs font-semibold text-white bg-white/10 hover:bg-white/15 border border-white/15 transition-all"
+              className="shrink-0 px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-control text-xs font-semibold text-white bg-white/10 hover:bg-white/15 border border-white/15 transition-all whitespace-nowrap"
             >
               Sign in
             </Link>
             <Link
               to="/vendor/request"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-control text-xs font-bold text-on-brand bg-brand-fill hover:bg-brand-fill-hover shadow-xs transition-all"
+              className="hidden sm:inline-flex shrink-0 items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-control text-xs font-bold text-on-brand bg-brand-fill hover:bg-brand-fill-hover shadow-xs transition-all whitespace-nowrap"
             >
               Post a load <ArrowRight size={13} />
             </Link>
@@ -345,7 +345,7 @@ export default function LandingPage() {
               ref={mobileMenuToggle}
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden flex h-9 w-9 items-center justify-center rounded-control text-white/80 hover:text-white hover:bg-white/10"
+              className="xl:hidden flex shrink-0 h-9 w-9 items-center justify-center rounded-control text-white/80 hover:text-white hover:bg-white/10 transition-colors"
               aria-label="Toggle navigation"
               aria-expanded={mobileMenuOpen}
             >
@@ -354,28 +354,41 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Mobile menu dropdown */}
+        {/* Mobile menu dropdown & backdrop */}
         {mobileMenuOpen && (
-          <div ref={mobileMenuPanel} className="md:hidden border-t border-white/10 bg-[#121216] px-4 py-5 space-y-4 animate-fade-in text-sm">
-            <div className="flex flex-col gap-2.5 text-white/80 font-medium">
-              <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 rounded-control hover:bg-white/5 hover:text-white">How it works</a>
-              <a href="#calculator" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 rounded-control hover:bg-white/5 hover:text-white">Rate Estimator</a>
-              <a href="#audiences" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 rounded-control hover:bg-white/5 hover:text-white">Solutions &amp; Roles</a>
-              <a href="#network" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 rounded-control hover:bg-white/5 hover:text-white">Corridors</a>
-              <a href="#features" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 rounded-control hover:bg-white/5 hover:text-white">Console Features</a>
-              <a href="#faq" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 rounded-control hover:bg-white/5 hover:text-white">FAQ</a>
-              <Link to="/3pl/onboard" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 rounded-control hover:bg-white/5 hover:text-white">3PL Carrier Program</Link>
-              <Link to="/track" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 rounded-control hover:bg-white/5 hover:text-white">Track a shipment</Link>
+          <>
+            <div
+              className="fixed inset-0 top-16 z-40 bg-black/60 backdrop-blur-xs xl:hidden animate-fade-in"
+              onClick={() => setMobileMenuOpen(false)}
+              aria-hidden="true"
+            />
+            <div
+              ref={mobileMenuPanel}
+              className="relative z-50 xl:hidden border-t border-white/10 bg-[#121216]/98 backdrop-blur-xl px-4 py-5 space-y-4 animate-fade-in text-sm shadow-2xl max-h-[calc(100dvh-4.5rem)] overflow-y-auto"
+            >
+              <div className="flex flex-col gap-1 text-white/85 font-medium">
+                <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 rounded-control hover:bg-white/10 hover:text-white transition-colors">How it works</a>
+                <a href="#calculator" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 rounded-control hover:bg-white/10 hover:text-white transition-colors">Rate Estimator</a>
+                <a href="#audiences" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 rounded-control hover:bg-white/10 hover:text-white transition-colors">Solutions &amp; Roles</a>
+                <a href="#network" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 rounded-control hover:bg-white/10 hover:text-white transition-colors">Corridors</a>
+                <a href="#features" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 rounded-control hover:bg-white/10 hover:text-white transition-colors">Console Features</a>
+                <a href="#faq" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 rounded-control hover:bg-white/10 hover:text-white transition-colors">FAQ</a>
+                <Link to="/3pl/onboard" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 rounded-control hover:bg-white/10 hover:text-white transition-colors">3PL Carrier Program</Link>
+                <Link to="/track" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 rounded-control hover:bg-white/10 hover:text-white transition-colors">Track a shipment</Link>
+              </div>
+              <div className="pt-3 border-t border-white/10 flex flex-col gap-2.5">
+                <a href="tel:+9102248901234" className="flex items-center gap-2 px-3 py-1.5 text-xs text-white/60 hover:text-white transition-colors">
+                  <Phone size={13} className="text-brand-fill" /> +91 (022) 4890-1234
+                </a>
+                <Link to="/vendor/request" onClick={() => setMobileMenuOpen(false)} className={clsx(buttonClasses({ variant: 'primary', fullWidth: true }), 'justify-center font-bold py-2.5')}>
+                  Post a load
+                </Link>
+                <Link to="/login" onClick={() => setMobileMenuOpen(false)} className={clsx(buttonClasses({ variant: 'secondary', fullWidth: true }), 'justify-center bg-white/10 text-white border-white/15 py-2.5')}>
+                  Sign in
+                </Link>
+              </div>
             </div>
-            <div className="pt-3 border-t border-white/10 flex flex-col gap-2">
-              <Link to="/vendor/request" className={clsx(buttonClasses({ variant: 'primary', fullWidth: true }), 'justify-center font-bold')}>
-                Post a load
-              </Link>
-              <Link to="/login" className={clsx(buttonClasses({ variant: 'secondary', fullWidth: true }), 'justify-center bg-white/10 text-white border-white/15')}>
-                Sign in
-              </Link>
-            </div>
-          </div>
+          </>
         )}
       </header>
 
@@ -579,7 +592,7 @@ export default function LandingPage() {
         <LiveNumbers />
 
         {/* Interactive Instant Rate & Corridor Estimator */}
-        <section id="calculator" className="mx-auto max-w-content px-4 py-14 sm:px-6 sm:py-20">
+        <section id="calculator" className="scroll-mt-20 mx-auto max-w-content px-4 py-14 sm:px-6 sm:py-20">
           <div className="rounded-card border border-border bg-surface shadow-raised overflow-hidden">
             <div className="bg-gradient-to-r from-[#111116] via-[#1a1a24] to-[#111116] p-6 sm:p-10 text-white border-b border-border">
               <div className="max-w-2xl space-y-2">
@@ -684,7 +697,7 @@ export default function LandingPage() {
         </section>
 
         {/* How It Works Section */}
-        <section id="how-it-works" aria-labelledby="how-it-works-title" className="mx-auto max-w-content px-4 pb-12 pt-10 sm:px-6 sm:pt-16">
+        <section id="how-it-works" aria-labelledby="how-it-works-title" className="scroll-mt-20 mx-auto max-w-content px-4 pb-12 pt-10 sm:px-6 sm:pt-16">
           <div className="max-w-2xl">
             <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">Simple 3-Step Execution</span>
             <h2 id="how-it-works-title" className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-text">
@@ -727,7 +740,7 @@ export default function LandingPage() {
         </section>
 
         {/* Strategic Pan-India Corridors Section */}
-        <section id="network" className="mx-auto max-w-content px-4 py-12 sm:px-6 sm:py-16">
+        <section id="network" className="scroll-mt-20 mx-auto max-w-content px-4 py-12 sm:px-6 sm:py-16">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
             <div>
               <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">Freight Network</span>
@@ -858,7 +871,7 @@ export default function LandingPage() {
         </section>
 
         {/* Get Started / Audience Solutions Section */}
-        <section id="audiences" aria-labelledby="audiences-title" className="mx-auto max-w-content px-4 pb-16 pt-12 sm:px-6 sm:pb-24 sm:pt-16">
+        <section id="audiences" aria-labelledby="audiences-title" className="scroll-mt-20 mx-auto max-w-content px-4 pb-16 pt-12 sm:px-6 sm:pb-24 sm:pt-16">
           <div className="max-w-2xl">
             <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">Role-Based Gateways</span>
             <h2 id="audiences-title" className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-text">
@@ -934,7 +947,7 @@ export default function LandingPage() {
         </section>
 
         {/* Feature Matrix: What the Console Does */}
-        <section id="features" aria-labelledby="features-title" className="border-t border-border bg-surface-subtle">
+        <section id="features" aria-labelledby="features-title" className="scroll-mt-20 border-t border-border bg-surface-subtle">
           <div className="mx-auto max-w-content px-4 py-16 sm:px-6 sm:py-24">
             <div className="max-w-2xl">
               <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">Platform Architecture</span>
@@ -1014,7 +1027,7 @@ export default function LandingPage() {
         </section>
 
         {/* Interactive FAQ Accordion */}
-        <section id="faq" className="border-t border-border bg-surface-subtle py-16 sm:py-24">
+        <section id="faq" className="scroll-mt-20 border-t border-border bg-surface-subtle py-16 sm:py-24">
           <div className="mx-auto max-w-3xl px-4 sm:px-6">
             <div className="text-center mb-12">
               <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">Frequently Asked Questions</span>
