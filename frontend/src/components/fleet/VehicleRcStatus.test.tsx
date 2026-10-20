@@ -4,6 +4,9 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 const api = vi.hoisted(() => ({ verifyRc: vi.fn() }))
 vi.mock('@/services/api', () => ({ vehiclesAPI: api }))
+// Button comes from the @/components/ui barrel, which also exports NotificationsBell - that
+// reaches @/services/supabase at import time, so it needs a stub even though this test never uses it.
+vi.mock('@/services/supabase', () => ({ supabase: { auth: {}, removeChannel: vi.fn() }, openChannel: vi.fn() }))
 
 import { VehicleRcStatus } from './VehicleRcStatus'
 
