@@ -292,7 +292,14 @@ export default function VendorDocumentsPage() {
       // The backend applies the review rules (an approved profile goes back to review).
       if (hasProfile) {
         try {
-          await vendorAPI.saveKycDocuments({ docUrls: updatedUrls })
+          const res = await vendorAPI.saveKycDocuments({ docUrls: updatedUrls }) as any
+          if (res?.kyc_document_issues !== undefined) {
+            setKycDocumentIssues(res.kyc_document_issues ?? {})
+          }
+          if (res?.kyc_status) {
+            setKycStatus(res.kyc_status)
+          }
+          refreshProfile()
         } catch (e) {
           console.error('Failed to persist document reference', e)
         }
@@ -405,6 +412,8 @@ export default function VendorDocumentsPage() {
       window.dispatchEvent(new Event('vendor-profile-updated'))
       refreshProfile()
       setKycStatus('submitted')
+      setKycRejectionReason(null)
+      setKycDocumentIssues({})
       setHasProfile(true)
       setIsEditingKyc(false)
       toast.success(mode === 'onboarding' ? 'Company profile created' : 'KYC submitted for review')

@@ -237,7 +237,7 @@ export const vendorReviewService = {
     const { data: profile, error } = await supabase.from('vendor_profiles').select('id, company_name, kyc_status').eq('id', vendorId).maybeSingle();
     if (error) throw new Error(error.message);
     if (!profile) throw new HttpError(404, 'Vendor not found');
-    if (profile.kyc_status !== 'submitted') {
+    if (!['submitted', 'info_requested'].includes(profile.kyc_status)) {
       throw new HttpError(409, 'Information can be requested only while the KYC is waiting for review');
     }
     const items: InfoItem[] = input.items.map((it, i) => ({
@@ -245,10 +245,9 @@ export const vendorReviewService = {
       label: it.label, kind: it.kind, hint: it.hint ?? null,
     }));
 
-    // Only a KYC still 'submitted' moves, so two reviewers cannot both ask
     const { data: moved, error: moveErr } = await supabase.from('vendor_profiles')
       .update({ kyc_status: 'info_requested', updated_at: new Date().toISOString() })
-      .eq('id', vendorId).eq('kyc_status', 'submitted').select('id').maybeSingle();
+      .eq('id', vendorId).in('kyc_status', ['submitted', 'info_requested']).select('id').maybeSingle();
     if (moveErr) throw new Error(moveErr.message);
     if (!moved) throw new HttpError(409, 'Information can be requested only while the KYC is waiting for review');
 
@@ -289,7 +288,7 @@ export const vendorReviewService = {
     const { data: profile, error } = await supabase.from('vendor_profiles').select('id, company_name, kyc_status, kyc_document_issues').eq('id', vendorId).maybeSingle();
     if (error) throw new Error(error.message);
     if (!profile) throw new HttpError(404, 'Vendor not found');
-    if (profile.kyc_status !== 'submitted') {
+    if (!['submitted', 'info_requested'].includes(profile.kyc_status)) {
       throw new HttpError(409, 'Documents can be flagged only while the KYC is waiting for review');
     }
     const unknown = Object.keys(issues).filter(key => !(key in DOC_LABELS));
@@ -298,7 +297,7 @@ export const vendorReviewService = {
     const merged = { ...(profile.kyc_document_issues ?? {}), ...issues };
     const { data: moved, error: moveErr } = await supabase.from('vendor_profiles')
       .update({ kyc_status: 'info_requested', kyc_document_issues: merged, updated_at: new Date().toISOString() })
-      .eq('id', vendorId).eq('kyc_status', 'submitted').select('id, kyc_status, kyc_document_issues').maybeSingle();
+      .eq('id', vendorId).in('kyc_status', ['submitted', 'info_requested']).select('id, kyc_status, kyc_document_issues').maybeSingle();
     if (moveErr) throw new Error(moveErr.message);
     if (!moved) throw new HttpError(409, 'Documents can be flagged only while the KYC is waiting for review');
 

@@ -315,6 +315,7 @@ export const vendorService = {
       kyc_data: payload.kycData,
       kyc_status: 'submitted',
       kyc_document_issues: null,
+      kyc_rejection_reason: null,
       updated_at: new Date().toISOString(),
     };
 
@@ -660,6 +661,7 @@ export const vendorService = {
       .update({
         kyc_status: 'approved',
         kyc_rejection_reason: null,
+        kyc_document_issues: null,
         kyc_reviewed_at: new Date().toISOString(),
         kyc_reviewed_by: actor.user_id,
       })
@@ -714,11 +716,17 @@ export const vendorService = {
         ...(actor ? { kyc_reviewed_by: actor.user_id } : {}),
       })
       .eq('id', vendorId)
-      .eq('kyc_status', 'submitted')
+      .in('kyc_status', ['submitted', 'info_requested'])
       .select('id, company_name')
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) throw new HttpError(409, 'This KYC is no longer waiting for review');
+
+    try {
+      await supabase.from('kyc_info_requests').update({ status: 'withdrawn' }).eq('vendor_id', vendorId).eq('status', 'open');
+    } catch (e) {
+      console.error('[vendor] withdrawing open kyc_info_requests on rejection failed:', e);
+    }
 
     invalidateOrgContext(vendorId);
     await notificationService.sendNotification(

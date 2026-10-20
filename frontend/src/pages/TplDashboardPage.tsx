@@ -56,11 +56,11 @@ export default function TplDashboardPage() {
   // Whose portal this account has: checked before anything of the address's partner is loaded
   const own = useQuery({
     queryKey: ['tpl-own-partner', userId],
-    queryFn: () => tplAPI.byUser(userId!) as Promise<{ id: string } | null>,
+    queryFn: () => tplAPI.byUser(userId!) as Promise<{ id: string; custom_id?: string } | null>,
     enabled: !!userId,
     retry: false,
   })
-  const access = own.data !== undefined ? portalAccess(own.data?.id, id) : null
+  const access = own.data !== undefined ? portalAccess(own.data, id) : null
 
   const partnerQuery = useQuery({
     queryKey: ['tpl-portal-partner', id],

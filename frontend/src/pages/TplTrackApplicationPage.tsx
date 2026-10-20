@@ -407,7 +407,7 @@ export default function TplTrackApplicationPage() {
 
                 {application.status === 'pending' ? (
                   <div className="space-y-4">
-                    <div className="p-3.5 rounded-control bg-blue-500/10 border border-blue-500/20 text-xs text-blue-900 leading-relaxed">
+                    <div className="p-3.5 rounded-control bg-blue-500/10 border border-blue-500/20 text-xs text-blue-900 dark:text-blue-200 leading-relaxed">
                       Your application is actively under review by Margix compliance. You will receive an email once approved. You can fix or replace documents below.
                     </div>
 
@@ -458,6 +458,16 @@ export default function TplTrackApplicationPage() {
                         <Alert tone="danger" title="Application Not Approved">
                           {application.rejection_reason || 'Compliance criteria were not met. You can fix details and resubmit.'}
                         </Alert>
+
+                        {application.document_issues && Object.keys(application.document_issues).length > 0 && (
+                          <Alert tone="warning" title="Flagged Document Issues">
+                            <ul className="list-disc space-y-1 pl-4 mt-1">
+                              {Object.entries(application.document_issues).map(([type, reason]) => (
+                                <li key={type}><strong className="font-semibold">{type}</strong>: {reason}</li>
+                              ))}
+                            </ul>
+                          </Alert>
+                        )}
 
                         {fixingDocs ? (
                           <FixApplication applicationId={application.id} pan={editPan.trim()} mode="full" onDone={refreshAfterFix} />

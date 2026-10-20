@@ -54,7 +54,7 @@ function publicView(partner: any) {
     status: partner.status,
     created_at: partner.created_at,
     rejection_reason: partner.status === 'rejected' ? partner.rejection_reason ?? null : null,
-    document_issues: partner.status === 'pending' ? partner.document_issues ?? null : null,
+    document_issues: ['pending', 'rejected'].includes(partner.status) ? partner.document_issues ?? null : null,
     email_masked: maskEmail(partner.email),
     corridor_count: partner.tpl_corridors?.length ?? 0,
     document_count: partner.tpl_documents?.length ?? 0,

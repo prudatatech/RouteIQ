@@ -8,16 +8,21 @@ describe('portalAccess', () => {
   it('lets a partner open their own portal', () => {
     expect(portalAccess(OWN, OWN)).toBe('own')
     expect(portalAccess(OWN, OWN.toUpperCase())).toBe('own')
+    expect(portalAccess({ id: OWN, custom_id: 'tpl_acme' }, OWN)).toBe('own')
+    expect(portalAccess({ id: OWN, custom_id: 'tpl_acme' }, 'tpl_acme')).toBe('own')
+    expect(portalAccess({ id: OWN, custom_id: 'tpl_acme' }, 'TPL_ACME')).toBe('own')
   })
 
   it('refuses another partner’s portal', () => {
     expect(portalAccess(OWN, OTHER)).toBe('other')
     expect(portalAccess(OWN, undefined)).toBe('other')
+    expect(portalAccess({ id: OWN, custom_id: 'tpl_acme' }, 'tpl_other')).toBe('other')
   })
 
   it('tells an account with no partner record apart', () => {
     expect(portalAccess(null, OWN)).toBe('no-partner')
     expect(portalAccess(undefined, OWN)).toBe('no-partner')
+    expect(portalAccess({ id: null, custom_id: null }, OWN)).toBe('no-partner')
   })
 })
 

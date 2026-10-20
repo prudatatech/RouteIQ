@@ -744,7 +744,7 @@ export const tplService = {
   async getPartnerByUserId(userId: string) {
     let { data, error } = await supabase
       .from('tpl_partners')
-      .select('id, user_id, status, email')
+      .select('id, custom_id, user_id, status, email')
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -754,7 +754,7 @@ export const tplService = {
       if (email) {
         const { data: byEmail } = await supabase
           .from('tpl_partners')
-          .select('id, user_id, status, email')
+          .select('id, custom_id, user_id, status, email')
           .ilike('email', email)
           .maybeSingle();
         if (byEmail) {
@@ -997,7 +997,17 @@ export const tplService = {
 
     const { data: existing } = await supabase.from('users').select('id').eq('email', email).maybeSingle();
     if (existing) {
-      throw new HttpError(409, 'An account with this email already exists. Please contact support to link it.');
+      const { error: pwdErr } = await supabase.auth.admin.updateUserById(existing.id, {
+        password,
+        app_metadata: { role: 'vendor' },
+        user_metadata: { role: 'vendor', full_name: partner.company_name },
+      });
+      if (pwdErr) throw new Error(`Password update failed: ${pwdErr.message}`);
+
+      await supabase.from('users').update({ role: 'vendor', is_active: true }).eq('id', existing.id);
+      invalidateRoleCache(existing.id);
+      await this.activate(partner.id, existing.id);
+      return true;
     }
 
     const { data: created, error: createErr } = await supabase.auth.admin.createUser({
@@ -1009,6 +1019,26 @@ export const tplService = {
     });
     if (createErr || !created.user) {
       if (createErr && /already (been )?registered|exists/i.test(createErr.message)) {
+        const authUser = await findAuthUserByEmail(email);
+        if (authUser) {
+          const { error: pwdErr } = await supabase.auth.admin.updateUserById(authUser.id, {
+            password,
+            app_metadata: { role: 'vendor' },
+            user_metadata: { role: 'vendor', full_name: partner.company_name },
+          });
+          if (pwdErr) throw new Error(`Password update failed: ${pwdErr.message}`);
+
+          await supabase.from('users').upsert({
+            id: authUser.id,
+            email,
+            full_name: partner.company_name,
+            role: 'vendor',
+            is_active: true,
+          }, { onConflict: 'id' });
+          invalidateRoleCache(authUser.id);
+          await this.activate(partner.id, authUser.id);
+          return true;
+        }
         throw new HttpError(409, 'An account with this email already exists. Please contact support to link it.');
       }
       throw new Error(`Account creation failed: ${createErr?.message}`);
@@ -1019,6 +1049,7 @@ export const tplService = {
       email,
       full_name: partner.company_name,
       role: 'vendor',
+      is_active: true,
     });
     if (upsertErr) throw new Error(`Failed to create user profile: ${upsertErr.message}`);
 
