@@ -1,4 +1,5 @@
 import type { ChangeEvent, FormEvent, RefObject } from 'react'
+import { Mail } from 'lucide-react'
 import { Alert, Button, Input } from '@/components/ui'
 import type { FieldErrors } from './types'
 
@@ -34,9 +35,10 @@ export function ForgotPasswordForm({
         value={email}
         onChange={onEmailChange}
         error={errors.email}
+        leading={<Mail size={16} />}
       />
 
-      <Button type="submit" size="lg" fullWidth loading={submitting}>
+      <Button type="submit" size="lg" fullWidth loading={submitting} className="font-bold justify-center shadow-xs">
         {submitting ? busyLabel : submitLabel}
       </Button>
     </form>

@@ -4,7 +4,7 @@ import { Eye, EyeOff } from 'lucide-react'
 import { Field, IconButton, controlClasses } from '@/components/ui'
 
 /** A password input with a show/hide toggle, used by every flow that collects a password. */
-export function PasswordField({ label, value, onChange, autoComplete, error, hint, inputRef }: {
+export function PasswordField({ label, value, onChange, autoComplete, error, hint, inputRef, leading }: {
   label: string
   value: string
   onChange: (value: string) => void
@@ -12,12 +12,16 @@ export function PasswordField({ label, value, onChange, autoComplete, error, hin
   error?: string
   hint?: ReactNode
   inputRef?: RefObject<HTMLInputElement>
+  leading?: ReactNode
 }) {
   const [visible, setVisible] = useState(false)
   return (
     <Field label={label} error={error} hint={hint}>
       {control => (
         <div className="relative">
+          {leading && (
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted">{leading}</span>
+          )}
           <input
             ref={inputRef}
             {...control}
@@ -25,7 +29,7 @@ export function PasswordField({ label, value, onChange, autoComplete, error, hin
             value={value}
             onChange={e => onChange(e.target.value)}
             autoComplete={autoComplete}
-            className={clsx(controlClasses, error ? 'border-danger' : 'border-border-strong', 'h-control pr-12')}
+            className={clsx(controlClasses, error ? 'border-danger focus:ring-danger/25' : 'border-border-strong', 'h-control pr-12', leading && 'pl-9')}
           />
           <IconButton
             size="sm"

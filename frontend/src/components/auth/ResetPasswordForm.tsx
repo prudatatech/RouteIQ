@@ -1,4 +1,5 @@
 import type { FormEvent, RefObject } from 'react'
+import { Lock } from 'lucide-react'
 import { Alert, Button } from '@/components/ui'
 import { PasswordField } from './PasswordField'
 import type { FieldErrors } from './types'
@@ -35,6 +36,7 @@ export function ResetPasswordForm({
         autoComplete="new-password"
         error={errors.password}
         inputRef={passwordRef}
+        leading={<Lock size={16} />}
       />
 
       <PasswordField
@@ -44,9 +46,10 @@ export function ResetPasswordForm({
         autoComplete="new-password"
         error={errors.confirm}
         inputRef={confirmRef}
+        leading={<Lock size={16} />}
       />
 
-      <Button type="submit" size="lg" fullWidth loading={submitting}>
+      <Button type="submit" size="lg" fullWidth loading={submitting} className="font-bold justify-center shadow-xs">
         {submitting ? busyLabel : submitLabel}
       </Button>
     </form>

@@ -2,15 +2,16 @@ import {
   forwardRef, useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes,
 } from 'react'
 import clsx from 'clsx'
-import { ChevronDown, Search, X } from 'lucide-react'
+import { AlertCircle, ChevronDown, Search, X } from 'lucide-react'
 import { formatDate } from '@/utils/display'
 
 export const controlClasses =
-  'block w-full rounded-control border bg-surface px-3 text-base sm:text-sm text-text placeholder:text-placeholder ' +
-  'transition-colors focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand ' +
-  'disabled:bg-surface-subtle disabled:text-muted disabled:cursor-not-allowed'
+  'block w-full rounded-control border bg-surface px-3.5 text-base sm:text-sm text-text placeholder:text-placeholder ' +
+  'shadow-xs transition-all duration-150 hover:border-border-strong ' +
+  'focus:outline-none focus:ring-2 focus:ring-brand/25 focus:border-brand focus:shadow-xs ' +
+  'disabled:bg-surface-subtle disabled:text-muted disabled:cursor-not-allowed disabled:shadow-none'
 
-const borderClasses = (invalid?: boolean) => (invalid ? 'border-danger' : 'border-border-strong')
+const borderClasses = (invalid?: boolean) => (invalid ? 'border-danger focus:ring-danger/25 focus:border-danger' : 'border-border-strong')
 
 interface FieldOwnProps {
   label?: ReactNode
@@ -41,7 +42,7 @@ export function Field({ label, hint, error, required, hideLabel, className, id, 
       {label && (
         <label htmlFor={controlId} className={clsx('text-sm font-medium text-text', hideLabel && 'sr-only')}>
           {label}
-          {required && <span className="text-danger" aria-hidden="true"> *</span>}
+          {required && <span className="text-danger font-semibold" aria-hidden="true"> *</span>}
         </label>
       )}
       {children({
@@ -51,8 +52,9 @@ export function Field({ label, hint, error, required, hideLabel, className, id, 
         required,
       })}
       {message && (
-        <p id={messageId} className={clsx('text-xs', error ? 'text-danger' : 'text-muted')} role={error ? 'alert' : undefined}>
-          {message}
+        <p id={messageId} className={clsx('text-xs flex items-center gap-1', error ? 'text-danger font-medium' : 'text-muted')} role={error ? 'alert' : undefined}>
+          {error && <AlertCircle size={13} className="shrink-0 mt-0.5" aria-hidden="true" />}
+          <span>{message}</span>
         </p>
       )}
     </div>

@@ -1,4 +1,5 @@
 import type { ChangeEvent, FormEvent, RefObject } from 'react'
+import { Mail, Lock } from 'lucide-react'
 import { Alert, Button, Input } from '@/components/ui'
 import { PasswordField } from './PasswordField'
 import { MIN_PASSWORD_LENGTH } from './constants'
@@ -44,6 +45,7 @@ export function SignUpForm({
         value={email}
         onChange={onEmailChange}
         error={errors.email}
+        leading={<Mail size={16} />}
       />
 
       <PasswordField
@@ -54,6 +56,7 @@ export function SignUpForm({
         error={errors.password}
         hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}
         inputRef={passwordRef}
+        leading={<Lock size={16} />}
       />
 
       <PasswordField
@@ -63,9 +66,10 @@ export function SignUpForm({
         autoComplete="new-password"
         error={errors.confirm}
         inputRef={confirmRef}
+        leading={<Lock size={16} />}
       />
 
-      <Button type="submit" size="lg" fullWidth loading={submitting}>
+      <Button type="submit" size="lg" fullWidth loading={submitting} className="font-bold justify-center shadow-xs">
         {submitting ? busyLabel : submitLabel}
       </Button>
     </form>

@@ -1,5 +1,6 @@
 import type { ChangeEvent, FormEvent, RefObject } from 'react'
 import clsx from 'clsx'
+import { Mail, Lock } from 'lucide-react'
 import { Alert, Button, Input } from '@/components/ui'
 import { PasswordField } from './PasswordField'
 import { linkClass } from './constants'
@@ -44,6 +45,7 @@ export function SignInForm({
         value={email}
         onChange={onEmailChange}
         error={errors.email}
+        leading={<Mail size={16} />}
       />
 
       <PasswordField
@@ -53,18 +55,19 @@ export function SignInForm({
         autoComplete="current-password"
         error={errors.password}
         inputRef={passwordRef}
+        leading={<Lock size={16} />}
       />
 
-      <div className="flex items-center justify-between">
-        <button type="button" className={clsx(linkClass, 'text-sm')} onClick={onUseMobileCode}>
+      <div className="flex items-center justify-between text-xs sm:text-sm">
+        <button type="button" className={clsx(linkClass)} onClick={onUseMobileCode}>
           Use a mobile code instead
         </button>
-        <button type="button" className={clsx(linkClass, 'text-sm')} onClick={onForgotPassword}>
+        <button type="button" className={clsx(linkClass)} onClick={onForgotPassword}>
           Forgot password?
         </button>
       </div>
 
-      <Button type="submit" size="lg" fullWidth loading={submitting}>
+      <Button type="submit" size="lg" fullWidth loading={submitting} className="font-bold justify-center shadow-xs">
         {submitting ? busyLabel : submitLabel}
       </Button>
     </form>
