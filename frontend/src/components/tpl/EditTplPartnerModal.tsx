@@ -189,14 +189,14 @@ export function EditTplPartnerModal({
         </>
       )}
     >
-      <div className="space-y-6">
+      <div className="space-y-6 max-h-[72vh] overflow-y-auto px-1 -mx-1">
         {/* Tab Navigation */}
-        <div className="flex border-b border-border -mx-1">
+        <div className="flex border-b border-border -mx-1 overflow-x-auto no-scrollbar scroll-smooth">
           <button
             type="button"
             onClick={() => setActiveTab('identity')}
             className={clsx(
-              'flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors',
+              'flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer',
               activeTab === 'identity'
                 ? 'border-brand text-brand'
                 : 'border-transparent text-muted hover:text-text'
@@ -210,7 +210,7 @@ export function EditTplPartnerModal({
             type="button"
             onClick={() => setActiveTab('bank')}
             className={clsx(
-              'flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors',
+              'flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer',
               activeTab === 'bank'
                 ? 'border-brand text-brand'
                 : 'border-transparent text-muted hover:text-text'
@@ -225,7 +225,7 @@ export function EditTplPartnerModal({
               type="button"
               onClick={() => setActiveTab('operations')}
               className={clsx(
-                'flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors',
+                'flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer',
                 activeTab === 'operations'
                   ? 'border-brand text-brand'
                   : 'border-transparent text-muted hover:text-text'
@@ -248,7 +248,7 @@ export function EditTplPartnerModal({
                   onChange={e => setPan(e.target.value.toUpperCase().slice(0, 10))}
                   placeholder="ABCDE1234F"
                   maxLength={10}
-                  className="font-mono uppercase"
+                  inputClassName="font-mono uppercase"
                   error={err('pan')}
                   hint={panValidation.valid && panCategory ? `${panCategory}` : 'e.g. ABCDE1234F'}
                   trailing={panValidation.valid ? <CheckCircle2 size={16} className="text-success" /> : undefined}
@@ -262,7 +262,7 @@ export function EditTplPartnerModal({
                   onChange={e => setGst(e.target.value.toUpperCase().slice(0, 15))}
                   placeholder="07ABCDE1234F1Z5"
                   maxLength={15}
-                  className="font-mono uppercase"
+                  inputClassName="font-mono uppercase"
                   error={err('gst') || (gst.trim() && gstValidation.error ? gstValidation.error : undefined)}
                   hint="15 characters (Optional)"
                   trailing={gst.trim() && gstValidation.valid ? <CheckCircle2 size={16} className="text-success" /> : undefined}
@@ -291,7 +291,7 @@ export function EditTplPartnerModal({
                   onChange={e => setCin(e.target.value.toUpperCase().slice(0, 21))}
                   placeholder="U74999DL2019PTC123456"
                   maxLength={21}
-                  className="font-mono uppercase"
+                  inputClassName="font-mono uppercase"
                   error={err('cin')}
                   hint="21 characters (required for Pvt Ltd/LLP)"
                 />
@@ -317,7 +317,7 @@ export function EditTplPartnerModal({
                 onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
                 placeholder="9 to 18 digits"
                 inputMode="numeric"
-                className="font-mono"
+                inputClassName="font-mono"
                 error={err('bankAccount')}
                 hint={bankAccount ? `${bankAccount.length} digits entered` : '9 to 18 digits'}
               />
@@ -358,7 +358,7 @@ export function EditTplPartnerModal({
                 value={customId}
                 onChange={e => setCustomId(e.target.value.toLowerCase().slice(0, 20))}
                 placeholder="e.g. nilons_1234"
-                className="font-mono"
+                inputClassName="font-mono"
                 error={err('customId')}
                 hint="5-20 lowercase alphanumeric characters"
               />

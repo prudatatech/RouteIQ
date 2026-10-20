@@ -2,6 +2,7 @@ import { errorMessage, formatDateTime } from '@/utils/display'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, CheckCircle2, Upload } from 'lucide-react'
+import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { uploadTplDocument } from '@/services/tplDocuments'
@@ -107,15 +108,15 @@ function FixDetails({ applicationId, pan, full, onSaved }: { applicationId: stri
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input label="Company name" required value={companyName} onChange={e => setCompanyName(e.target.value)} />
         <Input label="Contact person" required value={contactName} onChange={e => setContactName(e.target.value)} />
-        <Input label="PAN" value={panNumber} onChange={e => setPanNumber(e.target.value.toUpperCase())} placeholder="ABCDE1234F" maxLength={10} className="font-mono" />
-        <Input label="GSTIN" value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="07ABCDE1234F1Z5" maxLength={15} className="font-mono" />
+        <Input label="PAN" value={panNumber} onChange={e => setPanNumber(e.target.value.toUpperCase())} placeholder="ABCDE1234F" maxLength={10} inputClassName="font-mono uppercase" />
+        <Input label="GSTIN" value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="07ABCDE1234F1Z5" maxLength={15} inputClassName="font-mono uppercase" />
         <Select label="Entity type" required value={entityType} onChange={e => setEntityType(e.target.value)} options={ENTITY_TYPE_OPTIONS} placeholder="Choose the entity type" />
         {entityTypeRequiresCin(entityType) && (
-          <Input label="CIN" required value={cin} onChange={e => setCin(e.target.value.toUpperCase())} placeholder="U74999DL2019PTC123456" maxLength={21} className="font-mono" />
+          <Input label="CIN" required value={cin} onChange={e => setCin(e.target.value.toUpperCase())} placeholder="U74999DL2019PTC123456" maxLength={21} inputClassName="font-mono uppercase" />
         )}
         <Input label="Authorized signatory name" required value={authorizedSignatoryName} onChange={e => setAuthorizedSignatoryName(e.target.value)} />
-        <Input label="Bank account number" value={bankAccount} onChange={e => setBankAccount(e.target.value)} className="font-mono" />
-        <Input label="Bank IFSC" value={bankIfsc} onChange={e => setBankIfsc(e.target.value.toUpperCase())} placeholder="HDFC0001234" maxLength={11} className="font-mono" />
+        <Input label="Bank account number" value={bankAccount} onChange={e => setBankAccount(e.target.value)} inputClassName="font-mono" />
+        <Input label="Bank IFSC" value={bankIfsc} onChange={e => setBankIfsc(e.target.value.toUpperCase())} placeholder="HDFC0001234" maxLength={11} inputClassName="font-mono uppercase" />
       </div>
       <OperationalTermsFields
         slaCommitment={slaCommitment}
@@ -135,11 +136,22 @@ function FixDetails({ applicationId, pan, full, onSaved }: { applicationId: stri
 function FixDocumentsList({ applicationId, pan, full, onReplaced }: { applicationId: string; pan: string; full: TplApplicationFull; onReplaced: () => void }) {
   const [uploadingType, setUploadingType] = useState<string | null>(null)
 
+  // Deduplicate documents by doc_type so duplicate rows in the database do not show multiple cards
+  const uniqueDocs = (full.tpl_documents ?? []).reduce<TplDocument[]>((acc, doc) => {
+    const existingIndex = acc.findIndex(d => d.doc_type === doc.doc_type)
+    if (existingIndex >= 0) {
+      acc[existingIndex] = doc
+    } else {
+      acc.push(doc)
+    }
+    return acc
+  }, [])
+
   const replace = (doc: TplDocument) => async (file: File) => {
     setUploadingType(doc.doc_type)
     try {
       const path = await uploadTplDocument(file, doc.doc_type, { applicationId, verifyPan: pan })
-      const documents = (full.tpl_documents ?? []).map(d => (d.id === doc.id ? { type: d.doc_type, url: path } : { type: d.doc_type, url: d.file_url }))
+      const documents = uniqueDocs.map(d => (d.doc_type === doc.doc_type ? { type: d.doc_type, url: path } : { type: d.doc_type, url: d.file_url }))
       await tplAPI.updateApplication(applicationId, { verify_pan: pan, documents })
       toast.success(full.status === 'rejected' ? 'Document replaced. Your application is back under review.' : 'Document replaced')
       onReplaced()
@@ -150,13 +162,13 @@ function FixDocumentsList({ applicationId, pan, full, onReplaced }: { applicatio
     }
   }
 
-  if (!full.tpl_documents || full.tpl_documents.length === 0) {
+  if (uniqueDocs.length === 0) {
     return <p className="text-sm text-muted">No documents uploaded yet.</p>
   }
 
   return (
     <div className="space-y-3">
-      {full.tpl_documents.map(doc => {
+      {uniqueDocs.map(doc => {
         const issue = full.document_issues?.[doc.doc_type]
         return (
           <div key={doc.id} className={`rounded-control border p-3 ${issue ? 'border-warning bg-warning/5' : 'border-border'}`}>
@@ -262,13 +274,13 @@ export default function TplTrackApplicationPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg p-6">
-      <div className="w-full max-w-md space-y-6">
-        <Link to="/3pl/onboard" className="inline-block text-sm text-muted hover:text-text">
+    <div className="flex min-h-screen items-center justify-center bg-bg p-4 sm:p-6">
+      <div className={clsx('w-full space-y-6 transition-all duration-300', fixingDocs ? 'max-w-2xl' : 'max-w-md')}>
+        <Link to="/3pl/onboard" className="inline-block text-sm text-muted hover:text-text font-medium transition-colors">
           ← Back to the application form
         </Link>
 
-        <Card padded>
+        <Card padded className="shadow-raised border border-border">
           <div className="mb-6 flex items-center gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-control bg-brand-soft text-brand">
               <Search size={22} />
@@ -292,7 +304,7 @@ export default function TplTrackApplicationPage() {
                 autoCapitalize="none"
                 autoComplete="off"
                 spellCheck={false}
-                className="font-mono"
+                inputClassName="font-mono"
               />
               <Button type="submit" fullWidth loading={loading}>Check application</Button>
             </form>
@@ -347,7 +359,7 @@ export default function TplTrackApplicationPage() {
                         onChange={e => setEditPan(e.target.value.toUpperCase())}
                         placeholder="ABCDE1234F"
                         maxLength={10}
-                        className="font-mono"
+                        inputClassName="font-mono uppercase"
                       />
                       <Button
                         variant="secondary"
@@ -382,7 +394,7 @@ export default function TplTrackApplicationPage() {
                             onChange={e => setEditPan(e.target.value.toUpperCase())}
                             placeholder="ABCDE1234F"
                             maxLength={10}
-                            className="font-mono"
+                            inputClassName="font-mono uppercase"
                           />
                           <Button fullWidth disabled={!editPan.trim()} onClick={() => setFixingDocs(true)}>
                             Fix your details and resubmit

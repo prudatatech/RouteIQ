@@ -73,24 +73,28 @@ export function Stepper({ steps, current, onSelect, variant = 'panel' }: Stepper
   }
 
   return (
-    <Card padded className="mb-6 flex justify-between items-center py-4 px-6 md:px-12">
+    <Card padded className="mb-6 flex justify-between items-center py-3.5 px-3 sm:py-4 sm:px-6 md:px-12 overflow-hidden shadow-xs">
       {steps.map((label, i) => {
         const completed = i < current
         return (
-          <div key={label} className="flex flex-col items-center relative flex-1">
+          <div key={label} className="flex flex-col items-center relative flex-1 min-w-0">
             {i < steps.length - 1 && (
               <div
                 className={clsx(
-                  'absolute top-4 left-[50%] right-[-50%] h-[2px]',
-                  completed ? 'bg-text' : 'bg-border'
+                  'absolute top-3.5 sm:top-4 left-[50%] right-[-50%] h-[2px] transition-colors',
+                  completed ? 'bg-success' : 'bg-border'
                 )}
               />
             )}
 
             <div
               className={clsx(
-                'relative z-10 flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold',
-                completed ? 'bg-success text-white' : i === current ? 'bg-text text-white' : 'bg-surface-subtle text-muted border border-border'
+                'relative z-10 flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-all',
+                completed
+                  ? 'bg-success text-white shadow-xs'
+                  : i === current
+                    ? 'bg-brand text-brand-fill ring-4 ring-brand/20 shadow-xs'
+                    : 'bg-surface text-muted border border-border'
               )}
             >
               {completed ? <CheckCircle2 size={16} /> : i + 1}
@@ -98,8 +102,8 @@ export function Stepper({ steps, current, onSelect, variant = 'panel' }: Stepper
 
             <span
               className={clsx(
-                'mt-2 text-xs font-medium',
-                i === current ? 'text-text' : 'text-muted'
+                'mt-2 text-[10px] sm:text-xs font-semibold text-center transition-colors truncate max-w-full px-0.5 sm:px-1',
+                i === current ? 'text-brand font-bold' : completed ? 'text-text' : 'text-muted'
               )}
             >
               {label}

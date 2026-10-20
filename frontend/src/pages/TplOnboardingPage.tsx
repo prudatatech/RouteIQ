@@ -1221,7 +1221,7 @@ export default function TplOnboardingPage() {
                             Edit
                           </button>
                         </div>
-                        <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs sm:text-sm">
                           <div>
                             <span className="text-muted block text-xs mb-0.5">Company name</span>
                             <span className="font-semibold text-text">{companyName}</span>
@@ -1232,13 +1232,13 @@ export default function TplOnboardingPage() {
                           </div>
                           <div>
                             <span className="text-muted block text-xs mb-0.5">Email</span>
-                            <span className="font-semibold text-text">{email}</span>
+                            <span className="font-semibold text-text break-all">{email}</span>
                           </div>
                           <div>
                             <span className="text-muted block text-xs mb-0.5">Mobile</span>
                             <span className="font-semibold text-text">{mobile}</span>
                           </div>
-                          <div className="col-span-2">
+                          <div className="sm:col-span-2">
                             <span className="text-muted block text-xs mb-0.5">Operating from</span>
                             <span className="font-semibold text-text">{location}</span>
                           </div>
@@ -1274,7 +1274,7 @@ export default function TplOnboardingPage() {
                             <div className="space-y-2">
                               <div className="flex flex-wrap gap-2">
                                 {Object.entries(multipleTruckCounts).filter(([_, count]) => count > 0).map(([key, count]) => (
-                                  <div key={key} className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-soft text-brand border border-brand/30 rounded-full font-semibold text-xs">
+                                   <div key={key} className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-soft text-brand border border-brand/30 rounded-full font-semibold text-xs">
                                     <Truck size={13} /> {count}x {vehicles?.find(v => v.key === key)?.name || key}
                                   </div>
                                 ))}
@@ -1306,7 +1306,7 @@ export default function TplOnboardingPage() {
                                 Edit
                               </button>
                             </div>
-                            <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs sm:text-sm">
                               <div>
                                 <span className="text-muted block text-xs mb-0.5">Entity type</span>
                                 <span className="font-semibold text-text">{entityType}</span>
@@ -1350,7 +1350,7 @@ export default function TplOnboardingPage() {
                                 Edit
                               </button>
                             </div>
-                            <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs sm:text-sm">
                               <div>
                                 <span className="text-muted block text-xs mb-0.5">Account number</span>
                                 <span className="font-mono font-bold text-text">
@@ -1380,7 +1380,7 @@ export default function TplOnboardingPage() {
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                               {TPL_DOCUMENT_TYPES.map(docType => (
-                                <div key={docType} className="flex items-center justify-between p-2 rounded-control bg-surface-subtle border border-border">
+                                <div key={docType} className="flex items-center justify-between p-2.5 rounded-control bg-surface-subtle border border-border">
                                   <span className="font-medium text-text">{docType}</span>
                                   {docUrls[docType] ? (
                                     <span className="text-success flex items-center gap-1 font-semibold">
@@ -1416,7 +1416,7 @@ export default function TplOnboardingPage() {
                 </Button>
 
                 <div className="text-xs font-semibold text-muted hidden sm:block">
-                  Step {step + 1} of {steps.length}
+                  {progressPercent}% completed
                 </div>
 
                 <Button

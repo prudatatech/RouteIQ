@@ -88,7 +88,8 @@ export default function TplSetupCredentialsPage() {
               </p>
               <div className="flex items-end justify-between gap-2">
                 <Input
-                  className="flex-1 text-center font-mono"
+                  className="flex-1"
+                  inputClassName="text-center font-mono text-lg tracking-widest font-bold"
                   label="6-digit verification code"
                   required
                   maxLength={6}

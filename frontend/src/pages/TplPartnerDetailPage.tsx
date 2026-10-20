@@ -2,7 +2,7 @@ import { errorMessage, formatDateTime } from '@/utils/display'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Building2, Download, Edit2, FileText, FlagTriangleRight, RefreshCw, ShieldCheck, Zap } from 'lucide-react'
+import { AlertCircle, Building2, Download, Edit2, FileText, FlagTriangleRight, RefreshCw, ShieldCheck, Trash2, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { useEffectiveRole } from '@/store/effectiveRole'
@@ -187,19 +187,51 @@ export default function TplPartnerDetailPage() {
     onError: (err: unknown) => toast.error(errorMessage(err, 'We could not flag these documents. Try again.')),
   })
 
-  // Attaches one newly uploaded document to the application. `updateApplication`'s `documents` field is the
-  // desired final list (see tpl.service.ts), so every existing document is carried over alongside the new one -
-  // otherwise this call would delete every document not freshly re-sent.
+  // Deduplicate documents by doc_type so duplicate rows in the database do not show multiple cards
+  const uniqueDocuments = (partner?.tpl_documents ?? []).reduce<TplDocument[]>((acc, doc) => {
+    const existingIndex = acc.findIndex(d => d.doc_type === doc.doc_type)
+    if (existingIndex >= 0) {
+      acc[existingIndex] = doc
+    } else {
+      acc.push(doc)
+    }
+    return acc
+  }, [])
+
+  // Attaches one newly uploaded document to the application. Replaces any existing document of the same type
+  // so duplicate documents are never created in the database or UI.
   const addDocument = useMutation({
     mutationFn: (doc: { type: string; url: string }) => tplAPI.updateApplication(id!, {
-      documents: [...(partner?.tpl_documents ?? []).map(d => ({ type: d.doc_type, url: d.file_url })), doc],
+      documents: [
+        ...uniqueDocuments.filter(d => d.doc_type !== doc.type).map(d => ({ type: d.doc_type, url: d.file_url })),
+        doc,
+      ],
     }),
     onSuccess: () => {
-      toast.success('Document added')
+      toast.success('Document saved')
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
     },
-    onError: (err: unknown) => toast.error(errorMessage(err, 'We could not add this document. Try again.')),
+    onError: (err: unknown) => toast.error(errorMessage(err, 'We could not save this document. Try again.')),
   })
+
+  const removeUploadedDocument = async (doc: TplDocument) => {
+    const ok = await confirm({
+      title: `Remove ${humanize(doc.doc_type)}?`,
+      message: 'This will remove this document from the partner application.',
+      confirmLabel: 'Remove document',
+      tone: 'danger',
+    })
+    if (!ok) return
+    try {
+      await tplAPI.updateApplication(id!, {
+        documents: uniqueDocuments.filter(d => d.doc_type !== doc.doc_type).map(d => ({ type: d.doc_type, url: d.file_url })),
+      })
+      toast.success('Document removed')
+      queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, 'We could not remove this document. Try again.'))
+    }
+  }
 
   const togglePause = useMutation({
     mutationFn: () => (partner?.status === 'active' ? tplAPI.pause(id!) : tplAPI.resume(id!)),
@@ -417,39 +449,61 @@ export default function TplPartnerDetailPage() {
               ]}
             />
             <div className="mt-6 border-t border-border pt-4">
-              <p className="mb-3 text-xs text-muted">Uploaded documents ({partner.tpl_documents?.length ?? 0})</p>
-              {!partner.tpl_documents || partner.tpl_documents.length === 0 ? (
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+                  Uploaded documents ({uniqueDocuments.length})
+                </p>
+                {partner.tpl_documents && partner.tpl_documents.length > uniqueDocuments.length && (
+                  <span className="text-[11px] font-semibold text-warning bg-warning/10 px-2.5 py-0.5 rounded-full border border-warning/20">
+                    Duplicates cleaned from view
+                  </span>
+                )}
+              </div>
+              {uniqueDocuments.length === 0 ? (
                 <EmptyState compact title="No documents uploaded" />
               ) : (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {partner.tpl_documents.map(doc => {
+                  {uniqueDocuments.map(doc => {
                     const issue = partner.document_issues?.[doc.doc_type]
                     return (
-                      <div key={doc.id} className={`rounded-control border p-3 ${issue ? 'border-warning bg-warning/5' : 'border-border'}`}>
-                        <button type="button" onClick={() => viewDocument(doc)} className="flex w-full items-center gap-3 text-left">
-                          <FileText size={20} className="shrink-0 text-brand" />
+                      <div key={doc.id} className={`rounded-control border p-3.5 bg-surface transition-all ${issue ? 'border-warning bg-warning/5' : 'border-border shadow-xs'}`}>
+                        <button type="button" onClick={() => viewDocument(doc)} className="flex w-full items-center gap-3 text-left group cursor-pointer">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-brand-soft text-brand group-hover:bg-brand group-hover:text-brand-fill transition-colors">
+                            <FileText size={18} />
+                          </div>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium text-text">{humanize(doc.doc_type)}</span>
-                            <span className="block text-xs text-muted">View document</span>
+                            <span className="block truncate text-sm font-semibold text-text group-hover:text-brand transition-colors">{humanize(doc.doc_type)}</span>
+                            <span className="block text-xs text-muted flex items-center gap-1 mt-0.5">
+                              <Download size={12} /> View document
+                            </span>
                           </span>
-                          <Download size={14} className="shrink-0 text-muted" />
                         </button>
                         {issue && (
-                          <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
+                          <p className="mt-2.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control">
                             <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {issue}
                           </p>
                         )}
                         {canDecide && (
-                          <div className="mt-2">
+                          <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/50 pt-2.5">
                             <FileButton
-                              variant="link"
-                              icon={<RefreshCw size={14} />}
+                              variant="secondary"
+                              size="sm"
+                              icon={<RefreshCw size={13} />}
                               accept=".pdf,.jpg,.jpeg,.png"
                               disabled={replacingDocId === doc.id}
                               onFile={file => replaceExistingDocument(doc, file)}
                             >
-                              {replacingDocId === doc.id ? 'Updating…' : 'Replace (e.g. renewed document)'}
+                              {replacingDocId === doc.id ? 'Updating…' : 'Replace'}
                             </FileButton>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-danger hover:text-danger hover:bg-danger/10 text-xs h-8 px-2.5"
+                              icon={<Trash2 size={13} />}
+                              onClick={() => removeUploadedDocument(doc)}
+                            >
+                              Remove
+                            </Button>
                           </div>
                         )}
                       </div>
@@ -461,21 +515,23 @@ export default function TplPartnerDetailPage() {
             {canDecide && (partner.status === 'pending' || partner.status === 'rejected') && (
               <div className="mt-6 border-t border-border pt-4">
                 <p className="mb-3 text-xs text-muted">
-                  Add a document the applicant left out, or one more if it is still missing. This is the only way to
-                  finish an application that has none yet - documents are optional when an application is entered,
-                  but required before it can be approved.
+                  Add a document the applicant left out, or upload an updated file to replace an existing one. Documents are required before approval.
                 </p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {TPL_DOCUMENT_TYPES.map(docType => (
-                    <DocUploadField
-                      key={docType}
-                      label={docType}
-                      busy={uploadingType === docType}
-                      onUpload={file => uploadDocument(docType, file)}
-                      onRemove={() => {}}
-                      onView={() => {}}
-                    />
-                  ))}
+                  {TPL_DOCUMENT_TYPES.map(docType => {
+                    const existingDoc = partner.tpl_documents?.find(d => d.doc_type === docType)
+                    return (
+                      <DocUploadField
+                        key={docType}
+                        label={docType}
+                        hint={existingDoc ? 'Attached · Upload new file to replace' : 'Upload document (PDF, PNG, JPG up to 2MB)'}
+                        busy={uploadingType === docType}
+                        onUpload={file => uploadDocument(docType, file)}
+                        onRemove={() => {}}
+                        onView={() => {}}
+                      />
+                    )
+                  })}
                 </div>
               </div>
             )}
