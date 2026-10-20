@@ -1,12 +1,16 @@
 import { useState, useEffect, type FormEvent } from 'react'
-import { Page, PageHeader, Card, Input, Button, Select, Alert, Stepper, IfscField } from '@/components/ui'
-import { CheckCircle2, ChevronLeft, ChevronRight, Truck, Blocks, Zap, ShieldCheck, Landmark, FileText, Building } from 'lucide-react'
+import { Page, Card, Input, Button, Select, Alert, Stepper, IfscField } from '@/components/ui'
+import {
+  CheckCircle2, ChevronLeft, ChevronRight, Truck, Blocks, Zap, ShieldCheck,
+  Landmark, FileText, Building, Phone, Mail, Clock, Headphones, Award, Check,
+  ExternalLink, Sparkles
+} from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { supabase } from '@/services/supabase'
 import type { Session } from '@supabase/supabase-js'
 import { useQuery } from '@tanstack/react-query'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { publicAPI, tplAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
 import { loadAccount } from '@/services/account'
@@ -34,6 +38,15 @@ const FULL_STEPS = [
   'KYC Documents',
   'Review',
 ]
+
+const STEP_DESCRIPTIONS: Record<string, string> = {
+  'Contact Details': 'Primary contact, operating base & speed',
+  'Fleet Details': 'Fleet scale & vehicle carrying capacity',
+  'Business & Identity': 'Entity type, PAN card & GSTIN verification',
+  'Bank Details': 'Bank account for freight payouts & settlements',
+  'KYC Documents': 'Upload verified company & compliance scans',
+  'Review': 'Confirm application details before submission',
+}
 
 const MIN_PASSWORD_LENGTH = 8
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -75,8 +88,6 @@ export default function TplOnboardingPage() {
   const [email, setEmail] = useState('')
   const [mobile, setMobile] = useState('')
   const [location, setLocation] = useState('')
-  // Checked as the applicant fills the form in, so a duplicate is caught right at the field instead
-  // of only after they finish every step and submit.
   const [emailTakenError, setEmailTakenError] = useState<string | null>(null)
   const [mobileTakenError, setMobileTakenError] = useState<string | null>(null)
   const [checkingEmail, setCheckingEmail] = useState(false)
@@ -169,15 +180,12 @@ export default function TplOnboardingPage() {
       } catch (err) {
         console.error('Error verifying 3PL partner status:', err)
       }
-      // Not an existing partner — show the onboarding form
       if (isMounted) setUserLoading(false)
     }
 
-    // After Google OAuth, Supabase redirects back with a hash fragment (#access_token=...).
     const isOAuthReturn = window.location.hash.includes('access_token')
 
     if (isOAuthReturn) {
-      // OAuth just returned — wait for Supabase to process the hash and establish the session
       const { data: authListener } = supabase.auth.onAuthStateChange((_event, currentSession) => {
         if (!isMounted) return
         setSession(currentSession)
@@ -190,7 +198,6 @@ export default function TplOnboardingPage() {
       return () => { isMounted = false; authListener.subscription.unsubscribe() }
     }
 
-    // First visit (not an OAuth return): check if user already has an active session
     supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
       if (!isMounted) return
       if (currentSession?.user) {
@@ -206,9 +213,6 @@ export default function TplOnboardingPage() {
     return () => { isMounted = false }
   }, [navigate])
 
-  // Prefills what the sign-in already told us (verified email, and Google's name when available) so
-  // there is less to type by hand. Both stay editable: the sign-in email may differ from the company's
-  // preferred contact address.
   useEffect(() => {
     if (!session?.user) return
     if (!ownerName) {
@@ -216,11 +220,9 @@ export default function TplOnboardingPage() {
       if (typeof name === 'string' && name.trim()) setOwnerName(name.trim())
     }
     if (!email && session.user.email) setEmail(session.user.email)
-    // Runs once per new session, to prefill an empty form without overwriting what the applicant typed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session])
 
-  // Sign-up before the form: Google (verified email, prefilled name) or a plain email and password.
   const [signupEmail, setSignupEmail] = useState('')
   const [signupPassword, setSignupPassword] = useState('')
   const [signingUp, setSigningUp] = useState(false)
@@ -230,13 +232,13 @@ export default function TplOnboardingPage() {
   const signUpWithEmail = async (e: FormEvent) => {
     e.preventDefault()
     setSignupError(null)
-    const email = signupEmail.trim()
-    if (!EMAIL_PATTERN.test(email)) { setSignupError('Enter an email like you@company.com.'); return }
+    const emailToUse = signupEmail.trim()
+    if (!EMAIL_PATTERN.test(emailToUse)) { setSignupError('Enter an email like you@company.com.'); return }
     if (signupPassword.length < MIN_PASSWORD_LENGTH) { setSignupError(`Use at least ${MIN_PASSWORD_LENGTH} characters.`); return }
     setSigningUp(true)
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: emailToUse,
         password: signupPassword,
         options: { data: { role: 'vendor' }, emailRedirectTo: `${window.location.origin}/3pl/onboard` },
       })
@@ -278,67 +280,6 @@ export default function TplOnboardingPage() {
     }
   }, [step, companyName, ownerName, email, mobile, location, submitted, setSearchParams])
 
-  if (userLoading) {
-    return <div className="min-h-screen bg-bg flex items-center justify-center">Loading...</div>
-  }
-
-  if (!session) {
-    return (
-      <Page width="form" className="py-12">
-        <PageHeader title="Join Margix as a Truck Partner" description="Create an account to start your application. You'll fill in your truck details next." />
-        <Card padded className="mt-8 max-w-sm mx-auto">
-          <Button
-            variant="secondary"
-            size="lg"
-            fullWidth
-            className="flex items-center justify-center gap-2"
-            onClick={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/3pl/onboard` } })}
-          >
-            <GoogleIcon />
-            Continue with Google
-          </Button>
-          <div className="relative my-4 flex items-center justify-center">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
-            <span className="relative bg-surface px-2 text-xs uppercase text-muted">or</span>
-          </div>
-
-          {signupSent ? (
-            <Alert tone="success">Check {signupEmail.trim()} for a confirmation link, then come back here to continue.</Alert>
-          ) : (
-            <form onSubmit={signUpWithEmail} className="space-y-3" noValidate>
-              {signupError && <Alert tone="danger">{signupError}</Alert>}
-              <Input
-                label="Email"
-                type="email"
-                autoComplete="email"
-                placeholder="you@company.com"
-                value={signupEmail}
-                onChange={e => setSignupEmail(e.target.value)}
-              />
-              <Input
-                label="Password"
-                type="password"
-                autoComplete="new-password"
-                placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
-                value={signupPassword}
-                onChange={e => setSignupPassword(e.target.value)}
-              />
-              <Button type="submit" size="lg" fullWidth loading={signingUp}>
-                {signingUp ? 'Creating account…' : 'Create account & continue'}
-              </Button>
-            </form>
-          )}
-          <p className="mt-4 text-xs text-muted text-center">
-            Already applied? <a href="/3pl/onboard/track" className="underline">Track your application</a> or <a href="/login" className="underline">sign in</a>.
-          </p>
-        </Card>
-      </Page>
-    )
-  }
-
-  // Checked onBlur for instant feedback, and again before advancing in case the field was never
-  // blurred (e.g. pasted and the button clicked some other way). Never blocks on a check that itself
-  // fails - the backend still enforces this at submit time either way.
   const checkEmailTaken = async (value: string) => {
     const trimmed = value.trim()
     if (!EMAIL_PATTERN.test(trimmed)) { setEmailTakenError(null); return false }
@@ -448,45 +389,36 @@ export default function TplOnboardingPage() {
           companyName: companyName.trim(),
           contactName: ownerName.trim(),
           phone: mobile,
-          email: email.trim() || session?.user?.email || '',
-          operatingFrom: location,
-          fleetSize,
-          truckType: fleetSize === 'single' ? truckType : JSON.stringify(multipleTruckCounts),
-          user_id: session?.user?.id,
+          operating_from: location.trim(),
+          fleet_size: fleetSize,
+          truck_type: fleetSize === 'single' 
+            ? truckType 
+            : Object.entries(multipleTruckCounts).filter(([_, c]) => c > 0).map(([k, c]) => `${c}x ${k}`).join(', '),
+          custom_id: customId || suggestCustomId(companyName),
         }
+
         if (onboardingMode === 'full') {
-          payload.custom_id = customId || suggestCustomId(companyName)
           payload.pan = pan.trim().toUpperCase()
-          payload.gst = gst.trim() ? gst.trim().toUpperCase() : undefined
+          payload.gst = gst.trim() ? gst.trim().toUpperCase() : null
           payload.entityType = entityType
-          payload.cin = cin.trim() ? cin.trim().toUpperCase() : undefined
+          payload.cin = cin.trim() ? cin.trim().toUpperCase() : null
           payload.authorizedSignatoryName = authorizedSignatoryName.trim()
           payload.msmeStatus = msmeStatus
           payload.bankAccount = bankAccount.trim()
           payload.bankIfsc = bankIfsc.trim().toUpperCase()
           payload.documents = Object.entries(docUrls).map(([type, url]) => ({ type, url }))
         }
+
         const res = await tplAPI.onboard(payload)
-        toast.success('Successfully onboarded!')
-        const partnerId = res?.partner?.id
-        if (partnerId && session) {
-          const account = await loadAccount(session.user.id).catch(() => ({
-            role: 'vendor',
-            hasVendorProfile: false,
-            tplPartnerId: partnerId,
-          }))
-          useAuthStore.getState().setSession(session, account.role || 'vendor', partnerId)
-          navigate(`/3pl-portal/${partnerId}`, { replace: true })
-          return
-        }
-        setCreatedPartnerId(partnerId || null)
         setSubmitted(true)
-      } catch (err) {
-        const message = errorMessage(err, 'Failed to onboard.')
-        toast.error(message)
-        if (session?.user && /already exists/i.test(message)) {
+        if (res?.partner?.id) {
+          setCreatedPartnerId(res.partner.id)
+        }
+        toast.success('Application submitted successfully!')
+        
+        if (session?.user) {
           try {
-            const existing = await tplAPI.byUser(session.user.id)
+            const existing = await tplAPI.checkPartner({ user_id: session.user.id })
             if (existing?.id) {
               const account = await loadAccount(session.user.id).catch(() => ({
                 role: 'vendor',
@@ -500,6 +432,8 @@ export default function TplOnboardingPage() {
             // ignore
           }
         }
+      } catch (err: unknown) {
+        toast.error(errorMessage(err, 'Failed to submit application. Please check your inputs.'))
       } finally {
         setIsSubmitting(false)
       }
@@ -513,8 +447,6 @@ export default function TplOnboardingPage() {
     setStep((s) => Math.max(0, s - 1))
   }
 
-  // Signing in (Google or email) has no undo on its own: this is the only way out of the form once
-  // it's up, whether to cancel entirely or to redo the sign-in with a different account.
   const switchAccount = async () => {
     await supabase.auth.signOut().catch(() => undefined)
     setSession(null)
@@ -528,717 +460,1056 @@ export default function TplOnboardingPage() {
     return sum + (v && v.max_t ? v.max_t * count : 0)
   }, 0) : 0
 
-  if (submitted) {
+  if (userLoading) {
     return (
-      <Page width="form" className="!space-y-4 py-8 flex items-center justify-center min-h-[60vh]">
-        <Card padded className="text-center space-y-6 max-w-md w-full">
-          <div className="mx-auto w-16 h-16 bg-success/10 text-success flex items-center justify-center rounded-full mb-4">
-            <CheckCircle2 size={32} />
-          </div>
-          <h2 className="text-2xl font-semibold text-text">Application Submitted!</h2>
-          <p className="text-muted">
-            {onboardingMode === 'full'
-              ? 'Your company, bank details, and KYC documents have been submitted for review.'
-              : 'Your truck details have been successfully registered.'}
-          </p>
-          <div className="p-4 bg-surface-subtle border border-border rounded-control">
-            <p className="font-medium text-text">
-              Your application is pending approval. We'll email you as soon as it's reviewed — you can keep
-              signing in with Google to check its status in the meantime.
-            </p>
-          </div>
-          <button onClick={() => navigate(createdPartnerId ? `/3pl-portal/${createdPartnerId}` : '/3pl/onboard/track')} className="w-full py-3 bg-brand text-brand-fill font-semibold rounded-control transition-opacity hover:opacity-90">
-            Go to 3PL Portal
-          </button>
-        </Card>
-      </Page>
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+          <p className="text-sm font-medium text-muted">Loading partner portal…</p>
+        </div>
+      </div>
     )
   }
 
-  return (
-    <Page width="form" className="!space-y-4 py-8 overflow-hidden">
-      <PageHeader
-        title="Join Margix as a Truck Partner"
-        description="Register in minutes. Choose fast lead onboarding or complete self-service verification."
-        back={{ to: '/', label: 'Cancel and go home' }}
-        actions={
-          <button type="button" onClick={switchAccount} className="text-sm text-muted underline hover:text-text">
-            Signed in as {session.user.email} — not you?
-          </button>
-        }
-      />
+  // Common Header for unauthenticated and authenticated onboarding views
+  const renderTopNavbar = () => (
+    <header className="border-b border-border bg-surface/95 backdrop-blur-md sticky top-0 z-40">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-2.5 rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
+            <img src="/margix-logo.png" alt="Margix" className="h-8 w-8 object-contain" />
+            <span className="text-lg font-bold tracking-tight text-text">
+              Margix<span className="text-brand">India</span>
+            </span>
+          </Link>
+          <div className="hidden h-5 w-px bg-border sm:block" />
+          <span className="hidden text-xs font-semibold uppercase tracking-wider text-muted sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface-subtle border border-border">
+            <Truck size={12} className="text-brand" /> 3PL Carrier Partner Network
+          </span>
+        </div>
 
-      <Stepper steps={steps} current={step} />
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 relative">
-        <div
-          className={clsx(
-            'lg:col-span-8 transition-transform duration-300 ease-in-out',
-            direction === 'forward' ? 'animate-slide-in-right' : 'animate-slide-in-left'
+        <div className="flex items-center gap-4 text-xs">
+          <a href="tel:+9102248901234" className="hidden lg:flex items-center gap-1.5 text-muted hover:text-text transition-colors">
+            <Phone size={13} className="text-brand" /> +91 (022) 4890-1234
+          </a>
+          <div className="hidden h-4 w-px bg-border lg:block" />
+          <Link to="/3pl/onboard/track" className="text-muted hover:text-text font-medium transition-colors">
+            Track Application
+          </Link>
+          {session ? (
+            <div className="flex items-center gap-2 border-l border-border pl-4">
+              <span className="text-muted hidden md:inline">
+                Signed in as <strong className="text-text font-medium">{session.user.email}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={switchAccount}
+                className="text-xs text-brand font-semibold hover:underline cursor-pointer"
+              >
+                Switch
+              </button>
+            </div>
+          ) : (
+            <Link to="/login" className="font-semibold text-brand hover:underline">
+              Sign In
+            </Link>
           )}
-          key={step}
-        >
-          <Card padded className="min-h-[400px]">
-            <h2 className="text-lg font-semibold mb-6">{steps[step]}</h2>
-            
-            {step === 0 && (
-              <div className="space-y-6">
-                <div>
-                  <label className="text-xs font-semibold uppercase text-muted mb-2.5 block">
-                    Choose Onboarding Speed
-                  </label>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() => { setOnboardingMode('quick'); if (step > 2) setStep(2) }}
-                      className={clsx(
-                        'flex flex-col items-start p-4 text-left border rounded-card transition-all duration-200 cursor-pointer',
-                        onboardingMode === 'quick'
-                          ? 'border-brand bg-brand-fill/40 ring-1 ring-brand shadow-xs'
-                          : 'border-border bg-surface hover:border-text/40'
-                      )}
-                    >
-                      <div className="flex items-center justify-between w-full mb-1">
-                        <div className="flex items-center gap-1.5">
-                          <Zap size={15} className="text-brand" />
-                          <span className="font-semibold text-sm text-text">Quick Onboard (2 mins)</span>
-                        </div>
-                        <span className="text-xs font-semibold uppercase px-2 py-0.5 rounded-full bg-brand-soft text-brand">Fastest</span>
-                      </div>
-                      <p className="mt-1 text-xs text-muted leading-relaxed">
-                        Submit fleet & contact details. Our team connects to finalize onboarding.
-                      </p>
-                      <div className="mt-3 flex items-center gap-2 text-xs text-muted font-medium">
-                        <span className="flex items-center gap-1 text-success"><CheckCircle2 size={12} /> 3 simple steps</span>
-                        <span>•</span>
-                        <span>Zero paperwork now</span>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOnboardingMode('full')}
-                      className={clsx(
-                        'flex flex-col items-start p-4 text-left border rounded-card transition-all duration-200 cursor-pointer',
-                        onboardingMode === 'full'
-                          ? 'border-brand bg-brand-fill/40 ring-1 ring-brand shadow-xs'
-                          : 'border-border bg-surface hover:border-text/40'
-                      )}
-                    >
-                      <div className="flex items-center justify-between w-full mb-1">
-                        <div className="flex items-center gap-1.5">
-                          <ShieldCheck size={15} className="text-brand" />
-                          <span className="font-semibold text-sm text-text">Complete Self-Onboarding</span>
-                        </div>
-                        <span className="text-xs font-semibold uppercase px-2 py-0.5 rounded-full bg-surface-subtle text-muted">Direct Approval</span>
-                      </div>
-                      <p className="mt-1 text-xs text-muted leading-relaxed">
-                        Enter PAN, GST, bank details and upload KYC documents upfront.
-                      </p>
-                      <div className="mt-3 flex items-center gap-2 text-xs text-muted font-medium">
-                        <span className="flex items-center gap-1 text-brand"><CheckCircle2 size={12} /> Instant rate lock</span>
-                        <span>•</span>
-                        <span>Direct verification</span>
-                      </div>
-                    </button>
+        </div>
+      </div>
+    </header>
+  )
+
+  // 1. Unauthenticated Showcase Landing
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-bg flex flex-col">
+        {renderTopNavbar()}
+
+        <main className="flex-1 mx-auto max-w-6xl w-full px-4 sm:px-6 lg:px-8 py-10 lg:py-16">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">
+            {/* Left Column: Brand Hero & Value Proposition */}
+            <div className="lg:col-span-7 space-y-6">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-soft/70 border border-brand/30 text-xs font-semibold text-brand">
+                <Sparkles size={13} /> Official Carrier Partner Program
+              </div>
+
+              <div className="space-y-3">
+                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-text leading-[1.15]">
+                  Drive High-Margin Loads. Get Paid <span className="text-brand">On Time</span>.
+                </h1>
+                <p className="text-base sm:text-lg text-muted leading-relaxed max-w-xl">
+                  Join hundreds of verified 3PL fleet owners and truck operators across India. Direct enterprise freight, zero broker cuts, and hassle-free bank settlements.
+                </p>
+              </div>
+
+              {/* 4 Core Value Pillars */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div className="p-4 rounded-card bg-surface border border-border shadow-xs space-y-1.5">
+                  <div className="flex items-center gap-2 font-semibold text-sm text-text">
+                    <Zap size={16} className="text-brand shrink-0" />
+                    <span>Direct Shipper Freight</span>
                   </div>
+                  <p className="text-xs text-muted leading-relaxed">
+                    Access premium corporate loads without paying margins to middlemen or brokers.
+                  </p>
                 </div>
 
-                <div className="border-t border-border pt-5 space-y-4">
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <Input
-                      label="Company name"
-                      required
-                      placeholder="Registered business name"
-                      value={companyName}
-                      onChange={(e) => {
-                        setCompanyName(e.target.value)
-                        if (!customId) setCustomId(suggestCustomId(e.target.value))
-                      }}
-                    />
-                    <Input
-                      label="Contact person"
-                      required
-                      placeholder="Full name"
-                      value={ownerName}
-                      onChange={(e) => setOwnerName(e.target.value)}
-                    />
+                <div className="p-4 rounded-card bg-surface border border-border shadow-xs space-y-1.5">
+                  <div className="flex items-center gap-2 font-semibold text-sm text-text">
+                    <Landmark size={16} className="text-brand shrink-0" />
+                    <span>Guaranteed Direct Settlements</span>
                   </div>
+                  <p className="text-xs text-muted leading-relaxed">
+                    Automated, on-time bank transfers as soon as proof of delivery is cleared.
+                  </p>
+                </div>
 
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <Input
-                        label="Email"
-                        required
-                        type="email"
-                        autoComplete="email"
-                        placeholder="you@company.com"
-                        hint={checkingEmail ? 'Checking availability…' : "This is where we'll send your application status and partner portal access."}
-                        error={emailTakenError}
-                        value={email}
-                        onChange={(e) => { setEmail(e.target.value); setEmailTakenError(null) }}
-                        onBlur={(e) => checkEmailTaken(e.target.value)}
-                      />
-                      {!emailTakenError && !checkingEmail && EMAIL_PATTERN.test(email.trim()) && (
-                        <p className="mt-1 text-xs text-success flex items-center gap-1">
-                          <CheckCircle2 size={12} /> Email address available
-                        </p>
-                      )}
-                    </div>
-
-                    <div>
-                      <Input
-                        label="Mobile number"
-                        required
-                        placeholder="10-digit mobile number"
-                        type="tel"
-                        maxLength={10}
-                        hint={checkingMobile ? 'Checking availability…' : undefined}
-                        error={mobileTakenError}
-                        value={mobile}
-                        onChange={(e) => { setMobile(e.target.value.replace(/\D/g, '')); setMobileTakenError(null) }}
-                        onBlur={(e) => checkMobileTaken(e.target.value)}
-                      />
-                      {!mobileTakenError && !checkingMobile && mobile.replace(/\D/g, '').length === 10 && (
-                        <p className="mt-1 text-xs text-success flex items-center gap-1">
-                          <CheckCircle2 size={12} /> Mobile number verified
-                        </p>
-                      )}
-                    </div>
+                <div className="p-4 rounded-card bg-surface border border-border shadow-xs space-y-1.5">
+                  <div className="flex items-center gap-2 font-semibold text-sm text-text">
+                    <Truck size={16} className="text-brand shrink-0" />
+                    <span>Return-Trip Optimization</span>
                   </div>
+                  <p className="text-xs text-muted leading-relaxed">
+                    Eliminate empty deadhead miles with intelligent corridor matching.
+                  </p>
+                </div>
 
-                  <Input
-                    label="Operating from"
-                    required
-                    placeholder="E.g., Mumbai, MH"
-                    hint="Your primary operating base or hub location"
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                  />
+                <div className="p-4 rounded-card bg-surface border border-border shadow-xs space-y-1.5">
+                  <div className="flex items-center gap-2 font-semibold text-sm text-text">
+                    <Headphones size={16} className="text-brand shrink-0" />
+                    <span>24/7 Dispatch Control</span>
+                  </div>
+                  <p className="text-xs text-muted leading-relaxed">
+                    Live operational coordinators assist your drivers through every route and checkpost.
+                  </p>
                 </div>
               </div>
-            )}
 
-            {step === 1 && (
-              <div className="space-y-6">
-                <div>
-                  <label className="text-xs font-semibold uppercase text-muted mb-3 block">
-                    Select Fleet Scale
-                  </label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setFleetSize('single')}
-                      className={clsx(
-                        'flex flex-col items-center justify-center p-6 border rounded-card transition-all duration-200 cursor-pointer',
-                        fleetSize === 'single'
-                          ? 'border-brand bg-brand-fill/40 text-brand ring-1 ring-brand'
-                          : 'border-border bg-surface text-muted hover:border-text/40 hover:text-text'
-                      )}
-                    >
-                      <div className={clsx('p-2.5 rounded-full mb-2', fleetSize === 'single' ? 'bg-brand text-brand-fill' : 'bg-surface-subtle text-muted')}>
-                        <Truck size={28} />
-                      </div>
-                      <span className="font-semibold text-sm text-text">Single Truck</span>
-                      <span className="text-xs text-muted mt-0.5">Owner operator</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFleetSize('multiple')}
-                      className={clsx(
-                        'flex flex-col items-center justify-center p-6 border rounded-card transition-all duration-200 cursor-pointer',
-                        fleetSize === 'multiple'
-                          ? 'border-brand bg-brand-fill/40 text-brand ring-1 ring-brand'
-                          : 'border-border bg-surface text-muted hover:border-text/40 hover:text-text'
-                      )}
-                    >
-                      <div className={clsx('p-2.5 rounded-full mb-2', fleetSize === 'multiple' ? 'bg-brand text-brand-fill' : 'bg-surface-subtle text-muted')}>
-                        <Blocks size={28} />
-                      </div>
-                      <span className="font-semibold text-sm text-text">Multiple Trucks</span>
-                      <span className="text-xs text-muted mt-0.5">Fleet owner / agency</span>
-                    </button>
-                  </div>
+              {/* Trust Metric Badges */}
+              <div className="pt-2 flex flex-wrap items-center gap-6 text-xs text-muted font-medium">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 size={15} className="text-success" />
+                  <span>5,000+ Verified Trucks</span>
                 </div>
-
-                {fleetSize === 'multiple' && (
-                  <div className="space-y-4 pt-4 border-t border-border">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                      <p className="text-sm font-medium text-text">Specify how many of each vehicle you have:</p>
-                      {totalTrucksCount > 0 && (
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-soft text-brand rounded-full text-xs font-semibold">
-                          <Truck size={13} />
-                          <span>{totalTrucksCount} Trucks · {totalTonnage.toFixed(1)} Tons Combined</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {vehicles?.map(v => {
-                        const count = multipleTruckCounts[v.key] || 0
-                        return (
-                          <div
-                            key={v.key}
-                            className={clsx(
-                              'flex items-center justify-between p-3.5 border rounded-card transition-all duration-150',
-                              count > 0 ? 'border-brand bg-brand-fill/40 shadow-xs' : 'border-border bg-surface'
-                            )}
-                          >
-                            <div>
-                              <span className="font-medium text-sm text-text block">{v.name}</span>
-                              <span className="text-xs text-muted">{v.max_t} Tons capacity</span>
-                            </div>
-                            <div className="flex items-center space-x-2 bg-surface rounded-full border border-border px-2 py-1 shadow-2xs">
-                              <button 
-                                type="button"
-                                onClick={() => setMultipleTruckCounts(p => ({...p, [v.key]: Math.max(0, count - 1)}))}
-                                className="w-6 h-6 flex items-center justify-center text-muted hover:text-text hover:bg-surface-subtle rounded-full transition-colors cursor-pointer text-sm font-semibold"
-                                disabled={count === 0}
-                              >-</button>
-                              <span className="text-sm font-semibold w-5 text-center text-text">{count}</span>
-                              <button 
-                                type="button"
-                                onClick={() => setMultipleTruckCounts(p => ({...p, [v.key]: count + 1}))}
-                                className="w-6 h-6 flex items-center justify-center text-brand hover:bg-brand-fill rounded-full transition-colors cursor-pointer text-sm font-semibold"
-                              >+</button>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {fleetSize === 'single' && (
-                  <div className="space-y-4 pt-4 border-t border-border">
-                    <Select
-                      label="Select Truck Name"
-                      value={truckType}
-                      onChange={(e) => setTruckType(e.target.value)}
-                    >
-                      <option value="" disabled>Select a truck type...</option>
-                      {vehicles?.map(v => (
-                        <option key={v.key} value={v.key}>{v.name} ({v.max_t} Tons)</option>
-                      ))}
-                    </Select>
-                    
-                    {selectedVehicle && (
-                      <div className="p-4 bg-surface-subtle border border-border rounded-card flex items-center justify-between">
-                        <div>
-                          <p className="text-xs uppercase font-semibold text-muted">Auto-detected Load Capacity</p>
-                          <p className="text-lg font-semibold text-text mt-0.5">{selectedVehicle.name}</p>
-                        </div>
-                        <p className="text-2xl font-semibold text-brand">{selectedVehicle.max_t} Tons</p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 size={15} className="text-success" />
+                  <span>₹15+ Cr Disbursed</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 size={15} className="text-success" />
+                  <span>2-Minute Registration</span>
+                </div>
               </div>
-            )}
+            </div>
 
-            {onboardingMode === 'full' && step === 2 && (
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Select
-                    label="Entity Type"
-                    required
-                    value={entityType}
-                    onChange={e => setEntityType(e.target.value)}
-                  >
-                    <option value="" disabled>Select entity type...</option>
-                    {ENTITY_TYPE_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </Select>
-
-                  <Input
-                    label="Authorized Signatory Name"
-                    required
-                    placeholder="Full name of signatory"
-                    value={authorizedSignatoryName}
-                    onChange={e => setAuthorizedSignatoryName(e.target.value)}
-                  />
+            {/* Right Column: Clean Sign Up / Authentication Box */}
+            <div className="lg:col-span-5">
+              <Card padded className="p-6 sm:p-8 shadow-raised border border-border bg-surface rounded-card">
+                <div className="mb-6 space-y-1">
+                  <h2 className="text-xl font-bold text-text">Start Partner Application</h2>
+                  <p className="text-xs text-muted">
+                    Create or connect your account to submit your fleet details.
+                  </p>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <Input
-                      label="PAN Number"
-                      required
-                      placeholder="ABCDE1234F"
-                      value={pan}
-                      maxLength={10}
-                      onChange={e => setPan(e.target.value.toUpperCase())}
-                      className="font-mono uppercase"
-                    />
-                    {pan && (
-                      <div className="mt-1.5 flex items-center gap-1.5 text-xs">
-                        {validatePanFormat(pan).valid ? (
-                          <span className="text-success flex items-center gap-1 font-medium">
-                            <CheckCircle2 size={12} /> {validatePanFormat(pan).hint}
-                          </span>
-                        ) : (
-                          <span className="text-muted">
-                            {validatePanFormat(pan).hint || '10 alphanumeric characters'}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <Input
-                      label="GSTIN (Optional)"
-                      placeholder="07ABCDE1234F1Z5"
-                      value={gst}
-                      maxLength={15}
-                      onChange={e => setGst(e.target.value.toUpperCase())}
-                      className="font-mono uppercase"
-                    />
-                    {gst && (
-                      <div className="mt-1.5 flex items-center gap-1.5 text-xs">
-                        {validateGstinFormat(gst, pan).valid ? (
-                          <span className="text-success flex items-center gap-1 font-medium">
-                            <CheckCircle2 size={12} /> Valid GSTIN {pan ? '· Matches PAN' : ''}
-                          </span>
-                        ) : (
-                          <span className="text-danger font-medium">
-                            {validateGstinFormat(gst, pan).error}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {entityTypeRequiresCin(entityType) && (
-                  <Input
-                    label="Corporate Identification Number (CIN)"
-                    required
-                    placeholder="U74999DL2019PTC123456"
-                    value={cin}
-                    maxLength={21}
-                    onChange={e => setCin(e.target.value.toUpperCase())}
-                    className="font-mono uppercase"
-                    hint="21-character CIN from Certificate of Incorporation"
-                  />
-                )}
-
-                <Select
-                  label="MSME Registration"
-                  value={msmeStatus}
-                  onChange={e => setMsmeStatus(e.target.value)}
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  fullWidth
+                  className="flex items-center justify-center gap-2.5 font-medium"
+                  onClick={() => supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: { redirectTo: `${window.location.origin}/3pl/onboard` },
+                  })}
                 >
-                  {TPL_MSME_OPTIONS.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </Select>
-              </div>
-            )}
+                  <GoogleIcon />
+                  Continue with Google
+                </Button>
 
-            {onboardingMode === 'full' && step === 3 && (
-              <div className="space-y-5">
-                <div className="p-3.5 bg-brand-fill/20 border border-brand/20 rounded-card flex items-center gap-2.5 text-xs text-text">
-                  <Landmark size={16} className="text-brand shrink-0" />
-                  <span>Settlements and freight disbursements will be credited directly to this bank account.</span>
-                </div>
-
-                <Input
-                  label="Bank Account Number"
-                  required
-                  placeholder="9 to 18 digits"
-                  inputMode="numeric"
-                  value={bankAccount}
-                  onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
-                  className="font-mono text-base"
-                  hint="Enter account number without spaces or special characters"
-                />
-
-                <IfscField
-                  value={bankIfsc}
-                  onChange={setBankIfsc}
-                />
-              </div>
-            )}
-
-            {onboardingMode === 'full' && step === 4 && (
-              <div className="space-y-4">
-                <div className="p-3.5 bg-surface-subtle border border-border rounded-card flex items-center justify-between text-xs text-muted">
-                  <span>Upload clear scanned copies or photos (PDF, PNG, JPG up to 2MB).</span>
-                  <span className="font-semibold text-brand">PAN Card is required</span>
-                </div>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {TPL_DOCUMENT_TYPES.map(docType => (
-                    <DocUploadField
-                      key={docType}
-                      label={docType}
-                      hint={docType === 'PAN Card' ? 'Required for verification' : 'Recommended for faster processing'}
-                      path={docUrls[docType]}
-                      busy={uploadingDocType === docType}
-                      onUpload={file => uploadDoc(docType, file)}
-                      onRemove={() => removeDoc(docType)}
-                      onView={() => {
-                        if (docUrls[docType]) void openDocViewer(docUrls[docType], docType)
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {step === steps.length - 1 && (
-              <div className="space-y-6">
-                <div className="space-y-4">
-                  {/* Contact Details Card */}
-                  <div className="p-4 bg-surface rounded-card border border-border">
-                    <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
-                      <div className="flex items-center gap-2">
-                        <Building size={16} className="text-brand" />
-                        <h4 className="text-sm font-semibold text-text">Contact & Business Details</h4>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setStep(0)}
-                        className="text-xs text-brand hover:underline font-medium cursor-pointer"
-                      >
-                        Edit
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
-                      <div>
-                        <span className="text-muted block text-xs mb-0.5">Company name</span>
-                        <span className="font-medium text-text">{companyName}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted block text-xs mb-0.5">Contact person</span>
-                        <span className="font-medium text-text">{ownerName}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted block text-xs mb-0.5">Email</span>
-                        <span className="font-medium text-text">{email}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted block text-xs mb-0.5">Mobile number</span>
-                        <span className="font-medium text-text">{mobile}</span>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="text-muted block text-xs mb-0.5">Operating from</span>
-                        <span className="font-medium text-text">{location}</span>
-                      </div>
-                    </div>
+                <div className="relative my-5 flex items-center justify-center">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-border" />
                   </div>
+                  <span className="relative bg-surface px-3 text-xs uppercase tracking-wider text-muted font-medium">
+                    or with work email
+                  </span>
+                </div>
 
-                  {/* Fleet Details Card */}
-                  <div className="p-4 bg-surface rounded-card border border-border">
-                    <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
-                      <div className="flex items-center gap-2">
-                        <Truck size={16} className="text-brand" />
-                        <h4 className="text-sm font-semibold text-text">Fleet Specifications</h4>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setStep(1)}
-                        className="text-xs text-brand hover:underline font-medium cursor-pointer"
-                      >
-                        Edit
-                      </button>
-                    </div>
+                {signupSent ? (
+                  <Alert tone="success" title="Check your inbox">
+                    We sent a verification link to <strong className="font-semibold">{signupEmail.trim()}</strong>. Click the link to complete your account setup and resume your application.
+                  </Alert>
+                ) : (
+                  <form onSubmit={signUpWithEmail} className="space-y-4" noValidate>
+                    {signupError && <Alert tone="danger">{signupError}</Alert>}
+                    <Input
+                      label="Email address"
+                      type="email"
+                      autoComplete="email"
+                      placeholder="you@transportagency.com"
+                      value={signupEmail}
+                      onChange={e => setSignupEmail(e.target.value)}
+                    />
+                    <Input
+                      label="Password"
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+                      value={signupPassword}
+                      onChange={e => setSignupPassword(e.target.value)}
+                    />
+                    <Button type="submit" size="lg" fullWidth loading={signingUp} className="font-semibold">
+                      {signingUp ? 'Creating account…' : 'Create Account & Continue'}
+                    </Button>
+                  </form>
+                )}
+
+                <div className="mt-6 pt-5 border-t border-border text-center space-y-2 text-xs text-muted">
+                  <p>
+                    Already submitted an application?{' '}
+                    <Link to="/3pl/onboard/track" className="text-brand font-semibold hover:underline">
+                      Track Status
+                    </Link>
+                  </p>
+                  <p>
+                    Staff or platform administrator?{' '}
+                    <Link to="/login" className="underline hover:text-text">
+                      Sign In Here
+                    </Link>
+                  </p>
+                </div>
+              </Card>
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // 2. Submission Success View
+  if (submitted) {
+    return (
+      <div className="min-h-screen bg-bg flex flex-col">
+        {renderTopNavbar()}
+
+        <main className="flex-1 flex items-center justify-center px-4 py-12">
+          <Card padded className="text-center space-y-6 max-w-lg w-full p-8 sm:p-10 shadow-raised border border-border">
+            <div className="mx-auto w-16 h-16 bg-success-soft text-success flex items-center justify-center rounded-full mb-2">
+              <CheckCircle2 size={36} />
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-text">Application Submitted!</h2>
+              <p className="text-sm text-muted leading-relaxed">
+                {onboardingMode === 'full'
+                  ? 'Your company profile, bank payout details, and KYC compliance documents have been sent to our dispatch operations team for verification.'
+                  : 'Your fleet scale and contact details have been registered. Our partner operations team will contact you to finalize onboarding.'}
+              </p>
+            </div>
+
+            <div className="p-4 bg-surface-subtle border border-border rounded-card text-left space-y-2 text-xs text-muted">
+              <p className="font-semibold text-text flex items-center gap-1.5">
+                <Clock size={14} className="text-brand" /> What happens next?
+              </p>
+              <ul className="space-y-1.5 list-disc pl-4 leading-relaxed">
+                <li>Applications are reviewed within 1 business day.</li>
+                <li>You will receive SMS & email notifications upon review.</li>
+                <li>You can access your partner portal anytime using this email.</li>
+              </ul>
+            </div>
+
+            <Button
+              size="lg"
+              fullWidth
+              onClick={() => navigate(createdPartnerId ? `/3pl-portal/${createdPartnerId}` : '/3pl/onboard/track')}
+              className="py-3 font-semibold"
+            >
+              Go to 3PL Partner Portal
+            </Button>
+          </Card>
+        </main>
+      </div>
+    )
+  }
+
+  const progressPercent = Math.round(((step + 1) / steps.length) * 100)
+
+  // 3. Authenticated Onboarding Wizard
+  return (
+    <div className="min-h-screen bg-bg flex flex-col">
+      {renderTopNavbar()}
+
+      <main className="flex-1 mx-auto max-w-6xl w-full px-4 sm:px-6 lg:px-8 py-8">
+        {/* Full-width Horizontal Stepper */}
+        <div className="mb-8">
+          <Stepper steps={steps} current={step} />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start relative">
+          {/* Main Form Column (lg:col-span-8) */}
+          <div
+            className={clsx(
+              'lg:col-span-8 transition-transform duration-300 ease-in-out',
+              direction === 'forward' ? 'animate-slide-in-right' : 'animate-slide-in-left'
+            )}
+            key={step}
+          >
+            <Card padded className="p-6 sm:p-8 md:p-10 shadow-raised border border-border bg-surface rounded-card min-h-[540px] flex flex-col justify-between">
+              <div>
+                {/* Form Step Header */}
+                <div className="flex items-center justify-between border-b border-border pb-5 mb-7">
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">
+                      Step {step + 1} of {steps.length}
+                    </span>
+                    <h2 className="text-2xl font-bold tracking-tight text-text">
+                      {steps[step]}
+                    </h2>
+                  </div>
+                  <span className="hidden sm:inline-flex text-xs font-semibold px-3 py-1 rounded-full bg-surface-subtle border border-border text-muted">
+                    {onboardingMode === 'quick' ? 'Quick Mode' : 'Complete Mode'}
+                  </span>
+                </div>
+
+                {/* Step 0: Contact Details & Mode Selection */}
+                {step === 0 && (
+                  <div className="space-y-7">
                     <div>
-                      {fleetSize === 'single' && truckType ? (
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-surface-subtle border border-border rounded-full font-medium text-xs text-text">
-                            <Truck size={13} /> 1x {vehicles?.find(v => v.key === truckType)?.name}
-                          </span>
-                          <span className="text-xs text-muted">
-                            ({vehicles?.find(v => v.key === truckType)?.max_t} Tons capacity)
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap gap-2">
-                            {Object.entries(multipleTruckCounts).filter(([_, count]) => count > 0).map(([key, count]) => (
-                              <div key={key} className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-fill text-brand border border-brand/40 rounded-full font-medium text-xs">
-                                <Truck size={13} /> {count}x {vehicles?.find(v => v.key === key)?.name || key}
-                              </div>
-                            ))}
+                      <label className="text-xs font-bold uppercase tracking-wider text-muted mb-3 block">
+                        Choose Onboarding Speed
+                      </label>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => { setOnboardingMode('quick'); if (step > 2) setStep(2) }}
+                          className={clsx(
+                            'flex flex-col items-start p-5 text-left border rounded-card transition-all duration-200 cursor-pointer',
+                            onboardingMode === 'quick'
+                              ? 'border-brand bg-brand-soft/30 ring-2 ring-brand/40 shadow-xs'
+                              : 'border-border bg-surface hover:border-text/40'
+                          )}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1.5">
+                            <div className="flex items-center gap-1.5 font-bold text-sm text-text">
+                              <Zap size={16} className="text-brand" />
+                              <span>Quick Onboard (2 mins)</span>
+                            </div>
+                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-brand-soft text-brand">
+                              Fastest
+                            </span>
                           </div>
-                          {totalTrucksCount > 0 && (
-                            <p className="text-xs text-muted">
-                              Total: {totalTrucksCount} vehicles · {totalTonnage.toFixed(1)} Tons aggregate capacity
+                          <p className="mt-1 text-xs text-muted leading-relaxed">
+                            Submit basic contact and fleet info. Our operations team will call to finish paperwork.
+                          </p>
+                          <div className="mt-3.5 flex items-center gap-2 text-xs text-muted font-medium">
+                            <span className="flex items-center gap-1 text-success font-semibold">
+                              <CheckCircle2 size={13} /> 3 simple steps
+                            </span>
+                            <span>•</span>
+                            <span>Zero docs now</span>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setOnboardingMode('full')}
+                          className={clsx(
+                            'flex flex-col items-start p-5 text-left border rounded-card transition-all duration-200 cursor-pointer',
+                            onboardingMode === 'full'
+                              ? 'border-brand bg-brand-soft/30 ring-2 ring-brand/40 shadow-xs'
+                              : 'border-border bg-surface hover:border-text/40'
+                          )}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1.5">
+                            <div className="flex items-center gap-1.5 font-bold text-sm text-text">
+                              <ShieldCheck size={16} className="text-brand" />
+                              <span>Complete Self-Onboarding</span>
+                            </div>
+                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-surface-subtle text-muted border border-border">
+                              Direct Approval
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-muted leading-relaxed">
+                            Upload company PAN, GSTIN, bank details and KYC documents now for instant rate lock and faster dispatch.
+                          </p>
+                          <div className="mt-3.5 flex items-center gap-2 text-xs text-muted font-medium">
+                            <span className="flex items-center gap-1 text-brand font-semibold">
+                              <CheckCircle2 size={13} /> Rate contract lock
+                            </span>
+                            <span>•</span>
+                            <span>Direct verification</span>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-border pt-6 space-y-5">
+                      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                        <Input
+                          label="Company name"
+                          required
+                          placeholder="Registered logistics business name"
+                          value={companyName}
+                          onChange={(e) => {
+                            setCompanyName(e.target.value)
+                            if (!customId) setCustomId(suggestCustomId(e.target.value))
+                          }}
+                        />
+                        <Input
+                          label="Contact person"
+                          required
+                          placeholder="Full name of owner/manager"
+                          value={ownerName}
+                          onChange={(e) => setOwnerName(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                        <div>
+                          <Input
+                            label="Email"
+                            required
+                            type="email"
+                            autoComplete="email"
+                            placeholder="you@company.com"
+                            hint={checkingEmail ? 'Checking availability…' : "We'll send application updates and portal credentials here."}
+                            error={emailTakenError}
+                            value={email}
+                            onChange={(e) => { setEmail(e.target.value); setEmailTakenError(null) }}
+                            onBlur={(e) => checkEmailTaken(e.target.value)}
+                          />
+                          {!emailTakenError && !checkingEmail && EMAIL_PATTERN.test(email.trim()) && (
+                            <p className="mt-1 text-xs text-success flex items-center gap-1 font-medium">
+                              <CheckCircle2 size={12} /> Email address available
                             </p>
                           )}
                         </div>
-                      )}
+
+                        <div>
+                          <Input
+                            label="Mobile number"
+                            required
+                            placeholder="10-digit mobile number"
+                            type="tel"
+                            maxLength={10}
+                            hint={checkingMobile ? 'Checking availability…' : undefined}
+                            error={mobileTakenError}
+                            value={mobile}
+                            onChange={(e) => { setMobile(e.target.value.replace(/\D/g, '')); setMobileTakenError(null) }}
+                            onBlur={(e) => checkMobileTaken(e.target.value)}
+                          />
+                          {!mobileTakenError && !checkingMobile && mobile.replace(/\D/g, '').length === 10 && (
+                            <p className="mt-1 text-xs text-success flex items-center gap-1 font-medium">
+                              <CheckCircle2 size={12} /> Valid 10-digit number
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <Input
+                        label="Operating from"
+                        required
+                        placeholder="E.g., Mumbai, Maharashtra or Bhiwandi Hub"
+                        hint="Primary dispatch base, terminal or city where trucks operate"
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                      />
                     </div>
                   </div>
+                )}
 
-                  {/* Full Onboarding Cards */}
-                  {onboardingMode === 'full' && (
-                    <>
-                      <div className="p-4 bg-surface rounded-card border border-border">
-                        <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
-                          <div className="flex items-center gap-2">
-                            <ShieldCheck size={16} className="text-brand" />
-                            <h4 className="text-sm font-semibold text-text">Identity & Tax Information</h4>
+                {/* Step 1: Fleet Details */}
+                {step === 1 && (
+                  <div className="space-y-7">
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wider text-muted mb-3 block">
+                        Select Fleet Scale
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <button
+                          type="button"
+                          onClick={() => setFleetSize('single')}
+                          className={clsx(
+                            'flex flex-col items-center justify-center p-6 border rounded-card transition-all duration-200 cursor-pointer',
+                            fleetSize === 'single'
+                              ? 'border-brand bg-brand-soft/30 text-brand ring-2 ring-brand/40 shadow-xs'
+                              : 'border-border bg-surface text-muted hover:border-text/40 hover:text-text'
+                          )}
+                        >
+                          <div className={clsx('p-3 rounded-full mb-2.5', fleetSize === 'single' ? 'bg-brand text-brand-fill' : 'bg-surface-subtle text-muted')}>
+                            <Truck size={28} />
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => setStep(2)}
-                            className="text-xs text-brand hover:underline font-medium cursor-pointer"
-                          >
-                            Edit
-                          </button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
-                          <div>
-                            <span className="text-muted block text-xs mb-0.5">Entity type</span>
-                            <span className="font-medium text-text">{entityType}</span>
+                          <span className="font-bold text-base text-text">Single Truck</span>
+                          <span className="text-xs text-muted mt-0.5">Owner operator / single vehicle</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setFleetSize('multiple')}
+                          className={clsx(
+                            'flex flex-col items-center justify-center p-6 border rounded-card transition-all duration-200 cursor-pointer',
+                            fleetSize === 'multiple'
+                              ? 'border-brand bg-brand-soft/30 text-brand ring-2 ring-brand/40 shadow-xs'
+                              : 'border-border bg-surface text-muted hover:border-text/40 hover:text-text'
+                          )}
+                        >
+                          <div className={clsx('p-3 rounded-full mb-2.5', fleetSize === 'multiple' ? 'bg-brand text-brand-fill' : 'bg-surface-subtle text-muted')}>
+                            <Blocks size={28} />
                           </div>
-                          <div>
-                            <span className="text-muted block text-xs mb-0.5">Authorized Signatory</span>
-                            <span className="font-medium text-text">{authorizedSignatoryName}</span>
-                          </div>
-                          <div>
-                            <span className="text-muted block text-xs mb-0.5">PAN</span>
-                            <span className="font-mono font-medium text-text">{pan}</span>
-                          </div>
-                          <div>
-                            <span className="text-muted block text-xs mb-0.5">GSTIN</span>
-                            <span className="font-mono font-medium text-text">{gst || '—'}</span>
-                          </div>
-                          {cin && (
-                            <div>
-                              <span className="text-muted block text-xs mb-0.5">CIN</span>
-                              <span className="font-mono font-medium text-text">{cin}</span>
+                          <span className="font-bold text-base text-text">Multiple Trucks</span>
+                          <span className="text-xs text-muted mt-0.5">Fleet owner / transport agency</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {fleetSize === 'multiple' && (
+                      <div className="space-y-5 pt-5 border-t border-border">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <p className="text-sm font-semibold text-text">Specify vehicle counts across your fleet:</p>
+                          {totalTrucksCount > 0 && (
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-soft text-brand rounded-full text-xs font-bold border border-brand/30">
+                              <Truck size={13} />
+                              <span>{totalTrucksCount} Trucks · {totalTonnage.toFixed(1)} Tons Total Capacity</span>
                             </div>
                           )}
-                          <div>
-                            <span className="text-muted block text-xs mb-0.5">MSME</span>
-                            <span className="font-medium text-text">{msmeStatus}</span>
-                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                          {vehicles?.map(v => {
+                            const count = multipleTruckCounts[v.key] || 0
+                            return (
+                              <div
+                                key={v.key}
+                                className={clsx(
+                                  'flex items-center justify-between p-4 border rounded-card transition-all duration-150',
+                                  count > 0 ? 'border-brand bg-brand-soft/20 shadow-xs' : 'border-border bg-surface'
+                                )}
+                              >
+                                <div>
+                                  <span className="font-semibold text-sm text-text block">{v.name}</span>
+                                  <span className="text-xs text-muted">{v.max_t} Tons payload</span>
+                                </div>
+                                <div className="flex items-center space-x-2.5 bg-surface rounded-full border border-border px-2.5 py-1 shadow-2xs">
+                                  <button
+                                    type="button"
+                                    onClick={() => setMultipleTruckCounts(p => ({ ...p, [v.key]: Math.max(0, count - 1) }))}
+                                    className="w-7 h-7 flex items-center justify-center text-muted hover:text-text hover:bg-surface-subtle rounded-full transition-colors cursor-pointer text-base font-bold disabled:opacity-30 disabled:cursor-not-allowed"
+                                    disabled={count === 0}
+                                  >
+                                    -
+                                  </button>
+                                  <span className="text-sm font-bold w-6 text-center text-text">{count}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setMultipleTruckCounts(p => ({ ...p, [v.key]: count + 1 }))}
+                                    className="w-7 h-7 flex items-center justify-center text-brand hover:bg-brand-soft rounded-full transition-colors cursor-pointer text-base font-bold"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
+                    )}
 
-                      <div className="p-4 bg-surface rounded-card border border-border">
-                        <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
+                    {fleetSize === 'single' && (
+                      <div className="space-y-4 pt-5 border-t border-border">
+                        <Select
+                          label="Select Truck Name"
+                          value={truckType}
+                          onChange={(e) => setTruckType(e.target.value)}
+                        >
+                          <option value="" disabled>Select truck type and payload capacity...</option>
+                          {vehicles?.map(v => (
+                            <option key={v.key} value={v.key}>{v.name} ({v.max_t} Tons Payload)</option>
+                          ))}
+                        </Select>
+                        
+                        {selectedVehicle && (
+                          <div className="p-4 bg-surface-subtle border border-border rounded-card flex items-center justify-between">
+                            <div>
+                              <p className="text-xs uppercase font-bold text-muted tracking-wider">Vehicle Specification</p>
+                              <p className="text-base font-bold text-text mt-0.5">{selectedVehicle.name}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-2xl font-bold text-brand">{selectedVehicle.max_t} Tons</p>
+                              <p className="text-xs text-muted">Maximum Rated Payload</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Step 2: Identity & Tax (Complete Mode) */}
+                {onboardingMode === 'full' && step === 2 && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                      <Select
+                        label="Entity Type"
+                        required
+                        value={entityType}
+                        onChange={e => setEntityType(e.target.value)}
+                      >
+                        <option value="" disabled>Select legal entity classification...</option>
+                        {ENTITY_TYPE_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </Select>
+
+                      <Input
+                        label="Authorized Signatory Name"
+                        required
+                        placeholder="Full legal name of signatory"
+                        value={authorizedSignatoryName}
+                        onChange={e => setAuthorizedSignatoryName(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                      <div>
+                        <Input
+                          label="PAN Number"
+                          required
+                          placeholder="ABCDE1234F"
+                          value={pan}
+                          maxLength={10}
+                          onChange={e => setPan(e.target.value.toUpperCase())}
+                          inputClassName="font-mono uppercase text-base"
+                        />
+                        {pan && (
+                          <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+                            {validatePanFormat(pan).valid ? (
+                              <span className="text-success flex items-center gap-1 font-semibold">
+                                <CheckCircle2 size={13} /> {validatePanFormat(pan).hint}
+                              </span>
+                            ) : (
+                              <span className="text-muted">
+                                {validatePanFormat(pan).hint || '10 alphanumeric characters'}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <Input
+                          label="GSTIN (Optional)"
+                          placeholder="07ABCDE1234F1Z5"
+                          value={gst}
+                          maxLength={15}
+                          onChange={e => setGst(e.target.value.toUpperCase())}
+                          inputClassName="font-mono uppercase text-base"
+                        />
+                        {gst && (
+                          <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+                            {validateGstinFormat(gst, pan).valid ? (
+                              <span className="text-success flex items-center gap-1 font-semibold">
+                                <CheckCircle2 size={13} /> Valid GSTIN {pan ? '· Matches PAN' : ''}
+                              </span>
+                            ) : (
+                              <span className="text-danger font-semibold">
+                                {validateGstinFormat(gst, pan).error}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {entityTypeRequiresCin(entityType) && (
+                      <Input
+                        label="Corporate Identification Number (CIN)"
+                        required
+                        placeholder="U74999DL2019PTC123456"
+                        value={cin}
+                        maxLength={21}
+                        onChange={e => setCin(e.target.value.toUpperCase())}
+                        inputClassName="font-mono uppercase"
+                        hint="21-character CIN from your Certificate of Incorporation"
+                      />
+                    )}
+
+                    <Select
+                      label="MSME Registration"
+                      value={msmeStatus}
+                      onChange={e => setMsmeStatus(e.target.value)}
+                    >
+                      {TPL_MSME_OPTIONS.map(opt => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </Select>
+                  </div>
+                )}
+
+                {/* Step 3: Bank Details (Complete Mode) */}
+                {onboardingMode === 'full' && step === 3 && (
+                  <div className="space-y-6">
+                    <div className="p-4 bg-brand-soft/30 border border-brand/30 rounded-card flex items-center gap-3 text-xs text-text">
+                      <Landmark size={20} className="text-brand shrink-0" />
+                      <span className="leading-relaxed">
+                        Direct freight disbursements, detention allowances, and settlements will be credited directly to this verified business bank account.
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                      <Input
+                        label="Bank Account Number"
+                        required
+                        placeholder="9 to 18 digits"
+                        inputMode="numeric"
+                        value={bankAccount}
+                        onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
+                        inputClassName="font-mono text-base"
+                        hint={bankAccount ? `${bankAccount.length} digits entered` : 'Account number without spaces or dashes'}
+                      />
+
+                      <IfscField
+                        value={bankIfsc}
+                        onChange={setBankIfsc}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 4: KYC Documents (Complete Mode) */}
+                {onboardingMode === 'full' && step === 4 && (
+                  <div className="space-y-5">
+                    <div className="p-4 bg-surface-subtle border border-border rounded-card flex items-center justify-between text-xs text-muted">
+                      <span>Upload clear scanned copies or photos (PDF, PNG, JPG up to 2MB).</span>
+                      <span className="font-bold text-brand">Company PAN Card is required</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {TPL_DOCUMENT_TYPES.map(docType => (
+                        <DocUploadField
+                          key={docType}
+                          label={docType}
+                          hint={docType === 'PAN Card' ? 'Required for verification' : 'Recommended for instant approval'}
+                          path={docUrls[docType]}
+                          busy={uploadingDocType === docType}
+                          onUpload={file => uploadDoc(docType, file)}
+                          onRemove={() => removeDoc(docType)}
+                          onView={() => {
+                            if (docUrls[docType]) void openDocViewer(docUrls[docType], docType)
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Final Step: Review & Submit */}
+                {step === steps.length - 1 && (
+                  <div className="space-y-6">
+                    <div className="space-y-4">
+                      {/* Contact Summary */}
+                      <div className="p-5 bg-surface rounded-card border border-border shadow-xs">
+                        <div className="flex items-center justify-between border-b border-border pb-3 mb-3.5">
                           <div className="flex items-center gap-2">
-                            <Landmark size={16} className="text-brand" />
-                            <h4 className="text-sm font-semibold text-text">Bank Account for Payouts</h4>
+                            <Building size={16} className="text-brand" />
+                            <h4 className="text-sm font-bold text-text">Contact & Business Details</h4>
                           </div>
                           <button
                             type="button"
-                            onClick={() => setStep(3)}
-                            className="text-xs text-brand hover:underline font-medium cursor-pointer"
+                            onClick={() => setStep(0)}
+                            className="text-xs text-brand hover:underline font-semibold cursor-pointer"
                           >
                             Edit
                           </button>
                         </div>
                         <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
                           <div>
-                            <span className="text-muted block text-xs mb-0.5">Account number</span>
-                            <span className="font-mono font-medium text-text">
-                              {bankAccount ? `••••••••${bankAccount.slice(-4)}` : '—'}
-                            </span>
+                            <span className="text-muted block text-xs mb-0.5">Company name</span>
+                            <span className="font-semibold text-text">{companyName}</span>
                           </div>
                           <div>
-                            <span className="text-muted block text-xs mb-0.5">IFSC code</span>
-                            <span className="font-mono font-medium text-text">{bankIfsc || '—'}</span>
+                            <span className="text-muted block text-xs mb-0.5">Contact person</span>
+                            <span className="font-semibold text-text">{ownerName}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted block text-xs mb-0.5">Email</span>
+                            <span className="font-semibold text-text">{email}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted block text-xs mb-0.5">Mobile</span>
+                            <span className="font-semibold text-text">{mobile}</span>
+                          </div>
+                          <div className="col-span-2">
+                            <span className="text-muted block text-xs mb-0.5">Operating from</span>
+                            <span className="font-semibold text-text">{location}</span>
                           </div>
                         </div>
                       </div>
 
-                      <div className="p-4 bg-surface rounded-card border border-border">
-                        <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
+                      {/* Fleet Summary */}
+                      <div className="p-5 bg-surface rounded-card border border-border shadow-xs">
+                        <div className="flex items-center justify-between border-b border-border pb-3 mb-3.5">
                           <div className="flex items-center gap-2">
-                            <FileText size={16} className="text-brand" />
-                            <h4 className="text-sm font-semibold text-text">Uploaded KYC Documents</h4>
+                            <Truck size={16} className="text-brand" />
+                            <h4 className="text-sm font-bold text-text">Fleet Specifications</h4>
                           </div>
                           <button
                             type="button"
-                            onClick={() => setStep(4)}
-                            className="text-xs text-brand hover:underline font-medium cursor-pointer"
+                            onClick={() => setStep(1)}
+                            className="text-xs text-brand hover:underline font-semibold cursor-pointer"
                           >
                             Edit
                           </button>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          {Object.keys(docUrls).length > 0 ? (
-                            Object.keys(docUrls).map(d => (
-                              <span key={d} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-success/10 text-success font-medium">
-                                <CheckCircle2 size={12} /> {d}
+                        <div>
+                          {fleetSize === 'single' && truckType ? (
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-surface-subtle border border-border rounded-full font-semibold text-xs text-text">
+                                <Truck size={13} /> 1x {vehicles?.find(v => v.key === truckType)?.name}
                               </span>
-                            ))
+                              <span className="text-xs text-muted">
+                                ({vehicles?.find(v => v.key === truckType)?.max_t} Tons payload capacity)
+                              </span>
+                            </div>
                           ) : (
-                            <span className="text-xs text-muted">No documents uploaded</span>
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap gap-2">
+                                {Object.entries(multipleTruckCounts).filter(([_, count]) => count > 0).map(([key, count]) => (
+                                  <div key={key} className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-soft text-brand border border-brand/30 rounded-full font-semibold text-xs">
+                                    <Truck size={13} /> {count}x {vehicles?.find(v => v.key === key)?.name || key}
+                                  </div>
+                                ))}
+                              </div>
+                              {totalTrucksCount > 0 && (
+                                <p className="text-xs text-muted font-medium pt-1">
+                                  Total: {totalTrucksCount} vehicles · {totalTonnage.toFixed(1)} Tons aggregate carrying capacity
+                                </p>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
-                    </>
-                  )}
-                </div>
-                
-                <p className="text-xs text-muted text-center pt-2">
-                  {onboardingMode === 'full'
-                    ? 'Review your details above, then submit. Once verified by dispatch, your account will be directly activated.'
-                    : 'Review your details above, then submit. You can complete PAN, GST and bank details anytime from your partner portal.'}
-                </p>
-              </div>
-            )}
-          </Card>
-        </div>
 
-        <div className="hidden space-y-4 lg:block lg:col-span-4">
-          <Card padded className="bg-text">
-            <h3 className="text-sm font-semibold text-white">What happens after you apply</h3>
-            <ol className="mt-4 space-y-4">
-              {[
-                ['Submit your application', onboardingMode === 'full' ? 'Complete verification documents submitted.' : 'Takes under a minute — add documents later.'],
-                ['Our team reviews it', 'Usually within one business day.'],
-                ["You're in", "We'll email you, and you can start getting load offers."],
-              ].map(([title, body], i) => (
-                <li key={title} className="flex gap-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-fill text-xs font-semibold text-on-brand">
-                    {i + 1}
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium text-white">{title}</p>
-                    <p className="mt-0.5 text-xs text-white/60">{body}</p>
+                      {/* Full Onboarding Cards */}
+                      {onboardingMode === 'full' && (
+                        <>
+                          <div className="p-5 bg-surface rounded-card border border-border shadow-xs">
+                            <div className="flex items-center justify-between border-b border-border pb-3 mb-3.5">
+                              <div className="flex items-center gap-2">
+                                <ShieldCheck size={16} className="text-brand" />
+                                <h4 className="text-sm font-bold text-text">Identity & Tax Information</h4>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setStep(2)}
+                                className="text-xs text-brand hover:underline font-semibold cursor-pointer"
+                              >
+                                Edit
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+                              <div>
+                                <span className="text-muted block text-xs mb-0.5">Entity type</span>
+                                <span className="font-semibold text-text">{entityType}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted block text-xs mb-0.5">Authorized Signatory</span>
+                                <span className="font-semibold text-text">{authorizedSignatoryName}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted block text-xs mb-0.5">PAN</span>
+                                <span className="font-mono font-bold text-text">{pan}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted block text-xs mb-0.5">GSTIN</span>
+                                <span className="font-mono font-bold text-text">{gst || '—'}</span>
+                              </div>
+                              {cin && (
+                                <div>
+                                  <span className="text-muted block text-xs mb-0.5">CIN</span>
+                                  <span className="font-mono font-bold text-text">{cin}</span>
+                                </div>
+                              )}
+                              <div>
+                                <span className="text-muted block text-xs mb-0.5">MSME</span>
+                                <span className="font-semibold text-text">{msmeStatus}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-5 bg-surface rounded-card border border-border shadow-xs">
+                            <div className="flex items-center justify-between border-b border-border pb-3 mb-3.5">
+                              <div className="flex items-center gap-2">
+                                <Landmark size={16} className="text-brand" />
+                                <h4 className="text-sm font-bold text-text">Bank Account for Payouts</h4>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setStep(3)}
+                                className="text-xs text-brand hover:underline font-semibold cursor-pointer"
+                              >
+                                Edit
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+                              <div>
+                                <span className="text-muted block text-xs mb-0.5">Account number</span>
+                                <span className="font-mono font-bold text-text">
+                                  {bankAccount ? `••••••••${bankAccount.slice(-4)}` : '—'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-muted block text-xs mb-0.5">IFSC code</span>
+                                <span className="font-mono font-bold text-text">{bankIfsc || '—'}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-5 bg-surface rounded-card border border-border shadow-xs">
+                            <div className="flex items-center justify-between border-b border-border pb-3 mb-3.5">
+                              <div className="flex items-center gap-2">
+                                <FileText size={16} className="text-brand" />
+                                <h4 className="text-sm font-bold text-text">Uploaded Documents</h4>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setStep(4)}
+                                className="text-xs text-brand hover:underline font-semibold cursor-pointer"
+                              >
+                                Edit
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                              {TPL_DOCUMENT_TYPES.map(docType => (
+                                <div key={docType} className="flex items-center justify-between p-2 rounded-control bg-surface-subtle border border-border">
+                                  <span className="font-medium text-text">{docType}</span>
+                                  {docUrls[docType] ? (
+                                    <span className="text-success flex items-center gap-1 font-semibold">
+                                      <CheckCircle2 size={13} /> Uploaded
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted italic">Not uploaded</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="p-4 rounded-card bg-surface-subtle border border-border text-xs text-muted">
+                      By submitting this application, you declare that the vehicle and business information provided is accurate and you agree to the Margix Carrier Partner Terms of Carriage.
+                    </div>
                   </div>
+                )}
+              </div>
+
+              {/* In-Card Docked Navigation Controls */}
+              <div className="mt-8 pt-6 border-t border-border flex items-center justify-between">
+                <Button
+                  variant="secondary"
+                  onClick={back}
+                  disabled={step === 0}
+                  icon={<ChevronLeft size={16} />}
+                >
+                  Back
+                </Button>
+
+                <div className="text-xs font-semibold text-muted hidden sm:block">
+                  Step {step + 1} of {steps.length}
+                </div>
+
+                <Button
+                  onClick={next}
+                  disabled={isSubmitting}
+                  variant={step === steps.length - 1 ? 'primary' : 'secondary'}
+                  className="font-semibold"
+                >
+                  {step === steps.length - 1 ? (isSubmitting ? 'Submitting Application...' : 'Submit Application') : 'Next'}
+                  {step !== steps.length - 1 && <ChevronRight size={16} className="ml-1" />}
+                </Button>
+              </div>
+            </Card>
+          </div>
+
+          {/* Desktop Sidebar: Application Overview, Partner Advantages & Help Desk (lg:col-span-4) */}
+          <aside className="hidden lg:block lg:col-span-4 space-y-5 lg:sticky lg:top-24">
+            {/* Progress Overview Card */}
+            <Card padded className="p-6 bg-surface border border-border shadow-xs rounded-card space-y-5">
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold mb-2">
+                  <span className="text-brand uppercase tracking-wider">
+                    Application Progress
+                  </span>
+                  <span className="text-muted font-bold">{progressPercent}%</span>
+                </div>
+                <div className="w-full h-2 bg-surface-subtle border border-border rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-brand transition-all duration-300 rounded-full"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-border space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted">Selected Mode:</span>
+                  <span className="font-semibold px-2.5 py-0.5 rounded-full bg-surface-subtle border border-border text-text">
+                    {onboardingMode === 'quick' ? '⚡ Quick (2 mins)' : '🛡️ Complete Verification'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted">Review SLA:</span>
+                  <span className="font-semibold text-text">Within 1 Business Day</span>
+                </div>
+              </div>
+            </Card>
+
+            {/* Carrier Advantages Card */}
+            <Card padded className="p-6 bg-surface border border-border shadow-xs rounded-card space-y-4">
+              <h3 className="text-sm font-bold text-text flex items-center gap-2">
+                <Award size={16} className="text-brand" />
+                <span>Partner Advantages</span>
+              </h3>
+              <ul className="space-y-3 text-xs text-muted">
+                <li className="flex items-start gap-2.5">
+                  <CheckCircle2 size={15} className="text-brand shrink-0 mt-0.5" />
+                  <span><strong className="text-text">Direct Shipper Freight:</strong> Eliminate middlemen broker margins for maximum earnings.</span>
                 </li>
-              ))}
-            </ol>
-          </Card>
+                <li className="flex items-start gap-2.5">
+                  <CheckCircle2 size={15} className="text-brand shrink-0 mt-0.5" />
+                  <span><strong className="text-text">Guaranteed Settlements:</strong> On-time direct bank transfers without payment disputes.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <CheckCircle2 size={15} className="text-brand shrink-0 mt-0.5" />
+                  <span><strong className="text-text">Dedicated Dispatch:</strong> 24/7 route support and live load assistance for your drivers.</span>
+                </li>
+              </ul>
+            </Card>
 
-          <Card padded>
-            <h3 className="font-semibold text-text text-sm mb-3">Before you continue</h3>
-            <ul className="space-y-3 text-xs text-muted">
-              <li className="flex items-start gap-2">
-                <CheckCircle2 size={16} className="text-brand shrink-0" />
-                Keep your PAN card handy
-              </li>
-              <li className="flex items-start gap-2">
-                <CheckCircle2 size={16} className="text-brand shrink-0" />
-                Know your preferred corridors
-              </li>
-              <li className="flex items-start gap-2">
-                <CheckCircle2 size={16} className="text-brand shrink-0" />
-                Add GST details if available
-              </li>
-            </ul>
-          </Card>
+            {/* Need Help Desk Card */}
+            <div className="p-5 rounded-card border border-border bg-surface-subtle text-xs text-muted space-y-3">
+              <div className="flex items-center gap-2 font-bold text-text text-sm">
+                <Headphones size={16} className="text-brand" />
+                <span>Need help onboarding?</span>
+              </div>
+              <p className="leading-relaxed">
+                Our partner operations desk is available Monday to Saturday (9 AM – 7 PM IST) to assist with registration.
+              </p>
+              <div className="pt-1 space-y-1.5 font-mono text-[11px] text-text">
+                <div className="flex items-center gap-2">
+                  <Phone size={12} className="text-muted" />
+                  <span>+91 (022) 4890-1234</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Mail size={12} className="text-muted" />
+                  <span>3pl-support@margixindia.com</span>
+                </div>
+              </div>
+            </div>
+          </aside>
         </div>
-      </div>
-
-      <Card padded className="mt-6">
-        <div className="flex items-center justify-between">
-          <Button variant="secondary" onClick={back} disabled={step === 0} icon={<ChevronLeft size={16} />}>
-            Back
-          </Button>
-          <Button onClick={next} disabled={isSubmitting} variant={step === steps.length - 1 ? 'primary' : 'secondary'}>
-            {step === steps.length - 1 ? (isSubmitting ? 'Submitting...' : 'Submit Application') : 'Next'}
-            {step !== steps.length - 1 && <ChevronRight size={16} className="ml-1" />}
-          </Button>
-        </div>
-      </Card>
+      </main>
 
       {viewer && (
         <DocumentViewerModal
@@ -1248,19 +1519,6 @@ export default function TplOnboardingPage() {
           fileName={viewer.name}
         />
       )}
-      
-      <style>{`
-        @keyframes slideInRight {
-          from { transform: translateX(20px); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-        @keyframes slideInLeft {
-          from { transform: translateX(-20px); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-        .animate-slide-in-right { animation: slideInRight 0.3s ease-out forwards; }
-        .animate-slide-in-left { animation: slideInLeft 0.3s ease-out forwards; }
-      `}</style>
-    </Page>
+    </div>
   )
 }
