@@ -32,6 +32,9 @@ export interface Vehicle {
   rc_number?: string | null
   rc_expiry?: string | null
   rc_document_url?: string | null
+  /** 'valid' | 'invalid' | 'unavailable' | 'not_configured' - set after Cashfree's Vehicle RC check runs. */
+  rc_verification_status?: string | null
+  rc_verified_at?: string | null
   insurance_number?: string | null
   insurance_expiry?: string | null
   insurance_document_url?: string | null

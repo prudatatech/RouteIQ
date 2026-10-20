@@ -8,6 +8,7 @@ import { indianMobileError, rcNumberError } from '@/utils/validators'
 import { expiryStatus } from '@/utils/documentExpiry'
 import StagedPhotos, { type StagedPhotoFiles } from '@/components/fleet/photos/StagedPhotos'
 import { VehiclePhotoCard } from '@/components/fleet/photos/VehiclePhotoCard'
+import { VehicleRcStatus } from '@/components/fleet/VehicleRcStatus'
 import { uploadStagedPhotos } from '@/components/fleet/photos/photos'
 
 // Must match backend-ts VehicleCreateSchema.vehicle_type; the server rejects anything else.
@@ -106,7 +107,10 @@ const STEPS = [
 export default function VehicleWizardModal({ isOpen, onClose, initialData = null }: {
   isOpen: boolean
   onClose: () => void
-  initialData?: (Partial<Record<keyof VehicleFormData, string | number | boolean | null | undefined>> & { id: string }) | null
+  initialData?: (
+    Partial<Record<keyof VehicleFormData, string | number | boolean | null | undefined>>
+    & { id: string; rc_verification_status?: string | null; rc_verified_at?: string | null }
+  ) | null
 }) {
   const queryClient = useQueryClient()
   const [step, setStep] = useState(1)
@@ -423,6 +427,13 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
                   />
                 </div>
                 {expiry && <StatusPill tone={expiry.tone} dot={false}>{expiry.label}</StatusPill>}
+                {doc === 'rc' && (
+                  <VehicleRcStatus
+                    vehicleId={isEditing ? initialData.id : null}
+                    status={initialData?.rc_verification_status}
+                    verifiedAt={initialData?.rc_verified_at}
+                  />
+                )}
               </div>
             )
           })}

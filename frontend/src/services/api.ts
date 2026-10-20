@@ -127,12 +127,30 @@ api.interceptors.response.use(
 // Safety helper: ensure API list calls always return arrays
 const ensureArray = (data: unknown): unknown[] => Array.isArray(data) ? data : []
 // Vehicles API
+export interface RcVerificationResult {
+  id: string
+  status: 'valid' | 'invalid' | 'unavailable' | 'not_configured'
+  rc_number: string
+  verification_id: string | null
+  reference_id: string | null
+  owner_name: string | null
+  rc_status: string | null
+  rc_expiry_date: string | null
+  insurance_upto: string | null
+  pucc_upto: string | null
+  permit_valid_upto: string | null
+  blacklist_status: string | null
+  error_message: string | null
+}
+
 export const vehiclesAPI = {
   list: (params?: Record<string, unknown>) => api.get('/vehicles/', { params }).then(r => ensureArray(r.data)),
   get: (id: string) => api.get(`/vehicles/${id}`).then(r => r.data),
   create: (data: object) => api.post('/vehicles/', data).then(r => r.data),
   update: (id: string, data: object) => api.patch(`/vehicles/${id}`, data).then(r => r.data),
   delete: (id: string) => api.delete(`/vehicles/${id}`),
+  /** Re-checks this vehicle's RC with Cashfree on demand (also runs automatically on create, or when the RC number changes). */
+  verifyRc: (id: string): Promise<RcVerificationResult> => api.post(`/vehicles/${id}/verify-rc`).then(r => r.data),
   summary: () => api.get('/vehicles/summary').then(r => r.data),
   /** How many times each vehicle has raised an SOS: { [vehicle_id]: { total, last_30_days, open, cancelled } }. Staff only. */
   sosCounts: () => api.get('/vehicles/sos-counts').then(r => r.data as Record<string, { total: number; last_30_days: number; open: number; cancelled: number }>),

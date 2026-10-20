@@ -23,6 +23,7 @@ import { withDriverLicenceStatus } from '../services/people-docs.service';
 import { isRealPosition, recordGpsPoints } from '../services/gps-history.service';
 import { closeOpenJobsForVehicle } from '../services/maintenance.service';
 import { ShipmentService } from '../services/shipment.service';
+import { vehicleRcService } from '../services/vehicle-rc.service';
 import { approveVehicle, countVehicleRequests, getMyRegistration, listVehicleRequests, registerDriverVehicle, rejectVehicle, requestVehicleDocumentFixes } from '../services/vehicle-approval.service';
 import { createVehiclePhotoUploadUrl, deleteVehiclePhoto, listVehiclePhotos, removeVehiclePhotoFiles, saveVehiclePhoto } from '../services/vehicle-photos.service';
 import { createVehicleDocumentUploadUrl, saveVehicleDocument } from '../services/vehicle-documents.service';
@@ -196,6 +197,32 @@ router.post('/recalculate-capacity', requireAuth, requireRole('superadmin'), asy
   }
 });
 
+// Re-verifies a vehicle's RC with Cashfree on demand (e.g. to pick up a renewed insurance or
+// permit date without re-saving the whole vehicle). The same check also runs automatically
+// whenever a vehicle is created or its RC number changes.
+router.post('/:vehicle_id/verify-rc', requireAuth, requireRole(...STAFF_ROLES), rateLimitByUser('vehicle-verify-rc', 20, 60 * 60), async (req: Request, res: Response) => {
+  try {
+    const { data: vehicle } = await supabase.from('vehicles').select('id, rc_number').eq('id', req.params.vehicle_id).maybeSingle();
+    if (!vehicle) throw new HttpError(404, 'Vehicle not found');
+    if (!vehicle.rc_number) throw new HttpError(400, 'This vehicle has no RC number on file yet');
+    res.json(await vehicleRcService.verifyVehicleRc(vehicle.id, vehicle.rc_number, req.user!.user_id));
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+/** Best-effort RC check after a vehicle is created or its RC number changes - never fails the save. */
+async function maybeVerifyRc<T extends { id: string; rc_number?: string | null }>(vehicle: T, actorId: string | undefined): Promise<T & { rc_verification?: unknown }> {
+  if (!vehicle?.rc_number) return vehicle;
+  try {
+    const result = await vehicleRcService.verifyVehicleRc(vehicle.id, vehicle.rc_number, actorId ?? null);
+    return { ...vehicle, rc_verification_status: result.status, rc_verified_at: new Date().toISOString(), rc_verification: result };
+  } catch (e: any) {
+    console.error('[vehicles] RC verification failed:', e.message);
+    return vehicle;
+  }
+}
+
 // ── POST / ─────────────────────────────────────────────────
 router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -248,7 +275,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
         if (isUniqueViolation(adoptError)) throw new HttpError(409, DRIVER_TAKEN);
         if (adoptError) throw adoptError;
         await invalidateVehicleCaches();
-        res.status(201).json(adopted);
+        res.status(201).json(await maybeVerifyRc(adopted, req.user?.user_id));
         return;
       }
     }
@@ -268,7 +295,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     if (error) throw error;
 
     await invalidateVehicleCaches();
-    res.status(201).json(vehicle);
+    res.status(201).json(await maybeVerifyRc(vehicle, req.user?.user_id));
   } catch (e: any) {
     sendError(req, res, e);
   }
@@ -569,7 +596,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
 
     const { data: current, error: currentErr } = await supabase
       .from('vehicles')
-      .select('id, status, capacity_kg, driver_id, driver_name, driver_phone')
+      .select('id, status, capacity_kg, driver_id, driver_name, driver_phone, rc_number')
       .eq('id', req.params.vehicle_id)
       .maybeSingle();
     if (currentErr) throw currentErr;
@@ -666,7 +693,9 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
     }
 
     await invalidateVehicleCaches();
-    res.json(vehicle);
+    // Re-verify only when the RC number itself actually changed, not on every unrelated edit
+    const rcChanged = updateData.rc_number !== undefined && updateData.rc_number !== current.rc_number;
+    res.json(rcChanged ? await maybeVerifyRc(vehicle, req.user?.user_id) : vehicle);
   } catch (e: any) {
     sendError(req, res, e);
   }

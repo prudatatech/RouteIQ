@@ -158,6 +158,13 @@ export const settings = {
   // Secures POST /telematics/webhook (Bearer token or HMAC-SHA256 body signature). No default: unset means the webhook is off.
   FLEET_TELEMATICS_WEBHOOK_SECRET: env('FLEET_TELEMATICS_WEBHOOK_SECRET'),
 
+  // Cashfree Vehicle RC Verification API. RC verification runs only when both credentials and the
+  // base URL are set; unset means it stays off (vehicles save without it, same as IFSC when down).
+  CASHFREE_CLIENT_ID: env('CASHFREE_CLIENT_ID'),
+  CASHFREE_CLIENT_SECRET: env('CASHFREE_CLIENT_SECRET'),
+  // https://sandbox.cashfree.com/verification while testing, https://api.cashfree.com/verification live.
+  CASHFREE_VERIFICATION_BASE_URL: env('CASHFREE_VERIFICATION_BASE_URL'),
+
   // CORS: exact origins, comma-separated. '*' is not supported.
   get ALLOWED_ORIGINS(): string[] {
     const origins = env('ALLOWED_ORIGINS');
