@@ -2,7 +2,7 @@ import { errorMessage, formatDateTime } from '@/utils/display'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Building2, Download, Edit2, FileText, FlagTriangleRight, RefreshCw, ShieldCheck, Trash2, Zap } from 'lucide-react'
+import { AlertCircle, Building2, Download, Edit2, FileText, Flag, FlagTriangleRight, RefreshCw, ShieldCheck, Trash2, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { useEffectiveRole } from '@/store/effectiveRole'
@@ -20,6 +20,7 @@ import { TPL_DOCUMENT_TYPES, corridorRateText, rateText, type RateUnit } from '@
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { FlagDocumentsModal } from '@/components/admin/FlagDocumentsModal'
+import { FlagDetailsModal, TPL_FIELD_LABELS } from '@/components/admin/FlagDetailsModal'
 import { HistorySection } from '@/components/admin/vendor-review/ReviewSections'
 import { EditTplPartnerModal } from '@/components/tpl/EditTplPartnerModal'
 
@@ -57,6 +58,7 @@ interface TplPartnerDetail {
   tpl_documents?: TplDocument[]
   tpl_corridors?: TplCorridor[]
   document_issues?: Record<string, string> | null
+  field_issues?: Record<string, string> | null
   pending_updates?: PendingUpdates | null
   fleet_size?: string | null
   truck_type?: string | null
@@ -139,6 +141,7 @@ export default function TplPartnerDetailPage() {
   const canDecide = useEffectiveRole().role === 'superadmin'
   const [preview, setPreview] = useState<{ url: string, name: string } | null>(null)
   const [flagOpen, setFlagOpen] = useState(false)
+  const [flagDetailsOpen, setFlagDetailsOpen] = useState(false)
   const [editKycOpen, setEditKycOpen] = useState(false)
   const [uploadingType, setUploadingType] = useState<string | null>(null)
   const [replacingDocId, setReplacingDocId] = useState<string | null>(null)
@@ -185,6 +188,16 @@ export default function TplPartnerDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
     },
     onError: (err: unknown) => toast.error(errorMessage(err, 'We could not flag these documents. Try again.')),
+  })
+
+  const flagDetails = useMutation({
+    mutationFn: (issues: Record<string, string>) => tplAPI.flagDetails(id!, issues),
+    onSuccess: () => {
+      toast.success('The applicant has been told which details to fix.')
+      setFlagDetailsOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['tpl-partner', id] })
+    },
+    onError: (err: unknown) => toast.error(errorMessage(err, 'We could not flag these details. Try again.')),
   })
 
   // Deduplicate documents by doc_type so duplicate rows in the database do not show multiple cards
@@ -370,6 +383,39 @@ export default function TplPartnerDetailPage() {
         <Alert tone="danger" title="Application rejected">{partner.rejection_reason}</Alert>
       )}
 
+      {partner.field_issues && Object.keys(partner.field_issues).length > 0 && (
+        <Card padded className="border-warning/30 bg-warning/5 mb-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-warning text-warning-fill">
+                <AlertCircle size={18} />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-text">
+                  Flagged application details ({Object.keys(partner.field_issues).length})
+                </h3>
+                <p className="mt-0.5 text-xs text-muted">
+                  The applicant has been notified to correct the following details before approval:
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {Object.entries(partner.field_issues).map(([key, reason]) => (
+                    <div key={key} className="rounded-control border border-warning/30 bg-surface/80 p-2 text-xs">
+                      <span className="font-semibold text-text">{TPL_FIELD_LABELS[key] || humanize(key)}:</span>{' '}
+                      <span className="text-warning-muted">{reason}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {canDecide && (
+              <Button size="sm" variant="secondary" icon={<Flag size={14} />} onClick={() => setFlagDetailsOpen(true)} className="shrink-0">
+                Manage flagged details
+              </Button>
+            )}
+          </div>
+        </Card>
+      )}
+
       {partner.pending_updates && (
         <Card padded className="border-warning/30 bg-warning-soft">
           <div className="mb-4 flex items-center gap-2 text-warning">
@@ -401,14 +447,24 @@ export default function TplPartnerDetailPage() {
             actions={(
               <div className="flex items-center gap-2">
                 {canDecide && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={<Edit2 size={14} />}
-                    onClick={() => setEditKycOpen(true)}
-                  >
-                    Edit KYC & Details
-                  </Button>
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<Flag size={14} />}
+                      onClick={() => setFlagDetailsOpen(true)}
+                    >
+                      Flag Details
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<Edit2 size={14} />}
+                      onClick={() => setEditKycOpen(true)}
+                    >
+                      Edit KYC & Details
+                    </Button>
+                  </>
                 )}
                 <ShieldCheck size={18} className="text-brand" />
               </div>
@@ -433,17 +489,148 @@ export default function TplPartnerDetailPage() {
             <DetailList
               columns={2}
               items={[
-                { label: 'Contact person', value: partner.contact_name || '—' },
-                { label: 'Company PAN', value: partner.pan_number ? <span className="font-mono">{partner.pan_number}</span> : '—' },
+                {
+                  label: 'Company name',
+                  value: (
+                    <div>
+                      <span>{partner.company_name}</span>
+                      {partner.field_issues?.company_name && (
+                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                          <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.company_name}
+                        </p>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  label: 'Contact person',
+                  value: (
+                    <div>
+                      <span>{partner.contact_name || '—'}</span>
+                      {partner.field_issues?.contact_name && (
+                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                          <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.contact_name}
+                        </p>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  label: 'Contact phone',
+                  value: (
+                    <div>
+                      <span>{partner.phone || '—'}</span>
+                      {partner.field_issues?.phone && (
+                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                          <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.phone}
+                        </p>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  label: 'Company PAN',
+                  value: (
+                    <div>
+                      {partner.pan_number ? <span className="font-mono">{partner.pan_number}</span> : '—'}
+                      {partner.field_issues?.pan_number && (
+                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                          <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.pan_number}
+                        </p>
+                      )}
+                    </div>
+                  ),
+                },
                 { label: '3PL ID', value: <span className="font-mono">{partner.custom_id || 'Not assigned yet'}</span> },
-                { label: 'GSTIN', value: partner.gstin ? <div><span className="font-mono">{partner.gstin}</span><GstinStatus gstin={partner.gstin} pan={partner.pan_number ?? undefined} /></div> : '—' },
-                { label: 'Entity type', value: partner.entity_type || '—' },
-                { label: 'CIN', value: partner.cin ? <span className="font-mono">{partner.cin}</span> : '—' },
-                { label: 'Authorized signatory', value: partner.authorized_signatory_name || '—' },
+                {
+                  label: 'GSTIN',
+                  value: (
+                    <div>
+                      {partner.gstin ? (
+                        <div>
+                          <span className="font-mono">{partner.gstin}</span>
+                          <GstinStatus gstin={partner.gstin} pan={partner.pan_number ?? undefined} />
+                        </div>
+                      ) : '—'}
+                      {partner.field_issues?.gstin && (
+                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                          <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.gstin}
+                        </p>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  label: 'Entity type',
+                  value: (
+                    <div>
+                      <span>{partner.entity_type || '—'}</span>
+                      {partner.field_issues?.entity_type && (
+                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                          <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.entity_type}
+                        </p>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  label: 'CIN',
+                  value: (
+                    <div>
+                      {partner.cin ? <span className="font-mono">{partner.cin}</span> : '—'}
+                      {partner.field_issues?.cin && (
+                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                          <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.cin}
+                        </p>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  label: 'Authorized signatory',
+                  value: (
+                    <div>
+                      <span>{partner.authorized_signatory_name || '—'}</span>
+                      {partner.field_issues?.authorized_signatory_name && (
+                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                          <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.authorized_signatory_name}
+                        </p>
+                      )}
+                    </div>
+                  ),
+                },
                 { label: 'GTA tax treatment', value: partner.tax_treatment || '—' },
                 { label: 'MSME status', value: partner.msme_status || '—' },
-                { label: 'Bank account', value: partner.bank_account_no ? <span className="font-mono">{partner.bank_account_no}</span> : '—' },
-                { label: 'IFSC code', value: partner.bank_ifsc ? <div><span className="font-mono">{partner.bank_ifsc}</span> <IfscVerifiedHint verifiedAt={partner.bank_ifsc_verified_at} /></div> : '—' },
+                {
+                  label: 'Bank account',
+                  value: (
+                    <div>
+                      {partner.bank_account_no ? <span className="font-mono">{partner.bank_account_no}</span> : '—'}
+                      {partner.field_issues?.bank_account_no && (
+                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                          <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.bank_account_no}
+                        </p>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  label: 'IFSC code',
+                  value: (
+                    <div>
+                      {partner.bank_ifsc ? (
+                        <div>
+                          <span className="font-mono">{partner.bank_ifsc}</span> <IfscVerifiedHint verifiedAt={partner.bank_ifsc_verified_at} />
+                        </div>
+                      ) : '—'}
+                      {partner.field_issues?.bank_ifsc && (
+                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                          <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.bank_ifsc}
+                        </p>
+                      )}
+                    </div>
+                  ),
+                },
                 { label: 'Bank and branch', value: [partner.bank_name, partner.bank_branch].filter(Boolean).join(', ') || '—' },
               ]}
             />
@@ -626,7 +813,14 @@ export default function TplPartnerDetailPage() {
               </Button>
             )}
             {!partner.pending_updates && (
-              <Button variant="secondary" icon={<FlagTriangleRight size={16} />} disabled={busy} onClick={() => setFlagOpen(true)}>Flag documents</Button>
+              <>
+                <Button variant="secondary" icon={<FlagTriangleRight size={16} />} disabled={busy} onClick={() => setFlagOpen(true)}>
+                  Flag documents
+                </Button>
+                <Button variant="secondary" icon={<Flag size={16} />} disabled={busy} onClick={() => setFlagDetailsOpen(true)}>
+                  Flag details
+                </Button>
+              </>
             )}
             <Button variant="danger" disabled={busy} onClick={handleReject}>Reject</Button>
             <Button loading={approve.isPending} disabled={busy} onClick={handleApprove}>
@@ -670,6 +864,28 @@ export default function TplPartnerDetailPage() {
           busy={flagDocuments.isPending}
           onClose={() => setFlagOpen(false)}
           onSubmit={issues => flagDocuments.mutate(issues)}
+        />
+      )}
+      {flagDetailsOpen && (
+        <FlagDetailsModal
+          open
+          entityName={partner.company_name}
+          fields={[
+            { key: 'company_name', label: 'Company Name', currentValue: partner.company_name },
+            { key: 'contact_name', label: 'Contact Person', currentValue: partner.contact_name },
+            { key: 'phone', label: 'Contact Phone', currentValue: partner.phone },
+            { key: 'pan_number', label: 'Company PAN', currentValue: partner.pan_number },
+            { key: 'gstin', label: 'GSTIN', currentValue: partner.gstin },
+            { key: 'entity_type', label: 'Entity Type', currentValue: partner.entity_type },
+            { key: 'cin', label: 'CIN', currentValue: partner.cin },
+            { key: 'authorized_signatory_name', label: 'Authorized Signatory', currentValue: partner.authorized_signatory_name },
+            { key: 'bank_account_no', label: 'Bank Account Number', currentValue: partner.bank_account_no },
+            { key: 'bank_ifsc', label: 'Bank IFSC Code', currentValue: partner.bank_ifsc },
+          ]}
+          initialIssues={partner.field_issues ?? {}}
+          busy={flagDetails.isPending}
+          onClose={() => setFlagDetailsOpen(false)}
+          onSubmit={issues => flagDetails.mutate(issues)}
         />
       )}
       {editKycOpen && (

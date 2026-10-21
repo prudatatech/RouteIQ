@@ -47,6 +47,8 @@ export interface PortalPartner {
   fleet_size?: string | null
   truck_type?: string | null
   operating_from?: string | null
+  document_issues?: Record<string, string> | null
+  field_issues?: Record<string, string> | null
 }
 
 export interface PortalContextValue {

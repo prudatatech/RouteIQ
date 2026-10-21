@@ -9,7 +9,7 @@ import { notificationService, PLATFORM } from './notification.service';
 import { emailService, fromAddress } from './email.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
 import { auditService, type AuditActor } from './audit.service';
-import { EMAIL_PATTERN, assertApplicationFields, assertFlagDocuments, assertPartnerSettings } from '../schemas/tpl';
+import { EMAIL_PATTERN, assertApplicationFields, assertFlagDocuments, assertFlagDetails, assertPartnerSettings, TPL_FIELD_LABELS } from '../schemas/tpl';
 import { formatRate, type RateUnit } from '../utils/corridor-match';
 import { isUuid } from '../core/validate';
 import { selectIn } from './finance.service';
@@ -23,6 +23,26 @@ const OTP_MAX_ATTEMPTS = 5;
 const otpKey = (email: string) => `otp:tpl:${email.toLowerCase()}`;
 
 const CUSTOM_ID_PATTERN = /^[a-z0-9_]{5,20}$/;
+
+/** Auto-generate a unique 3PL custom_id conforming to /^[a-z0-9_]{5,20}$/ */
+export async function generateUniqueCustomId(companyName: string = 'partner'): Promise<string> {
+  const base = (companyName || 'partner')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 14) || 'partner';
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    const prefix = base.slice(0, 20 - 1 - String(rand).length);
+    const candidate = `${prefix || 'tpl'}_${rand}`;
+    const { data: existing } = await supabase.from('tpl_partners').select('id').eq('custom_id', candidate).maybeSingle();
+    if (!existing) {
+      return candidate;
+    }
+  }
+  return `tpl_${Date.now().toString().slice(-8)}`;
+}
 
 /** Documents a 3PL applicant or partner can upload. */
 export const TPL_DOCUMENT_TYPES = ['PAN Card', 'GST Certificate', 'Cancelled Cheque'] as const;
@@ -163,21 +183,24 @@ export const tplService = {
     }
 
     // custom_id names the partner's document folder, so it must be unique
-    if (custom_id) {
-      if (typeof custom_id !== 'string' || !CUSTOM_ID_PATTERN.test(custom_id)) {
+    let assignedCustomId = custom_id ? String(custom_id).trim() : '';
+    if (assignedCustomId) {
+      if (typeof assignedCustomId !== 'string' || !CUSTOM_ID_PATTERN.test(assignedCustomId)) {
         throw new HttpError(400, 'Partner ID must be 5–20 lowercase letters, digits or underscores');
       }
-      const { data: takenId } = await supabase.from('tpl_partners').select('id').eq('custom_id', custom_id).maybeSingle();
+      const { data: takenId } = await supabase.from('tpl_partners').select('id').eq('custom_id', assignedCustomId).maybeSingle();
       if (takenId) throw new HttpError(409, 'This partner ID is already taken. Please choose another.');
+    } else {
+      assignedCustomId = await generateUniqueCustomId(companyName);
     }
 
-    assertDocumentPaths(documents, custom_id ? [applicationFolder(custom_id)] : []);
+    assertDocumentPaths(documents, [applicationFolder(assignedCustomId), ...(custom_id ? [applicationFolder(custom_id)] : [])]);
 
     // 1. Create Partner Record
     const { data: partner, error: partnerErr } = await supabase
       .from('tpl_partners')
       .insert({
-        custom_id: custom_id || null,
+        custom_id: assignedCustomId,
         company_name: companyName,
         contact_name: contactName,
         email: email,
@@ -388,7 +411,7 @@ export const tplService = {
     assertApplicationFields(data ?? {}, true);
 
     const { data: current, error: currentErr } = await supabase.from('tpl_partners')
-      .select('id, status, custom_id, pan_number, document_issues, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
+      .select('id, status, custom_id, company_name, pan_number, document_issues, field_issues, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
     if (currentErr) throw new Error(`Failed to load 3PL partner: ${currentErr.message}`);
     if (!current) throw new HttpError(404, 'Application not found');
     const allowedStatuses = asStaff ? ['pending', 'rejected', 'active', 'paused'] : ['pending', 'rejected', 'active'];
@@ -407,10 +430,30 @@ export const tplService = {
     // The IFSC lookup only runs when the bank details are part of the edit
     const bank = bankIfsc !== undefined ? await ifscColumns(bankIfsc) : { columns: {}, check: null as IfscCheck | null };
 
+    // Auto-generate or validate custom_id if missing or updated
+    let updatedCustomId: string | undefined = undefined;
+    if (custom_id !== undefined) {
+      const cleanCustomId = custom_id ? String(custom_id).trim() : '';
+      if (cleanCustomId) {
+        if (!CUSTOM_ID_PATTERN.test(cleanCustomId)) {
+          throw new HttpError(400, 'Partner ID must be 5–20 lowercase letters, digits or underscores');
+        }
+        if (cleanCustomId !== current.custom_id) {
+          const { data: takenId } = await supabase.from('tpl_partners').select('id').eq('custom_id', cleanCustomId).maybeSingle();
+          if (takenId && takenId.id !== id) throw new HttpError(409, 'This partner ID is already taken. Please choose another.');
+        }
+        updatedCustomId = cleanCustomId;
+      } else {
+        updatedCustomId = current.custom_id || await generateUniqueCustomId(companyName ?? current.company_name);
+      }
+    } else if (!current.custom_id) {
+      updatedCustomId = await generateUniqueCustomId(companyName ?? current.company_name);
+    }
+
     // 1. Update the partner record: only the fields that were sent, so an edit of the name never wipes the partner ID or the tax details.
     // Editing a rejected application resubmits it: back to pending, the old reason and every document flag cleared.
     const columns: Record<string, unknown> = {
-        ...(custom_id !== undefined ? { custom_id: custom_id || null } : {}),
+        ...(updatedCustomId !== undefined ? { custom_id: updatedCustomId } : {}),
         ...(companyName !== undefined ? { company_name: companyName } : {}),
         ...(contactName !== undefined ? { contact_name: contactName } : {}),
         ...(data.phone !== undefined ? { phone: parseMobile(data.phone) } : {}),
@@ -425,13 +468,26 @@ export const tplService = {
         ...bank.columns,
         ...(slaCommitment !== undefined ? { sla_commitment: slaCommitment || '2 Hours' } : {}),
         ...(taxTreatment !== undefined ? { tax_treatment: taxTreatment || null } : {}),
-        ...(wasRejected ? { status: 'pending', rejection_reason: null, document_issues: null } : {}),
+        ...(wasRejected ? { status: 'pending', rejection_reason: null, document_issues: null, field_issues: null } : {}),
     };
     const { error: partnerErr } = Object.keys(columns).length === 0
       ? { error: null }
       : await supabase.from('tpl_partners').update(columns).eq('id', id).eq('status', current.status);
 
     if (partnerErr) throw new Error(`Failed to update 3PL partner: ${partnerErr.message}`);
+
+    // If any flagged fields were updated, clear their issue flags
+    if (!wasRejected && current.field_issues) {
+      const updatedKeys = new Set(Object.keys(columns));
+      const remainingFields = Object.fromEntries(
+        Object.entries(current.field_issues).filter(([field]) => !updatedKeys.has(field))
+      );
+      if (Object.keys(remainingFields).length !== Object.keys(current.field_issues).length) {
+        await supabase.from('tpl_partners').update({
+          field_issues: Object.keys(remainingFields).length > 0 ? remainingFields : null,
+        }).eq('id', id);
+      }
+    }
 
     // 2. Overwrite Corridors (delete old, insert new)
     if (corridors) {
@@ -568,6 +624,9 @@ export const tplService = {
     if (partner.document_issues && Object.keys(partner.document_issues).length > 0) {
       throw new HttpError(409, 'This application still has a flagged document waiting on the applicant to fix');
     }
+    if (partner.field_issues && Object.keys(partner.field_issues).length > 0) {
+      throw new HttpError(409, 'This application still has flagged details waiting on the applicant to fix');
+    }
 
     const updates = partner.pending_updates;
     const isQuick = !!partner.fleet_size;
@@ -588,7 +647,10 @@ export const tplService = {
       if (!docCount) missing.push('documents');
       if (missing.length > 0) throw new HttpError(409, `This application is still missing: ${missing.join(', ')}`);
     }
-    const partnerUpdates: Record<string, unknown> = { status: 'active', pending_updates: null, rejection_reason: null, document_issues: null };
+    const partnerUpdates: Record<string, unknown> = { status: 'active', pending_updates: null, rejection_reason: null, document_issues: null, field_issues: null };
+    if (!partner.custom_id) {
+      partnerUpdates.custom_id = await generateUniqueCustomId(partner.company_name);
+    }
     if (updates) {
       if (updates.sla_commitment) partnerUpdates.sla_commitment = updates.sla_commitment;
       if (updates.tax_treatment) partnerUpdates.tax_treatment = updates.tax_treatment;
@@ -723,6 +785,31 @@ export const tplService = {
     const list = Object.entries(flagged).map(([type, reason]) => `${type}: ${reason}`).join('; ');
     await this.notifyPartner(partner, 'A document needs fixing', `We need you to fix the following before we can review your application: ${list}`, 'tpl_document_flagged', id);
     await auditService.record('staff-console', actor, 'tpl_document_flagged', { partner_id: id, company_name: partner.company_name, issues: flagged });
+    return updated;
+  },
+
+  /**
+   * Flag specific application details on a pending application (PAN, GSTIN, Company Name, Bank details, etc.)
+   * with individual revision reasons.
+   */
+  async flagDetails(id: string, issues: unknown, actor: AuditActor) {
+    const { data: partner, error: fetchErr } = await supabase
+      .from('tpl_partners').select('id, status, company_name, field_issues, user_id').eq('id', id).maybeSingle();
+    if (fetchErr) throw new Error(`Failed to fetch partner: ${fetchErr.message}`);
+    if (!partner) throw new HttpError(404, 'Application not found');
+    if (partner.status !== 'pending') throw new HttpError(409, 'Details can be flagged only while the application is waiting for review');
+
+    const flagged = assertFlagDetails(issues);
+    const merged = { ...(partner.field_issues ?? {}), ...flagged };
+    const { data: updated, error } = await supabase.from('tpl_partners')
+      .update({ field_issues: merged })
+      .eq('id', id).eq('status', 'pending').select().maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!updated) throw new HttpError(409, 'Details can be flagged only while the application is waiting for review');
+
+    const list = Object.entries(flagged).map(([field, reason]) => `${TPL_FIELD_LABELS[field] || field}: ${reason}`).join('; ');
+    await this.notifyPartner(partner, 'Application details need correction', `We need you to fix the following details before we can review your application: ${list}`, 'tpl_details_flagged', id);
+    await auditService.record('staff-console', actor, 'tpl_details_flagged', { partner_id: id, company_name: partner.company_name, issues: flagged });
     return updated;
   },
 

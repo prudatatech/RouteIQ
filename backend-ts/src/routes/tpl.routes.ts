@@ -55,6 +55,7 @@ function publicView(partner: any) {
     created_at: partner.created_at,
     rejection_reason: partner.status === 'rejected' ? partner.rejection_reason ?? null : null,
     document_issues: ['pending', 'rejected'].includes(partner.status) ? partner.document_issues ?? null : null,
+    field_issues: ['pending', 'rejected'].includes(partner.status) ? partner.field_issues ?? null : null,
     email_masked: maskEmail(partner.email),
     corridor_count: partner.tpl_corridors?.length ?? 0,
     document_count: partner.tpl_documents?.length ?? 0,
@@ -287,6 +288,16 @@ router.post('/reject/:id', requireAuth, requireRole('superadmin'), async (req: R
 router.put('/:id/flag-documents', requireAuth, requireRole('superadmin'), async (req, res) => {
   try {
     const data = await tplService.flagDocuments(uuidParam(req.params.id, 'Application not found'), req.body?.issues, req.user!);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// PUT /api/v1/tpl/:id/flag-details  { issues: { "<field>": reason } }
+router.put('/:id/flag-details', requireAuth, requireRole('superadmin'), async (req, res) => {
+  try {
+    const data = await tplService.flagDetails(uuidParam(req.params.id, 'Application not found'), req.body?.issues, req.user!);
     res.json({ success: true, data });
   } catch (error) {
     sendError(req, res, error, 'error');

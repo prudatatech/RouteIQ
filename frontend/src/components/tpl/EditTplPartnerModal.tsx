@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { Modal, Button, Input, Select, IfscField } from '@/components/ui'
-import { ShieldCheck, Landmark, Building2, CheckCircle2 } from 'lucide-react'
+import { Modal, Button, Input, Select, IfscField, Alert } from '@/components/ui'
+import { ShieldCheck, Landmark, Building2, CheckCircle2, AlertCircle } from 'lucide-react'
 import clsx from 'clsx'
 import { tplAPI } from '@/services/api'
 import { errorMessage } from '@/utils/display'
@@ -34,6 +34,7 @@ interface PartnerLike {
   bank_branch?: string | null
   sla_commitment?: string | null
   tax_treatment?: string | null
+  field_issues?: Record<string, string> | null
 }
 
 const MSME_OPTIONS = TPL_MSME_OPTIONS.map(v => ({ value: v, label: v }))
@@ -90,6 +91,34 @@ export function EditTplPartnerModal({
 
   const [saving, setSaving] = useState(false)
   const [attempted, setAttempted] = useState(false)
+
+  const fieldIssue = (key: string) => {
+    const issues = partner.field_issues
+    if (!issues) return undefined
+    const aliases: Record<string, string[]> = {
+      pan: ['pan_number', 'pan'],
+      gst: ['gstin', 'gst'],
+      bankAccount: ['bank_account_no', 'bankAccount', 'bank_account'],
+      bankIfsc: ['bank_ifsc', 'bankIfsc'],
+      entityType: ['entity_type', 'entityType'],
+      cin: ['cin'],
+      authorizedSignatoryName: ['authorized_signatory_name', 'authorizedSignatoryName'],
+      companyName: ['company_name', 'companyName'],
+      contactName: ['contact_name', 'contactName'],
+      phone: ['phone'],
+      msmeStatus: ['msme_status', 'msmeStatus'],
+    }
+    const candidates = aliases[key] || [key]
+    for (const c of candidates) {
+      if (issues[c]) return issues[c]
+    }
+    return undefined
+  }
+
+  const tabHasFlagged = (tab: TabKey) => {
+    if (!partner.field_issues) return false
+    return Object.entries(FIELD_TABS).some(([k, t]) => t === tab && fieldIssue(k))
+  }
 
   // Reset fields when partner or open status changes
   useEffect(() => {
@@ -219,6 +248,12 @@ export function EditTplPartnerModal({
       )}
     >
       <div className="space-y-6 max-h-[72vh] overflow-y-auto px-1 -mx-1">
+        {partner.field_issues && Object.keys(partner.field_issues).length > 0 && (
+          <Alert tone="warning" title="Platform Reviewer Requested Revisions">
+            The platform reviewer flagged one or more details on your application for correction. Please check the feedback notes on the highlighted fields below.
+          </Alert>
+        )}
+
         {/* Tab Navigation */}
         <div className="flex border-b border-border -mx-1 overflow-x-auto no-scrollbar scroll-smooth">
           <button
@@ -233,7 +268,9 @@ export function EditTplPartnerModal({
           >
             <ShieldCheck size={14} />
             Legal & Tax
-            {tabHasError('identity') ? (
+            {tabHasFlagged('identity') ? (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-warning/20 text-warning">Fix requested</span>
+            ) : tabHasError('identity') ? (
               <span className="h-1.5 w-1.5 rounded-full bg-danger inline-block" title="Has errors" />
             ) : pan ? (
               <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
@@ -251,7 +288,9 @@ export function EditTplPartnerModal({
           >
             <Landmark size={14} />
             Bank & Payout
-            {tabHasError('bank') ? (
+            {tabHasFlagged('bank') ? (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-warning/20 text-warning">Fix requested</span>
+            ) : tabHasError('bank') ? (
               <span className="h-1.5 w-1.5 rounded-full bg-danger inline-block" title="Has errors" />
             ) : bankAccount ? (
               <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
@@ -270,7 +309,9 @@ export function EditTplPartnerModal({
             >
               <Building2 size={14} />
               Operations & Profile
-              {tabHasError('operations') && (
+              {tabHasFlagged('operations') ? (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-warning/20 text-warning">Fix requested</span>
+              ) : tabHasError('operations') && (
                 <span className="h-1.5 w-1.5 rounded-full bg-danger inline-block" title="Has errors" />
               )}
             </button>
@@ -293,6 +334,12 @@ export function EditTplPartnerModal({
                   hint={panValidation.valid && panCategory ? `${panCategory}` : 'e.g. ABCDE1234F'}
                   trailing={panValidation.valid ? <CheckCircle2 size={16} className="text-success" /> : undefined}
                 />
+                {fieldIssue('pan') && (
+                  <div className="mt-1.5 rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span><strong>Fix requested:</strong> {fieldIssue('pan')}</span>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -313,42 +360,80 @@ export function EditTplPartnerModal({
                   hint="15 characters (Optional)"
                   trailing={gst.trim() && gstValidation.valid ? <CheckCircle2 size={16} className="text-success" /> : undefined}
                 />
+                {fieldIssue('gst') && (
+                  <div className="mt-1.5 rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span><strong>Fix requested:</strong> {fieldIssue('gst')}</span>
+                  </div>
+                )}
               </div>
 
-              <Select
-                label="Entity Type"
-                value={entityType}
-                onChange={e => setEntityType(e.target.value)}
-                options={ENTITY_TYPE_OPTIONS}
-                placeholder="Select entity type"
-              />
+              <div>
+                <Select
+                  label="Entity Type"
+                  value={entityType}
+                  onChange={e => setEntityType(e.target.value)}
+                  options={ENTITY_TYPE_OPTIONS}
+                  placeholder="Select entity type"
+                />
+                {fieldIssue('entityType') && (
+                  <div className="mt-1.5 rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span><strong>Fix requested:</strong> {fieldIssue('entityType')}</span>
+                  </div>
+                )}
+              </div>
 
-              <Input
-                label="Authorized Signatory Name"
-                value={authorizedSignatoryName}
-                onChange={e => setAuthorizedSignatoryName(e.target.value)}
-                placeholder="Full name of signatory"
-              />
+              <div>
+                <Input
+                  label="Authorized Signatory Name"
+                  value={authorizedSignatoryName}
+                  onChange={e => setAuthorizedSignatoryName(e.target.value)}
+                  placeholder="Full name of signatory"
+                />
+                {fieldIssue('authorizedSignatoryName') && (
+                  <div className="mt-1.5 rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span><strong>Fix requested:</strong> {fieldIssue('authorizedSignatoryName')}</span>
+                  </div>
+                )}
+              </div>
 
               {requiresCin && (
-                <Input
-                  label="Corporate Identification Number (CIN)"
-                  value={cin}
-                  onChange={e => setCin(e.target.value.toUpperCase().slice(0, 21))}
-                  placeholder="U74999DL2019PTC123456"
-                  maxLength={21}
-                  inputClassName="font-mono uppercase"
-                  error={err('cin')}
-                  hint="21 characters (required for Pvt Ltd/LLP)"
-                />
+                <div>
+                  <Input
+                    label="Corporate Identification Number (CIN)"
+                    value={cin}
+                    onChange={e => setCin(e.target.value.toUpperCase().slice(0, 21))}
+                    placeholder="U74999DL2019PTC123456"
+                    maxLength={21}
+                    inputClassName="font-mono uppercase"
+                    error={err('cin')}
+                    hint="21 characters (required for Pvt Ltd/LLP)"
+                  />
+                  {fieldIssue('cin') && (
+                    <div className="mt-1.5 rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <span><strong>Fix requested:</strong> {fieldIssue('cin')}</span>
+                    </div>
+                  )}
+                </div>
               )}
 
-              <Select
-                label="MSME Registration"
-                value={msmeStatus}
-                onChange={e => setMsmeStatus(e.target.value)}
-                options={MSME_OPTIONS}
-              />
+              <div>
+                <Select
+                  label="MSME Registration"
+                  value={msmeStatus}
+                  onChange={e => setMsmeStatus(e.target.value)}
+                  options={MSME_OPTIONS}
+                />
+                {fieldIssue('msmeStatus') && (
+                  <div className="mt-1.5 rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span><strong>Fix requested:</strong> {fieldIssue('msmeStatus')}</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -357,21 +442,37 @@ export function EditTplPartnerModal({
         {activeTab === 'bank' && (
           <div className="space-y-4 animate-fade-in">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Input
-                label="Bank Account Number"
-                value={bankAccount}
-                onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
-                placeholder="9 to 18 digits"
-                inputMode="numeric"
-                inputClassName="font-mono"
-                error={err('bankAccount')}
-                hint={bankAccount ? `${bankAccount.length} digits entered` : '9 to 18 digits'}
-              />
-              <IfscField
-                value={bankIfsc}
-                onChange={setBankIfsc}
-                error={err('bankIfsc')}
-              />
+              <div>
+                <Input
+                  label="Bank Account Number"
+                  value={bankAccount}
+                  onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
+                  placeholder="9 to 18 digits"
+                  inputMode="numeric"
+                  inputClassName="font-mono"
+                  error={err('bankAccount')}
+                  hint={bankAccount ? `${bankAccount.length} digits entered` : '9 to 18 digits'}
+                />
+                {fieldIssue('bankAccount') && (
+                  <div className="mt-1.5 rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span><strong>Fix requested:</strong> {fieldIssue('bankAccount')}</span>
+                  </div>
+                )}
+              </div>
+              <div>
+                <IfscField
+                  value={bankIfsc}
+                  onChange={setBankIfsc}
+                  error={err('bankIfsc')}
+                />
+                {fieldIssue('bankIfsc') && (
+                  <div className="mt-1.5 rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span><strong>Fix requested:</strong> {fieldIssue('bankIfsc')}</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

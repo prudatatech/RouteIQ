@@ -6,7 +6,7 @@ import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { uploadTplDocument } from '@/services/tplDocuments'
-import { Alert, Button, Card, FileButton, IfscField, Input, Select, StatusPill } from '@/components/ui'
+import { Alert, Button, Card, FileButton, IfscField, Input, Select, StatusPill, humanize } from '@/components/ui'
 import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
 import { gstinError } from '@/utils/gstin'
 import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
@@ -24,6 +24,7 @@ interface TplApplication {
   created_at?: string
   rejection_reason?: string | null
   document_issues?: Record<string, string> | null
+  field_issues?: Record<string, string> | null
 }
 
 interface TplDocument { id: string; doc_type: string; file_url: string }
@@ -120,8 +121,18 @@ export function FixDetails({ applicationId, pan, full, onSaved }: { applicationI
     }
   }
 
+  const fieldIssue = (key: string) => full.field_issues?.[key]
+
   return (
     <div className="space-y-6">
+      {full.field_issues && Object.keys(full.field_issues).length > 0 && (
+        <Alert tone="warning" title="Action Needed: Fix Flagged Application Details">
+          <p className="text-xs">
+            Reviewer flagged {Object.keys(full.field_issues).length} item(s) below. Please correct the highlighted fields and save your updates.
+          </p>
+        </Alert>
+      )}
+
       {/* 1. Identity & Corporate */}
       <div className="space-y-3">
         <div className="flex items-center gap-2 border-b border-border pb-2">
@@ -129,13 +140,53 @@ export function FixDetails({ applicationId, pan, full, onSaved }: { applicationI
           <h4 className="text-xs font-bold text-text uppercase tracking-wider">Company &amp; Governance</h4>
         </div>
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-          <Input label="Company name" required value={companyName} error={err('companyName')} onChange={e => setCompanyName(e.target.value)} />
-          <Input label="Contact person" required value={contactName} error={err('contactName')} onChange={e => setContactName(e.target.value)} />
-          <Select label="Entity type" required value={entityType} error={err('entityType')} onChange={e => setEntityType(e.target.value)} options={ENTITY_TYPE_OPTIONS} placeholder="Choose entity type" />
+          <div>
+            <Input label="Company name" required value={companyName} error={err('companyName')} onChange={e => setCompanyName(e.target.value)} />
+            {fieldIssue('company_name') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('company_name')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <Input label="Contact person" required value={contactName} error={err('contactName')} onChange={e => setContactName(e.target.value)} />
+            {fieldIssue('contact_name') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('contact_name')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <Select label="Entity type" required value={entityType} error={err('entityType')} onChange={e => setEntityType(e.target.value)} options={ENTITY_TYPE_OPTIONS} placeholder="Choose entity type" />
+            {fieldIssue('entity_type') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('entity_type')}</span>
+              </p>
+            )}
+          </div>
           {entityTypeRequiresCin(entityType) && (
-            <Input label="CIN" required value={cin} error={err('cin')} onChange={e => setCin(e.target.value.toUpperCase())} placeholder="U74999DL2019PTC123456" maxLength={21} inputClassName="font-mono uppercase" />
+            <div>
+              <Input label="CIN" required value={cin} error={err('cin')} onChange={e => setCin(e.target.value.toUpperCase())} placeholder="U74999DL2019PTC123456" maxLength={21} inputClassName="font-mono uppercase" />
+              {fieldIssue('cin') && (
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                  <AlertCircle size={14} className="shrink-0" />
+                  <span>Fix requested: {fieldIssue('cin')}</span>
+                </p>
+              )}
+            </div>
           )}
-          <Input label="Authorized signatory name" required value={authorizedSignatoryName} error={err('authorizedSignatoryName')} onChange={e => setAuthorizedSignatoryName(e.target.value)} className={entityTypeRequiresCin(entityType) ? '' : 'sm:col-span-2'} />
+          <div className={entityTypeRequiresCin(entityType) ? '' : 'sm:col-span-2'}>
+            <Input label="Authorized signatory name" required value={authorizedSignatoryName} error={err('authorizedSignatoryName')} onChange={e => setAuthorizedSignatoryName(e.target.value)} />
+            {fieldIssue('authorized_signatory_name') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('authorized_signatory_name')}</span>
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -146,10 +197,42 @@ export function FixDetails({ applicationId, pan, full, onSaved }: { applicationI
           <h4 className="text-xs font-bold text-text uppercase tracking-wider">Tax &amp; Settlement Account</h4>
         </div>
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-          <Input label="PAN" value={panNumber} error={err('panNumber')} onChange={e => setPanNumber(e.target.value.toUpperCase())} placeholder="ABCDE1234F" maxLength={10} inputClassName="font-mono uppercase" />
-          <Input label="GSTIN" value={gst} error={err('gst')} onChange={e => handleGstChange(e.target.value)} placeholder="07ABCDE1234F1Z5" maxLength={15} inputClassName="font-mono uppercase" />
-          <Input label="Bank account number" value={bankAccount} error={err('bankAccount')} onChange={e => setBankAccount(e.target.value)} inputClassName="font-mono" placeholder="9 to 18 digits" />
-          <IfscField label="Bank IFSC" value={bankIfsc} error={err('bankIfsc')} onChange={setBankIfsc} placeholder="HDFC0001234" required={false} />
+          <div>
+            <Input label="PAN" value={panNumber} error={err('panNumber')} onChange={e => setPanNumber(e.target.value.toUpperCase())} placeholder="ABCDE1234F" maxLength={10} inputClassName="font-mono uppercase" />
+            {fieldIssue('pan_number') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('pan_number')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <Input label="GSTIN" value={gst} error={err('gst')} onChange={e => handleGstChange(e.target.value)} placeholder="07ABCDE1234F1Z5" maxLength={15} inputClassName="font-mono uppercase" />
+            {fieldIssue('gstin') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('gstin')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <Input label="Bank account number" value={bankAccount} error={err('bankAccount')} onChange={e => setBankAccount(e.target.value)} inputClassName="font-mono" placeholder="9 to 18 digits" />
+            {fieldIssue('bank_account_no') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('bank_account_no')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <IfscField label="Bank IFSC" value={bankIfsc} error={err('bankIfsc')} onChange={setBankIfsc} placeholder="HDFC0001234" required={false} />
+            {fieldIssue('bank_ifsc') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('bank_ifsc')}</span>
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -298,9 +381,9 @@ export default function TplTrackApplicationPage() {
   const [loading, setLoading] = useState(false)
   const [application, setApplication] = useState<TplApplication | null>(null)
 
-  const handleTrack = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const cleaned = trackingId.trim()
+  const handleTrack = async (e?: React.FormEvent, idToTrack?: string) => {
+    if (e) e.preventDefault()
+    const cleaned = (idToTrack ?? trackingId).trim()
     if (!cleaned) {
       setLookupError('Enter your 3PL tracking ID.')
       return
@@ -310,6 +393,9 @@ export default function TplTrackApplicationPage() {
     try {
       const data = await tplAPI.getPartner(cleaned)
       setApplication(data as TplApplication)
+      if (searchParams.get('highlight') === 'flagged' || searchParams.get('fix')) {
+        setFixingDocs(true)
+      }
     } catch (err) {
       console.error(err)
       setLookupError((err as { response?: { status?: number } })?.response?.status === 404
@@ -320,6 +406,18 @@ export default function TplTrackApplicationPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const idParam = searchParams.get('id')?.trim()
+    const panParam = searchParams.get('pan')?.trim()
+    const fixParam = searchParams.get('fix')
+    if (panParam) setEditPan(panParam.toUpperCase())
+    if (fixParam) setFixingDocs(true)
+    if (idParam && !application) {
+      handleTrack(undefined, idParam)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const refreshAfterFix = async () => {
     if (!application) return
@@ -428,8 +526,19 @@ export default function TplTrackApplicationPage() {
                 {application.status === 'pending' ? (
                   <div className="space-y-4">
                     <div className="p-3.5 rounded-control bg-blue-500/10 border border-blue-500/20 text-xs text-blue-900 dark:text-blue-200 leading-relaxed">
-                      Your application is actively under review by Margix compliance. You will receive an email once approved. You can fix or replace documents below.
+                      Your application is actively under review by Margix compliance. You will receive an email once approved. You can fix or replace documents and details below.
                     </div>
+
+                    {application.field_issues && Object.keys(application.field_issues).length > 0 && (
+                      <Alert tone="warning" title="Action Needed: Fix Flagged Application Details">
+                        <p className="text-xs mb-1.5 font-medium">Compliance team flagged the following details for correction:</p>
+                        <ul className="list-disc space-y-1 pl-4 text-xs">
+                          {Object.entries(application.field_issues).map(([field, reason]) => (
+                            <li key={field}><strong className="font-semibold">{humanize(field)}</strong>: {reason}</li>
+                          ))}
+                        </ul>
+                      </Alert>
+                    )}
 
                     {application.document_issues && Object.keys(application.document_issues).length > 0 && (
                       <Alert tone="warning" title="Action Needed: Fix Flagged Documents">
@@ -442,10 +551,19 @@ export default function TplTrackApplicationPage() {
                     )}
 
                     {fixingDocs ? (
-                      <FixApplication applicationId={application.id} pan={editPan.trim()} mode="documents" onDone={refreshAfterFix} />
+                      <FixApplication
+                        applicationId={application.id}
+                        pan={editPan.trim()}
+                        mode={application.field_issues && Object.keys(application.field_issues).length > 0 ? 'full' : 'documents'}
+                        onDone={refreshAfterFix}
+                      />
                     ) : (
                       <div className="p-4 rounded-card border border-border bg-surface space-y-3">
-                        <h4 className="text-xs font-bold text-text uppercase tracking-wider">Authorize Document Updates</h4>
+                        <h4 className="text-xs font-bold text-text uppercase tracking-wider">
+                          {(application.field_issues && Object.keys(application.field_issues).length > 0) || (application.document_issues && Object.keys(application.document_issues).length > 0)
+                            ? 'Authorize Compliance Corrections'
+                            : 'Authorize Document Updates'}
+                        </h4>
                         <Input
                           label="Enter Company PAN to Edit"
                           hint="Verification requires the PAN submitted with the application."
@@ -463,7 +581,11 @@ export default function TplTrackApplicationPage() {
                           onClick={() => setFixingDocs(true)}
                           className="font-bold justify-center"
                         >
-                          {application.document_issues && Object.keys(application.document_issues).length > 0 ? 'Fix flagged documents' : 'Replace an uploaded document'}
+                          {application.field_issues && Object.keys(application.field_issues).length > 0
+                            ? 'Fix flagged details & documents'
+                            : application.document_issues && Object.keys(application.document_issues).length > 0
+                              ? 'Fix flagged documents'
+                              : 'Replace an uploaded document'}
                         </Button>
                       </div>
                     )}
@@ -478,6 +600,16 @@ export default function TplTrackApplicationPage() {
                         <Alert tone="danger" title="Application Not Approved">
                           {application.rejection_reason || 'Compliance criteria were not met. You can fix details and resubmit.'}
                         </Alert>
+
+                        {application.field_issues && Object.keys(application.field_issues).length > 0 && (
+                          <Alert tone="warning" title="Flagged Application Details">
+                            <ul className="list-disc space-y-1 pl-4 mt-1 text-xs">
+                              {Object.entries(application.field_issues).map(([field, reason]) => (
+                                <li key={field}><strong className="font-semibold">{humanize(field)}</strong>: {reason}</li>
+                              ))}
+                            </ul>
+                          </Alert>
+                        )}
 
                         {application.document_issues && Object.keys(application.document_issues).length > 0 && (
                           <Alert tone="warning" title="Flagged Document Issues">

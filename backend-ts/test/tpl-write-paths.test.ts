@@ -397,6 +397,82 @@ describe('PUT /tpl/:id/flag-documents', () => {
   });
 });
 
+describe('PUT /tpl/:id/flag-details', () => {
+  const flagDetails = (issues: Record<string, string>, token = bearer('super-1')) =>
+    request(app).put(`/api/v1/tpl/${PID}/flag-details`).set(token).send({ issues });
+
+  it('flags application details, notifies the applicant and audits it', async () => {
+    reset('pending');
+    const res = await flagDetails({ pan_number: 'PAN name mismatch with MCA', bank_ifsc: 'Invalid IFSC for branch' });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].field_issues).toEqual({
+      pan_number: 'PAN name mismatch with MCA',
+      bank_ifsc: 'Invalid IFSC for branch',
+    });
+    expect(supabaseMock.writes('notifications', 'POST')[0].body).toMatchObject({ user_id: 'partner-user', type: 'tpl_details_flagged' });
+    expect(supabaseMock.writes('ai_agent_logs', 'POST')[0].body).toMatchObject({ action: 'tpl_details_flagged' });
+  });
+
+  it('normalizes camelCase field keys and is additive across calls', async () => {
+    reset('pending', { field_issues: { pan_number: 'PAN mismatch' } });
+    const res = await flagDetails({ bankAccount: 'Account number too short' });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].field_issues).toEqual({
+      pan_number: 'PAN mismatch',
+      bank_account_no: 'Account number too short',
+    });
+  });
+
+  it('refuses an application that is not pending', async () => {
+    reset('active');
+    expect((await flagDetails({ pan_number: 'Mismatch' })).status).toBe(409);
+  });
+
+  it('refuses an unknown field or a reason that is too short', async () => {
+    reset('pending');
+    expect((await flagDetails({ favorite_color: 'Must be blue' })).status).toBe(400);
+    expect((await flagDetails({ pan_number: 'x' })).status).toBe(400);
+  });
+
+  it('refuses to approve an application with flagged details until fixed', async () => {
+    reset('pending', { field_issues: { pan_number: 'Fix name' } });
+    const res = await request(app).post(`/api/v1/tpl/approve/${PID}`).set(bearer('super-1')).send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('flagged details');
+  });
+
+  it('clears matching field_issues when application fields are updated', async () => {
+    reset('pending', { field_issues: { pan_number: 'Fix name', bank_account_no: 'Wrong account' } });
+    const res = await request(app).patch(`/api/v1/tpl/${PID}`).send({
+      verify_pan: 'ABCDE1234F',
+      pan: 'ABCDE1234F',
+    });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].field_issues).toEqual({
+      bank_account_no: 'Wrong account',
+    });
+  });
+});
+
+describe('auto-generation of 3PL custom_id', () => {
+  it('automatically generates a valid unique 3PL custom_id when omitted', async () => {
+    const res = await request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Acme Logistics India',
+      contactName: 'Priya Rao',
+      email: 'unique_auto_id@northline.example',
+      pan: 'ABCDE1234F',
+      entityType: 'Proprietorship',
+      authorizedSignatoryName: 'Priya Rao',
+    });
+    expect(res.status).toBe(200);
+    const partner = res.body.data;
+    expect(partner.custom_id).toBeDefined();
+    expect(partner.custom_id).toMatch(/^[a-z0-9_]{5,20}$/);
+    expect(partner.custom_id.length).toBeGreaterThanOrEqual(5);
+    expect(partner.custom_id.length).toBeLessThanOrEqual(20);
+  });
+});
+
 describe('application field checks', () => {
   const onboard = (change: Record<string, unknown>) =>
     request(app).post('/api/v1/tpl/onboard').send({

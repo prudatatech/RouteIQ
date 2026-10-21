@@ -99,6 +99,77 @@ export function assertFlagDocuments(issues: unknown, docTypes: readonly string[]
   return out;
 }
 
+export const TPL_FLAGGABLE_FIELDS = [
+  'company_name',
+  'contact_name',
+  'phone',
+  'pan_number',
+  'gstin',
+  'entity_type',
+  'cin',
+  'authorized_signatory_name',
+  'msme_status',
+  'bank_account_no',
+  'bank_ifsc',
+  'operating_from',
+  'fleet_size',
+] as const;
+
+export const TPL_FIELD_LABELS: Record<string, string> = {
+  company_name: 'Company Name',
+  contact_name: 'Contact Person',
+  phone: 'Mobile Number',
+  pan_number: 'PAN Number',
+  gstin: 'GSTIN',
+  entity_type: 'Entity Type',
+  cin: 'CIN',
+  authorized_signatory_name: 'Authorized Signatory',
+  msme_status: 'MSME Status',
+  bank_account_no: 'Bank Account Number',
+  bank_ifsc: 'Bank IFSC Code',
+  operating_from: 'Operating Location',
+  fleet_size: 'Fleet Size / Vehicles',
+};
+
+/** Normalizes frontend or payload field keys to snake_case column names */
+export function normalizeFieldKey(key: string): string {
+  const map: Record<string, string> = {
+    companyName: 'company_name',
+    contactName: 'contact_name',
+    phone: 'phone',
+    pan: 'pan_number',
+    panNumber: 'pan_number',
+    gst: 'gstin',
+    entityType: 'entity_type',
+    authorizedSignatoryName: 'authorized_signatory_name',
+    msmeStatus: 'msme_status',
+    bankAccount: 'bank_account_no',
+    bankAccountNo: 'bank_account_no',
+    bankIfsc: 'bank_ifsc',
+    operatingFrom: 'operating_from',
+    fleetSize: 'fleet_size',
+  };
+  return map[key] || key;
+}
+
+/** Checks a { "<field>": reason } payload for application details */
+export function assertFlagDetails(issues: unknown): Record<string, string> {
+  if (!issues || typeof issues !== 'object' || Array.isArray(issues)) throw new HttpError(400, 'Flag at least one detail');
+  const entries = Object.entries(issues as Record<string, unknown>);
+  if (entries.length === 0) throw new HttpError(400, 'Flag at least one detail');
+  const out: Record<string, string> = {};
+  for (const [rawKey, reason] of entries) {
+    const key = normalizeFieldKey(rawKey);
+    if (!(TPL_FLAGGABLE_FIELDS as readonly string[]).includes(key)) throw new HttpError(400, `Unknown detail field: ${rawKey}`);
+    if (typeof reason !== 'string' || reason.trim().length < 3 || reason.length > 300) {
+      throw new HttpError(400, 'Say what is wrong with each detail (3 to 300 characters)');
+    }
+    out[key] = reason.trim();
+  }
+  return out;
+}
+
+
 export function assertApplicationFields(data: Record<string, unknown>, partial = false): void {
   if (!(partial && blank(data.companyName)) && !isText(data.companyName, 200)) {
     throw new HttpError(400, 'Company name is required (up to 200 characters)');

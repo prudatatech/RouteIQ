@@ -187,7 +187,39 @@ export default function TplDashboardPage() {
         </header>
 
         <main className="mx-auto max-w-content space-y-6 px-4 py-6 sm:px-6 lg:py-8">
-          {(!partner.pan_number || !partner.bank_account_no) && (
+          {partner.document_issues && Object.keys(partner.document_issues).length > 0 && (
+            <Alert
+              tone="warning"
+              title="Action required: Platform flagged your uploaded document(s)"
+              action={
+                <NavLink to={`${base}/documents?highlight=flagged`} className={clsx(
+                  'inline-flex items-center justify-center rounded-control border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-subtle transition-colors'
+                )}>
+                  View flagged documents
+                </NavLink>
+              }
+            >
+              Margix compliance requested updates on {Object.keys(partner.document_issues).length} document(s): {Object.keys(partner.document_issues).join(', ')}. Please re-upload updated copies.
+            </Alert>
+          )}
+
+          {partner.field_issues && Object.keys(partner.field_issues).length > 0 && (
+            <Alert
+              tone="warning"
+              title="Action required: Correct flagged details"
+              action={
+                <NavLink to={`${base}/settings?highlight=flagged`} className={clsx(
+                  'inline-flex items-center justify-center rounded-control border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-subtle transition-colors'
+                )}>
+                  Edit details
+                </NavLink>
+              }
+            >
+              Margix compliance flagged application details for revision: {Object.keys(partner.field_issues).map(k => k.replace(/_/g, ' ')).join(', ')}. Please update them in Settings.
+            </Alert>
+          )}
+
+          {(!partner.pan_number || !partner.bank_account_no) && !partner.field_issues && (
             <Alert
               tone="warning"
               title="Action required: Complete KYC & Bank Details"

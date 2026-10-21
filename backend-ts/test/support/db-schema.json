@@ -676,6 +676,7 @@
     "fleet_size",
     "truck_type",
     "document_issues",
+    "field_issues",
     "contact_name",
     "entity_type",
     "cin",
