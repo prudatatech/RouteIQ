@@ -34,3 +34,47 @@ describe('corridor rates', () => {
     expect(text).toMatchObject({ rate: '', legacy_rate: 'Base + 12%' })
   })
 })
+
+describe('TPL compliance documents', () => {
+  it('defines the standard 11 Indian 3PL / GTA compliance document types', async () => {
+    const { TPL_DOCUMENT_TYPES } = await import('./constants')
+    expect(TPL_DOCUMENT_TYPES.length).toBe(11)
+    expect(TPL_DOCUMENT_TYPES).toContain('PAN Card')
+    expect(TPL_DOCUMENT_TYPES).toContain('GST Certificate')
+    expect(TPL_DOCUMENT_TYPES).toContain('Cancelled Cheque')
+    expect(TPL_DOCUMENT_TYPES).toContain('Certificate of Incorporation')
+    expect(TPL_DOCUMENT_TYPES).toContain('Partnership Deed')
+    expect(TPL_DOCUMENT_TYPES).toContain('Board Resolution / Letter of Authority')
+    expect(TPL_DOCUMENT_TYPES).toContain('Authorized Signatory ID')
+    expect(TPL_DOCUMENT_TYPES).toContain('Carriage by Road Registration')
+    expect(TPL_DOCUMENT_TYPES).toContain('MSME / Udyam Certificate')
+    expect(TPL_DOCUMENT_TYPES).toContain('Trade License / Shop & Establishment')
+    expect(TPL_DOCUMENT_TYPES).toContain('Sample Consignment Note (LR)')
+  })
+
+  it('evaluates requirement dynamically based on entity type and MSME status', async () => {
+    const { TPL_DOCUMENT_SPECS } = await import('./constants')
+
+    // Certificate of Incorporation
+    const coi = TPL_DOCUMENT_SPECS['Certificate of Incorporation']
+    expect(coi.evaluateRequirement({ entityType: 'Private Limited' }).level).toBe('required')
+    expect(coi.evaluateRequirement({ entityType: 'Proprietorship' }).level).toBe('optional')
+
+    // Partnership Deed
+    const deed = TPL_DOCUMENT_SPECS['Partnership Deed']
+    expect(deed.evaluateRequirement({ entityType: 'Partnership' }).level).toBe('required')
+    expect(deed.evaluateRequirement({ entityType: 'LLP' }).level).toBe('required')
+    expect(deed.evaluateRequirement({ entityType: 'Private Limited' }).level).toBe('optional')
+
+    // MSME Certificate
+    const msme = TPL_DOCUMENT_SPECS['MSME / Udyam Certificate']
+    expect(msme.evaluateRequirement({ msmeStatus: 'Small' }).level).toBe('required')
+    expect(msme.evaluateRequirement({ msmeStatus: 'Not Registered' }).level).toBe('optional')
+
+    // Carriage by Road Registration (Common Carrier Act 2007)
+    const carriage = TPL_DOCUMENT_SPECS['Carriage by Road Registration']
+    expect(carriage.evaluateRequirement({}).level).toBe('recommended')
+    expect(carriage.evaluateRequirement({}).badgeText).toContain('Carriage by Road Act 2007')
+  })
+})
+

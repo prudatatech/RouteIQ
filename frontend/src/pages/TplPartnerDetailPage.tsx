@@ -710,7 +710,7 @@ export default function TplPartnerDetailPage() {
                       <DocUploadField
                         key={docType}
                         label={docType}
-                        hint={existingDoc ? 'Attached · Upload new file to replace' : 'Upload document (PDF, PNG, JPG up to 2MB)'}
+                        hint={existingDoc ? 'Attached · Upload new file to replace' : 'Upload document (PDF, PNG, JPG up to 10MB — auto-compressed)'}
                         busy={uploadingType === docType}
                         onUpload={file => uploadDocument(docType, file)}
                         onRemove={() => {}}

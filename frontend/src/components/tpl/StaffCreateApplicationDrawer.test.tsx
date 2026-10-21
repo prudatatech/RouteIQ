@@ -13,6 +13,7 @@ vi.mock('@/services/tplDocuments', () => ({ uploadTplDocument: docs.uploadTplDoc
 vi.mock('@/services/kycDocuments', () => ({ getKycDocumentUrl: vi.fn().mockResolvedValue('https://signed/doc.pdf') }))
 vi.mock('@/services/supabase', () => ({ supabase: { auth: {}, storage: { from: vi.fn() } } }))
 
+import { TPL_DOCUMENT_TYPES } from './constants'
 import { StaffCreateApplicationDrawer } from './StaffCreateApplicationDrawer'
 
 function fillRequiredFields() {
@@ -62,7 +63,7 @@ describe('StaffCreateApplicationDrawer', () => {
     // Documents render in TPL_DOCUMENT_TYPES order; the first slot is "PAN Card".
     // The drawer portals into document.body, outside the render() container.
     const fileInputs = document.body.querySelectorAll('input[type="file"]')
-    expect(fileInputs.length).toBe(3)
+    expect(fileInputs.length).toBe(TPL_DOCUMENT_TYPES.length)
     const file = new File(['dummy'], 'pan.pdf', { type: 'application/pdf' })
     fireEvent.change(fileInputs[0], { target: { files: [file] } })
 

@@ -22,7 +22,7 @@ import { getKycDocumentUrl } from '@/services/kycDocuments'
 import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
 import { gstinError } from '@/utils/gstin'
 import { validatePanFormat, validateGstinFormat } from '@/utils/taxValidation'
-import { TPL_DOCUMENT_TYPES, TPL_MSME_OPTIONS } from '@/components/tpl/constants'
+import { TPL_DOCUMENT_TYPES, TPL_MSME_OPTIONS, TPL_DOC_CATEGORIES, TPL_DOCUMENT_SPECS, type TplDocType } from '@/components/tpl/constants'
 
 const QUICK_STEPS = [
   'Contact Details',
@@ -386,7 +386,19 @@ export default function TplOnboardingPage() {
       }
       if (step === 4) {
         if (!docUrls['PAN Card']) {
-          toast.error('Please upload your PAN Card to proceed.')
+          toast.error('Please upload your Company / Proprietor PAN Card to proceed.')
+          return
+        }
+        if ((entityType === 'Private Limited' || entityType === 'Public Limited') && !docUrls['Certificate of Incorporation']) {
+          toast.error('Certificate of Incorporation is required for Private / Public Limited companies.')
+          return
+        }
+        if ((entityType === 'Partnership' || entityType === 'LLP') && !docUrls['Partnership Deed']) {
+          toast.error('Partnership Deed / LLP Agreement is required for Partnership / LLP entities.')
+          return
+        }
+        if (msmeStatus && msmeStatus !== 'Not Registered' && !docUrls['MSME / Udyam Certificate']) {
+          toast.error('MSME / Udyam Certificate is required for declared MSME partners.')
           return
         }
       }
@@ -1197,27 +1209,68 @@ export default function TplOnboardingPage() {
 
                 {/* Step 4: KYC Documents (Complete Mode) */}
                 {onboardingMode === 'full' && step === 4 && (
-                  <div className="space-y-5">
-                    <div className="p-4 bg-surface-subtle border border-border rounded-card flex items-center justify-between text-xs text-muted">
-                      <span>Upload clear scanned copies or photos (PDF, PNG, JPG up to 2MB).</span>
-                      <span className="font-bold text-brand">Company PAN Card is required</span>
+                  <div className="space-y-6">
+                    <div className="p-4 bg-surface-subtle border border-border rounded-card flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-muted">
+                      <span>Upload clear scanned copies or phone photos (PDF, PNG, JPG up to 10MB). Photos are auto-optimized in browser for rapid upload.</span>
+                      <span className="font-bold text-brand shrink-0">PAN Card &amp; Entity Proof required</span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {TPL_DOCUMENT_TYPES.map(docType => (
-                        <DocUploadField
-                          key={docType}
-                          label={docType}
-                          hint={docType === 'PAN Card' ? 'Required for verification' : 'Recommended for instant approval'}
-                          path={docUrls[docType]}
-                          busy={uploadingDocType === docType}
-                          onUpload={file => uploadDoc(docType, file)}
-                          onRemove={() => removeDoc(docType)}
-                          onView={() => {
-                            if (docUrls[docType]) void openDocViewer(docUrls[docType], docType)
-                          }}
-                        />
-                      ))}
+                    <div className="space-y-6">
+                      {TPL_DOC_CATEGORIES.map(category => {
+                        const categoryDocs = TPL_DOCUMENT_TYPES.filter(t => TPL_DOCUMENT_SPECS[t]?.category === category.id)
+                        if (categoryDocs.length === 0) return null
+
+                        return (
+                          <div key={category.id} className="space-y-3">
+                            <div className="border-b border-border/80 pb-1.5">
+                              <h4 className="text-sm font-bold text-text">{category.title}</h4>
+                              <p className="text-xs text-muted">{category.subtitle}</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {categoryDocs.map(docType => {
+                                const spec = TPL_DOCUMENT_SPECS[docType]
+                                const req = spec?.evaluateRequirement({
+                                  entityType,
+                                  msmeStatus,
+                                  authorizedSignatoryName,
+                                })
+
+                                const badgeColor =
+                                  req?.level === 'required'
+                                    ? 'bg-brand/10 text-brand border-brand/20'
+                                    : req?.level === 'recommended'
+                                    ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
+                                    : 'bg-surface text-muted border-border'
+
+                                return (
+                                  <div key={docType} className="space-y-1.5">
+                                    <div className="flex items-center justify-between text-xs px-0.5">
+                                      <span className="font-medium text-text truncate">{spec?.label || docType}</span>
+                                      {req && (
+                                        <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded border ${badgeColor}`}>
+                                          {req.badgeText}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <DocUploadField
+                                      label={docType}
+                                      hint={req?.reason || spec?.hint}
+                                      path={docUrls[docType]}
+                                      busy={uploadingDocType === docType}
+                                      onUpload={file => uploadDoc(docType, file)}
+                                      onRemove={() => removeDoc(docType)}
+                                      onView={() => {
+                                        if (docUrls[docType]) void openDocViewer(docUrls[docType], docType)
+                                      }}
+                                    />
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
@@ -1399,18 +1452,38 @@ export default function TplOnboardingPage() {
                               </button>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                              {TPL_DOCUMENT_TYPES.map(docType => (
-                                <div key={docType} className="flex items-center justify-between p-2.5 rounded-control bg-surface-subtle border border-border">
-                                  <span className="font-medium text-text">{docType}</span>
-                                  {docUrls[docType] ? (
-                                    <span className="text-success flex items-center gap-1 font-semibold">
-                                      <CheckCircle2 size={13} /> Uploaded
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted italic">Not uploaded</span>
-                                  )}
-                                </div>
-                              ))}
+                              {TPL_DOCUMENT_TYPES.map(docType => {
+                                const spec = TPL_DOCUMENT_SPECS[docType]
+                                const isUploaded = !!docUrls[docType]
+                                const req = spec?.evaluateRequirement({ entityType, msmeStatus, authorizedSignatoryName })
+
+                                return (
+                                  <div
+                                    key={docType}
+                                    className={`flex items-center justify-between p-2.5 rounded-control border ${
+                                      isUploaded
+                                        ? 'bg-success/5 border-success/30'
+                                        : req?.level === 'required'
+                                        ? 'bg-warning/5 border-warning/30'
+                                        : 'bg-surface-subtle border-border'
+                                    }`}
+                                  >
+                                    <div className="min-w-0 pr-2">
+                                      <p className="font-medium text-text truncate">{docType}</p>
+                                      <p className="text-[11px] text-muted truncate">{req?.badgeText || spec?.hint}</p>
+                                    </div>
+                                    {isUploaded ? (
+                                      <span className="text-success flex items-center gap-1 font-semibold shrink-0">
+                                        <CheckCircle2 size={13} /> Uploaded
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted italic shrink-0">
+                                        {req?.level === 'required' ? 'Required' : 'Optional'}
+                                      </span>
+                                    )}
+                                  </div>
+                                )
+                              })}
                             </div>
                           </div>
                         </>

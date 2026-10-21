@@ -8,7 +8,7 @@ import { DocUploadField } from '@/components/kyc/DocUploadField'
 import { tplAPI } from '@/services/api'
 import { openKycDocument } from '@/services/kycDocuments'
 import { uploadTplDocument } from '@/services/tplDocuments'
-import { TPL_DOCUMENT_TYPES } from '@/components/tpl/constants'
+import { TPL_DOCUMENT_TYPES, TPL_DOCUMENT_SPECS, TPL_DOC_CATEGORIES } from '@/components/tpl/constants'
 import { errorMessage, formatDate } from '@/utils/display'
 import { usePortal, type PortalDocument } from './portalContext'
 
@@ -25,8 +25,8 @@ export default function DocumentsPage() {
 
   const uploadNew = async (docType: string, file: File | undefined) => {
     if (!file) return
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('The file is over the 2 MB limit. Choose a smaller file.')
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('The file is over the 10 MB limit. Choose a smaller file.')
       return
     }
     try {
@@ -51,8 +51,8 @@ export default function DocumentsPage() {
 
   const replace = async (doc: PortalDocument, file: File | undefined) => {
     if (!file) return
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('The file is over the 2 MB limit. Choose a smaller file.')
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('The file is over the 10 MB limit. Choose a smaller file.')
       return
     }
     const ok = await confirm({
@@ -102,28 +102,65 @@ export default function DocumentsPage() {
       {missingDocTypes.length > 0 && (
         <Card padded>
           <CardHeader
-            title="Upload KYC Documents"
-            description="Upload your missing compliance documents (PDF, JPG, PNG up to 2 MB) to complete verification."
+            title="Upload Compliance Documents"
+            description="Upload missing compliance documents (PDF, JPG, PNG up to 10 MB). Mobile photos are auto-optimized in browser."
           />
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {missingDocTypes.map(docType => {
-              const issue = partner.document_issues?.[docType]
+          <div className="mt-4 space-y-6">
+            {TPL_DOC_CATEGORIES.map(category => {
+              const categoryMissing = missingDocTypes.filter(t => TPL_DOCUMENT_SPECS[t]?.category === category.id)
+              if (categoryMissing.length === 0) return null
+
               return (
-                <div key={docType} className="space-y-1.5" data-flagged={issue ? 'true' : undefined}>
-                  <DocUploadField
-                    label={docType}
-                    hint={issue ? `Fix Requested: ${issue}` : 'Required KYC document'}
-                    busy={uploading === docType}
-                    onUpload={file => uploadNew(docType, file)}
-                    onRemove={() => {}}
-                    onView={() => {}}
-                  />
-                  {issue && (
-                    <div className="rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
-                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                      <span>{issue}</span>
-                    </div>
-                  )}
+                <div key={category.id} className="space-y-3">
+                  <div className="border-b border-border/80 pb-1">
+                    <h4 className="text-xs font-bold uppercase tracking-wide text-text">{category.title}</h4>
+                    <p className="text-[11px] text-muted">{category.subtitle}</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {categoryMissing.map(docType => {
+                      const spec = TPL_DOCUMENT_SPECS[docType]
+                      const req = spec?.evaluateRequirement({
+                        entityType: partner.entity_type,
+                        msmeStatus: partner.msme_status,
+                        authorizedSignatoryName: partner.authorized_signatory_name,
+                      })
+                      const issue = partner.document_issues?.[docType]
+
+                      const badgeColor =
+                        req?.level === 'required'
+                          ? 'bg-brand/10 text-brand border-brand/20'
+                          : req?.level === 'recommended'
+                          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
+                          : 'bg-surface text-muted border-border'
+
+                      return (
+                        <div key={docType} className="space-y-1.5" data-flagged={issue ? 'true' : undefined}>
+                          <div className="flex items-center justify-between text-xs px-0.5">
+                            <span className="font-medium text-text truncate">{spec?.label || docType}</span>
+                            {req && (
+                              <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded border ${badgeColor}`}>
+                                {req.badgeText}
+                              </span>
+                            )}
+                          </div>
+                          <DocUploadField
+                            label={docType}
+                            hint={issue ? `Fix Requested: ${issue}` : req?.reason || spec?.hint}
+                            busy={uploading === docType}
+                            onUpload={file => uploadNew(docType, file)}
+                            onRemove={() => {}}
+                            onView={() => {}}
+                          />
+                          {issue && (
+                            <div className="rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
+                              <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                              <span>{issue}</span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               )
             })}

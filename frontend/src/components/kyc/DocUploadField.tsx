@@ -28,16 +28,16 @@ export function DocUploadField({ label, hint, path, issue, busy, onUpload, onRem
       toast.error('Only PDF, JPG, and PNG files are accepted.')
       return
     }
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('File size must be under 2 MB.')
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size must be under 10 MB.')
       return
     }
     onUpload(file)
   }
 
   const handleFileSelect = (file: File) => {
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('File size must be under 2 MB.')
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size must be under 10 MB.')
       return
     }
     onUpload(file)
@@ -116,7 +116,7 @@ export function DocUploadField({ label, hint, path, issue, busy, onUpload, onRem
             >
               {busy ? 'Uploading…' : 'Upload'}
             </FileButton>
-            <span className="text-xs text-muted">or drop here (max 2MB)</span>
+            <span className="text-xs text-muted">or drop here (max 10MB)</span>
           </div>
         )}
       </div>

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { TPL_DOCUMENT_TYPES } from '@/components/tpl/constants'
 
 const api = vi.hoisted(() => ({
   getPartner: vi.fn(),
@@ -105,7 +106,7 @@ describe('TplPartnerDetailPage document upload', () => {
     expect(screen.getByText('GST Certificate')).toBeTruthy()
 
     const fileInputs = document.body.querySelectorAll('input[type="file"]')
-    expect(fileInputs.length).toBe(3)
+    expect(fileInputs.length).toBe(TPL_DOCUMENT_TYPES.length)
     const file = new File(['dummy'], 'pan.pdf', { type: 'application/pdf' })
     fireEvent.change(fileInputs[0], { target: { files: [file] } })
 

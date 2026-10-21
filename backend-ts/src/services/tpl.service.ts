@@ -45,7 +45,19 @@ export async function generateUniqueCustomId(companyName: string = 'partner'): P
 }
 
 /** Documents a 3PL applicant or partner can upload. */
-export const TPL_DOCUMENT_TYPES = ['PAN Card', 'GST Certificate', 'Cancelled Cheque'] as const;
+export const TPL_DOCUMENT_TYPES = [
+  'PAN Card',
+  'GST Certificate',
+  'Cancelled Cheque',
+  'Certificate of Incorporation',
+  'Partnership Deed',
+  'Board Resolution / Letter of Authority',
+  'Authorized Signatory ID',
+  'Carriage by Road Registration',
+  'MSME / Udyam Certificate',
+  'Trade License / Shop & Establishment',
+  'Sample Consignment Note (LR)',
+] as const;
 
 /** Accepted upload formats and the file extension each is stored under. */
 export const TPL_UPLOAD_CONTENT_TYPES: Record<string, string> = {

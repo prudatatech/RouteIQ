@@ -1,6 +1,184 @@
 import { formatRupees } from '@/utils/display'
 /** Documents a 3PL applicant or partner can upload; matches backend TPL_DOCUMENT_TYPES. */
-export const TPL_DOCUMENT_TYPES = ['PAN Card', 'GST Certificate', 'Cancelled Cheque'] as const
+export const TPL_DOCUMENT_TYPES = [
+  'PAN Card',
+  'GST Certificate',
+  'Cancelled Cheque',
+  'Certificate of Incorporation',
+  'Partnership Deed',
+  'Board Resolution / Letter of Authority',
+  'Authorized Signatory ID',
+  'Carriage by Road Registration',
+  'MSME / Udyam Certificate',
+  'Trade License / Shop & Establishment',
+  'Sample Consignment Note (LR)',
+] as const
+
+export type TplDocType = (typeof TPL_DOCUMENT_TYPES)[number]
+
+export type TplDocCategory = 'kyc' | 'constitution' | 'governance' | 'transport'
+
+export interface TplDocCategoryInfo {
+  id: TplDocCategory
+  title: string
+  subtitle: string
+}
+
+export const TPL_DOC_CATEGORIES: TplDocCategoryInfo[] = [
+  { id: 'kyc', title: 'Core Financial & Tax KYC', subtitle: 'Essential tax identity and verified bank account for payouts' },
+  { id: 'constitution', title: 'Business Constitution & Entity Proof', subtitle: 'Statutory registration verifying entity existence and structure' },
+  { id: 'governance', title: 'Signatory Authorization & Governance', subtitle: 'Formal authorization binding the carrier entity to freight contracts' },
+  { id: 'transport', title: 'Logistics & Regulatory Compliance', subtitle: 'Carriage by Road Act 2007, GTA standing, and MSME statutory credentials' },
+]
+
+export interface TplDocSpec {
+  type: TplDocType
+  label: string
+  category: TplDocCategory
+  hint: string
+  alwaysRequired?: boolean
+  evaluateRequirement: (ctx: {
+    entityType?: string | null
+    msmeStatus?: string | null
+    authorizedSignatoryName?: string | null
+  }) => {
+    level: 'required' | 'recommended' | 'optional'
+    badgeText: string
+    reason?: string
+  }
+}
+
+export const TPL_DOCUMENT_SPECS: Record<TplDocType, TplDocSpec> = {
+  'PAN Card': {
+    type: 'PAN Card',
+    label: 'Company / Proprietor PAN Card',
+    category: 'kyc',
+    hint: 'Permanent Account Number of the company or proprietor',
+    alwaysRequired: true,
+    evaluateRequirement: () => ({
+      level: 'required',
+      badgeText: 'Mandatory',
+      reason: 'Essential tax identity required for all carriers',
+    }),
+  },
+  'GST Certificate': {
+    type: 'GST Certificate',
+    label: 'GST Registration Certificate',
+    category: 'kyc',
+    hint: 'Form GST REG-06 showing legal & trade name (all 3 pages)',
+    evaluateRequirement: () => ({
+      level: 'required',
+      badgeText: 'Required for Invoicing',
+      reason: 'Required for compliant GTA freight billing & Input Tax Credit',
+    }),
+  },
+  'Cancelled Cheque': {
+    type: 'Cancelled Cheque',
+    label: 'Cancelled Cheque / Bank Proof',
+    category: 'kyc',
+    hint: 'Bank cheque or statement showing account name, number & IFSC',
+    alwaysRequired: true,
+    evaluateRequirement: () => ({
+      level: 'required',
+      badgeText: 'Mandatory for Payouts',
+      reason: 'Direct RTGS/NEFT trip freight settlement verification',
+    }),
+  },
+  'Certificate of Incorporation': {
+    type: 'Certificate of Incorporation',
+    label: 'Certificate of Incorporation (COI)',
+    category: 'constitution',
+    hint: 'Issued by Ministry of Corporate Affairs (MCA) / ROC with CIN',
+    evaluateRequirement: ({ entityType }) => {
+      const isCorporate = entityType === 'Private Limited' || entityType === 'Public Limited'
+      return isCorporate
+        ? { level: 'required', badgeText: 'Required for Companies', reason: 'Mandatory proof of incorporation for Private/Public Ltd' }
+        : { level: 'optional', badgeText: 'For Registered Companies', reason: 'Optional for non-corporate entities' }
+    },
+  },
+  'Partnership Deed': {
+    type: 'Partnership Deed',
+    label: 'Partnership Deed / LLP Agreement',
+    category: 'constitution',
+    hint: 'Executed partnership deed or registered LLP agreement',
+    evaluateRequirement: ({ entityType }) => {
+      const isPartnership = entityType === 'Partnership' || entityType === 'LLP'
+      return isPartnership
+        ? { level: 'required', badgeText: 'Required for Partnership / LLP', reason: 'Mandatory for partnership firms & LLPs' }
+        : { level: 'optional', badgeText: 'For Partnership Firms', reason: 'Optional for non-partnership entities' }
+    },
+  },
+  'Trade License / Shop & Establishment': {
+    type: 'Trade License / Shop & Establishment',
+    label: 'Trade License / Shop Act Certificate',
+    category: 'constitution',
+    hint: 'Local municipal trade license or Shop & Establishment certificate',
+    evaluateRequirement: ({ entityType }) => {
+      const isProp = entityType === 'Proprietorship'
+      return isProp
+        ? { level: 'recommended', badgeText: 'Recommended for Proprietorship', reason: 'Proof of commercial operating establishment' }
+        : { level: 'optional', badgeText: 'Optional' }
+    },
+  },
+  'Board Resolution / Letter of Authority': {
+    type: 'Board Resolution / Letter of Authority',
+    label: 'Board Resolution / Authorization Letter',
+    category: 'governance',
+    hint: 'Signed authorization on company letterhead empowering the signatory',
+    evaluateRequirement: ({ entityType }) => {
+      const needsPoa = entityType === 'Private Limited' || entityType === 'Public Limited' || entityType === 'LLP' || entityType === 'Partnership'
+      return needsPoa
+        ? { level: 'required', badgeText: 'Required for Corporate Signatory', reason: 'Legal authorization to accept loads and bind the carrier' }
+        : { level: 'recommended', badgeText: 'Recommended', reason: 'Recommended if owner is represented by manager' }
+    },
+  },
+  'Authorized Signatory ID': {
+    type: 'Authorized Signatory ID',
+    label: 'Authorized Signatory Photo ID',
+    category: 'governance',
+    hint: 'Aadhaar, Passport, or Voter ID of the designated signatory',
+    evaluateRequirement: ({ authorizedSignatoryName }) => {
+      return authorizedSignatoryName?.trim()
+        ? { level: 'required', badgeText: 'Required for Signatory', reason: `Identity proof of ${authorizedSignatoryName.trim()}` }
+        : { level: 'recommended', badgeText: 'Recommended', reason: 'Government photo ID of carrier representative' }
+    },
+  },
+  'Carriage by Road Registration': {
+    type: 'Carriage by Road Registration',
+    label: 'Carriage by Road Registration (Common Carrier)',
+    category: 'transport',
+    hint: 'Common carrier certificate under Carriage by Road Act 2007 or STA/RTO permit',
+    evaluateRequirement: () => ({
+      level: 'recommended',
+      badgeText: 'Carriage by Road Act 2007',
+      reason: 'Essential certification for bona fide Goods Transport Agency (GTA) operations in India',
+    }),
+  },
+  'MSME / Udyam Certificate': {
+    type: 'MSME / Udyam Certificate',
+    label: 'MSME / Udyam Registration Certificate',
+    category: 'transport',
+    hint: 'Official Udyam certificate issued by Ministry of MSME',
+    evaluateRequirement: ({ msmeStatus }) => {
+      const isMsme = msmeStatus && msmeStatus !== 'Not Registered'
+      return isMsme
+        ? { level: 'required', badgeText: 'Required (MSME Declared)', reason: 'Mandatory to claim Section 43B(h) and MSMED Act priority payment protections' }
+        : { level: 'optional', badgeText: 'If MSME Registered', reason: 'Optional if business is not registered under MSME' }
+    },
+  },
+  'Sample Consignment Note (LR)': {
+    type: 'Sample Consignment Note (LR)',
+    label: 'Sample Lorry Receipt (LR) / Consignment Note',
+    category: 'transport',
+    hint: 'Transporter copy of serially numbered Consignment Note format',
+    evaluateRequirement: () => ({
+      level: 'recommended',
+      badgeText: 'GTA Standard (GST Act)',
+      reason: 'Consignment Note issuance legally defines Goods Transport Agency standing under GST Law',
+    }),
+  },
+}
+
 
 export const SLA_COMMITMENT_OPTIONS = ['2 Hours', '4 Hours', '6 Hours', '12 Hours']
 
