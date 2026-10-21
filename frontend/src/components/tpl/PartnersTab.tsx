@@ -52,7 +52,7 @@ function tplReadiness(p: TplPartner): { label: string; tone: 'warning' | 'succes
   // A profile-update approval (pending_updates set) does not require PAN/GST/bank/documents again.
   if (p.pending_updates) return { label: 'Ready', tone: 'success' }
   const cinOk = !entityTypeRequiresCin(p.entity_type) || !!p.cin
-  const hasCompliance = !!p.pan_number && !!p.gstin && !!p.bank_account_no && !!p.bank_ifsc && !!p.tpl_documents?.length
+  const hasCompliance = !!p.pan_number && !!p.bank_account_no && !!p.bank_ifsc && !!p.tpl_documents?.length
     && !!p.entity_type && !!p.authorized_signatory_name && cinOk
   return hasCompliance ? { label: 'Ready', tone: 'success' } : { label: 'Incomplete', tone: 'neutral' }
 }

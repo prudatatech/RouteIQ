@@ -180,7 +180,6 @@ describe('staff decisions on partners', () => {
 
   it.each([
     ['PAN', { pan_number: null }, 'PAN'],
-    ['GSTIN', { gstin: null }, 'GSTIN'],
     ['bank account', { bank_account_no: null }, 'bank details'],
     ['IFSC', { bank_ifsc: null }, 'bank details'],
     ['entity type', { entity_type: null }, 'entity type'],
@@ -203,6 +202,12 @@ describe('staff decisions on partners', () => {
 
   it('approves a partner whose entity type needs a CIN once one is on file', async () => {
     reset('pending', { entity_type: 'Private Limited', cin: 'U74999DL2019PTC123456' });
+    expect((await act(`approve/${PID}`)).status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('active');
+  });
+
+  it('approves a partner who has no GSTIN on file (GSTIN is optional)', async () => {
+    reset('pending', { gstin: null });
     expect((await act(`approve/${PID}`)).status).toBe(200);
     expect(supabaseMock.rows('tpl_partners')[0].status).toBe('active');
   });
@@ -465,6 +470,15 @@ describe('application field checks', () => {
     expect(supabaseMock.rows('tpl_partners')[0]).toMatchObject({
       entity_type: 'LLP', cin: 'U74999DL2019PTC654321', authorized_signatory_name: 'New Signatory',
     });
+  });
+
+  it('updateApplication accepts empty string gst: "" without failing or demanding GSTIN', async () => {
+    reset('pending');
+    const res = await request(app).patch(`/api/v1/tpl/${PID}`).send({
+      verify_pan: 'ABCDE1234F', gst: '',
+    });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].gstin).toBeNull();
   });
 });
 

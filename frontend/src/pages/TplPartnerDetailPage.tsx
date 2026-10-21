@@ -352,7 +352,6 @@ export default function TplPartnerDetailPage() {
   const isQuickOnboard = !!partner.fleet_size
   const missingKyc: string[] = []
   if (!partner.pan_number) missingKyc.push('PAN')
-  if (!partner.gstin) missingKyc.push('GSTIN')
   if (!partner.bank_account_no || !partner.bank_ifsc) missingKyc.push('Bank details')
   if (!partner.entity_type) missingKyc.push('Entity type')
   if (!partner.authorized_signatory_name) missingKyc.push('Authorized signatory')

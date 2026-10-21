@@ -143,9 +143,12 @@ export const tplService = {
     if (!companyName || !contactName || !email || (!isQuick && !pan)) throw new HttpError(400, 'Company name, contact person, email and PAN are required');
     if (!EMAIL_PATTERN.test(email)) throw new HttpError(400, 'Enter a valid email address, for example name@company.in');
     
+    const cleanGst = typeof gst === 'string' ? gst.trim() : gst ? String(gst).trim() : '';
     if (!isQuick) {
-      const gstProblem = gstinError(gst, pan);
-      if (gstProblem) throw new HttpError(400, gstProblem);
+      if (cleanGst) {
+        const gstProblem = gstinError(cleanGst, pan);
+        if (gstProblem) throw new HttpError(400, gstProblem);
+      }
       assertApplicationFields(data);
     }
     const phone = parseMobile(data.phone);
@@ -180,7 +183,7 @@ export const tplService = {
         email: email,
         phone,
         pan_number: pan,
-        gstin: normalizeGstin(gst),
+        gstin: cleanGst ? normalizeGstin(cleanGst) : null,
         entity_type: entityType || null,
         cin: cin ? String(cin).trim().toUpperCase() : null,
         authorized_signatory_name: authorizedSignatoryName || null,
@@ -392,7 +395,8 @@ export const tplService = {
     if (!allowedStatuses.includes(current.status)) throw new HttpError(409, 'Only a pending, rejected, or active application can be edited');
     const wasRejected = current.status === 'rejected';
     // A GSTIN carries the PAN: check it against the new PAN, or the one on record
-    const gstProblem = gst !== undefined ? gstinError(gst, pan ?? current.pan_number) : undefined;
+    const cleanGst = typeof gst === 'string' ? gst.trim() : gst ? String(gst).trim() : '';
+    const gstProblem = cleanGst ? gstinError(cleanGst, pan ?? current.pan_number) : undefined;
     if (gstProblem) throw new HttpError(400, gstProblem);
     const existingDocuments = (current.tpl_documents as { id: string; file_url: string; doc_type: string }[] | null) ?? [];
     assertDocumentPaths(
@@ -411,7 +415,7 @@ export const tplService = {
         ...(contactName !== undefined ? { contact_name: contactName } : {}),
         ...(data.phone !== undefined ? { phone: parseMobile(data.phone) } : {}),
         ...(pan !== undefined ? { pan_number: pan } : {}),
-        ...(gst !== undefined ? { gstin: normalizeGstin(gst) } : {}),
+        ...(gst !== undefined ? { gstin: cleanGst ? normalizeGstin(cleanGst) : null } : {}),
         ...(entityType !== undefined ? { entity_type: entityType || null } : {}),
         ...(cin !== undefined ? { cin: cin ? String(cin).trim().toUpperCase() : null } : {}),
         ...(authorizedSignatoryName !== undefined ? { authorized_signatory_name: authorizedSignatoryName || null } : {}),
@@ -575,7 +579,6 @@ export const tplService = {
     if (!updates && !isQuick) {
       const missing: string[] = [];
       if (!partner.pan_number) missing.push('PAN');
-      if (!partner.gstin) missing.push('GSTIN');
       if (!partner.bank_account_no || !partner.bank_ifsc) missing.push('bank details');
       if (!partner.entity_type) missing.push('entity type');
       if (!partner.authorized_signatory_name) missing.push('authorized signatory name');
