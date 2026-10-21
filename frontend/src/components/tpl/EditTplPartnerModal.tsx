@@ -13,6 +13,7 @@ import { TPL_MSME_OPTIONS, SLA_COMMITMENT_OPTIONS, TAX_TREATMENT_OPTIONS } from 
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const ACCOUNT_PATTERN = /^\d{9,18}$/
 const CUSTOM_ID_PATTERN = /^[a-z0-9_]{5,20}$/
+const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/
 
 interface PartnerLike {
   id: string
@@ -40,6 +41,21 @@ const SLA_OPTIONS = SLA_COMMITMENT_OPTIONS.map(v => ({ value: v, label: v }))
 const TAX_OPTIONS = TAX_TREATMENT_OPTIONS.map(v => ({ value: v, label: v }))
 
 type TabKey = 'identity' | 'bank' | 'operations'
+
+const FIELD_TABS: Record<string, TabKey> = {
+  pan: 'identity',
+  gst: 'identity',
+  entityType: 'identity',
+  cin: 'identity',
+  authorizedSignatoryName: 'identity',
+  msmeStatus: 'identity',
+  bankAccount: 'bank',
+  bankIfsc: 'bank',
+  companyName: 'operations',
+  contactName: 'operations',
+  phone: 'operations',
+  customId: 'operations',
+}
 
 export function EditTplPartnerModal({
   open,
@@ -102,8 +118,13 @@ export function EditTplPartnerModal({
   const requiresCin = entityTypeRequiresCin(entityType)
 
   const errors: Record<string, string> = {}
-  if (!companyName.trim()) errors.companyName = 'Company name is required'
-  if (!contactName.trim()) errors.contactName = 'Contact person is required'
+  if (!isPartnerPortal) {
+    if (!companyName.trim()) errors.companyName = 'Company name is required'
+    if (!contactName.trim()) errors.contactName = 'Contact person is required'
+    if (customId.trim() && !CUSTOM_ID_PATTERN.test(customId.trim())) {
+      errors.customId = '3PL ID must be 5-20 lowercase letters, numbers or underscores'
+    }
+  }
   if (pan.trim() && !PAN_PATTERN.test(pan.trim().toUpperCase())) {
     errors.pan = 'PAN looks incorrect (e.g. ABCDE1234F)'
   }
@@ -117,8 +138,8 @@ export function EditTplPartnerModal({
   if (bankAccount.trim() && !ACCOUNT_PATTERN.test(bankAccount.trim())) {
     errors.bankAccount = 'Account number must be 9 to 18 digits'
   }
-  if (customId.trim() && !CUSTOM_ID_PATTERN.test(customId.trim())) {
-    errors.customId = '3PL ID must be 5-20 lowercase letters, numbers or underscores'
+  if (bankIfsc.trim() && !IFSC_PATTERN.test(bankIfsc.trim().toUpperCase())) {
+    errors.bankIfsc = 'IFSC must be 11 characters (e.g. HDFC0001234)'
   }
 
   const err = (key: string) => (attempted ? errors[key] : undefined)
@@ -130,28 +151,34 @@ export function EditTplPartnerModal({
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault?.()
     setAttempted(true)
-    if (Object.keys(errors).length > 0) {
-      toast.error('Please fix the errors before saving.')
+    const errorEntries = Object.entries(errors)
+    if (errorEntries.length > 0) {
+      const [firstField, firstMsg] = errorEntries[0]
+      const targetTab = FIELD_TABS[firstField]
+      if (targetTab && targetTab !== activeTab) {
+        setActiveTab(targetTab)
+      }
+      toast.error(firstMsg || 'Please fix the errors before saving.')
       return
     }
 
     setSaving(true)
     try {
       const payload: Record<string, unknown> = {
-        companyName: companyName.trim(),
-        contactName: contactName.trim(),
-        phone: phone.trim() || undefined,
         pan: pan.trim() ? pan.trim().toUpperCase() : null,
         gst: gst.trim() ? gst.trim().toUpperCase() : null,
-        entityType: entityType || null,
+        entityType: entityType.trim() ? entityType.trim() : null,
         cin: cin.trim() ? cin.trim().toUpperCase() : null,
-        authorizedSignatoryName: authorizedSignatoryName.trim() || null,
+        authorizedSignatoryName: authorizedSignatoryName.trim() ? authorizedSignatoryName.trim() : null,
         msmeStatus,
-        bankAccount: bankAccount.trim() || null,
+        bankAccount: bankAccount.trim() ? bankAccount.trim() : null,
         bankIfsc: bankIfsc.trim() ? bankIfsc.trim().toUpperCase() : null,
       }
       if (!isPartnerPortal) {
-        payload.custom_id = customId.trim() || undefined
+        if (companyName.trim()) payload.companyName = companyName.trim()
+        if (contactName.trim()) payload.contactName = contactName.trim()
+        if (phone.trim()) payload.phone = phone.trim()
+        if (customId.trim()) payload.custom_id = customId.trim()
         payload.slaCommitment = slaCommitment
         payload.taxTreatment = taxTreatment
       }
@@ -165,6 +192,8 @@ export function EditTplPartnerModal({
       setSaving(false)
     }
   }
+
+  const tabHasError = (tab: TabKey) => attempted && Object.keys(errors).some(k => FIELD_TABS[k] === tab)
 
   return (
     <Modal
@@ -204,7 +233,11 @@ export function EditTplPartnerModal({
           >
             <ShieldCheck size={14} />
             Legal & Tax
-            {pan && <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />}
+            {tabHasError('identity') ? (
+              <span className="h-1.5 w-1.5 rounded-full bg-danger inline-block" title="Has errors" />
+            ) : pan ? (
+              <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
+            ) : null}
           </button>
           <button
             type="button"
@@ -218,7 +251,11 @@ export function EditTplPartnerModal({
           >
             <Landmark size={14} />
             Bank & Payout
-            {bankAccount && <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />}
+            {tabHasError('bank') ? (
+              <span className="h-1.5 w-1.5 rounded-full bg-danger inline-block" title="Has errors" />
+            ) : bankAccount ? (
+              <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
+            ) : null}
           </button>
           {!isPartnerPortal && (
             <button
@@ -233,6 +270,9 @@ export function EditTplPartnerModal({
             >
               <Building2 size={14} />
               Operations & Profile
+              {tabHasError('operations') && (
+                <span className="h-1.5 w-1.5 rounded-full bg-danger inline-block" title="Has errors" />
+              )}
             </button>
           )}
         </div>
@@ -259,7 +299,13 @@ export function EditTplPartnerModal({
                 <Input
                   label="GSTIN"
                   value={gst}
-                  onChange={e => setGst(e.target.value.toUpperCase().slice(0, 15))}
+                  onChange={e => {
+                    const val = e.target.value.toUpperCase().slice(0, 15)
+                    setGst(val)
+                    if (!pan && val.length >= 12 && PAN_PATTERN.test(val.slice(2, 12))) {
+                      setPan(val.slice(2, 12))
+                    }
+                  }}
                   placeholder="07ABCDE1234F1Z5"
                   maxLength={15}
                   inputClassName="font-mono uppercase"
@@ -324,6 +370,7 @@ export function EditTplPartnerModal({
               <IfscField
                 value={bankIfsc}
                 onChange={setBankIfsc}
+                error={err('bankIfsc')}
               />
             </div>
           </div>

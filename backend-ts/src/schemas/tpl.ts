@@ -100,19 +100,19 @@ export function assertFlagDocuments(issues: unknown, docTypes: readonly string[]
 }
 
 export function assertApplicationFields(data: Record<string, unknown>, partial = false): void {
-  if (!(partial && data.companyName === undefined) && !isText(data.companyName, 200)) {
+  if (!(partial && blank(data.companyName)) && !isText(data.companyName, 200)) {
     throw new HttpError(400, 'Company name is required (up to 200 characters)');
   }
-  if (!(partial && data.contactName === undefined) && !isText(data.contactName, 200)) {
+  if (!(partial && blank(data.contactName)) && !isText(data.contactName, 200)) {
     throw new HttpError(400, 'Contact person is required (up to 200 characters)');
   }
-  if (!(partial && data.pan === undefined) && (typeof data.pan !== 'string' || !PAN_PATTERN.test(data.pan.trim()))) {
+  if (!(partial && blank(data.pan)) && (typeof data.pan !== 'string' || !PAN_PATTERN.test(data.pan.trim()))) {
     throw new HttpError(400, 'PAN looks incorrect (for example ABCDE1234F)');
   }
-  if (!(partial && data.entityType === undefined) && (typeof data.entityType !== 'string' || !(ENTITY_TYPES as readonly string[]).includes(data.entityType))) {
+  if (!(partial && blank(data.entityType)) && (typeof data.entityType !== 'string' || !(ENTITY_TYPES as readonly string[]).includes(data.entityType))) {
     throw new HttpError(400, `Entity type is required (one of: ${ENTITY_TYPES.join(', ')})`);
   }
-  if (!(partial && data.authorizedSignatoryName === undefined) && !isText(data.authorizedSignatoryName, 200)) {
+  if (!(partial && blank(data.authorizedSignatoryName)) && !isText(data.authorizedSignatoryName, 200)) {
     throw new HttpError(400, 'The authorized signatory name is required (up to 200 characters)');
   }
   // The CIN requirement depends on the entity type on record for a partial edit, so this function (which
