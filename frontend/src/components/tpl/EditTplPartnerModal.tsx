@@ -35,6 +35,8 @@ interface PartnerLike {
   sla_commitment?: string | null
   tax_treatment?: string | null
   field_issues?: Record<string, string> | null
+  operating_from?: string | null
+  fleet_size?: string | null
 }
 
 const MSME_OPTIONS = TPL_MSME_OPTIONS.map(v => ({ value: v, label: v }))
@@ -56,6 +58,8 @@ const FIELD_TABS: Record<string, TabKey> = {
   contactName: 'operations',
   phone: 'operations',
   customId: 'operations',
+  operatingFrom: 'operations',
+  fleetSize: 'operations',
 }
 
 export function EditTplPartnerModal({
@@ -84,6 +88,8 @@ export function EditTplPartnerModal({
     partner.authorized_signatory_name || partner.authorizedSignatoryName || ''
   )
   const [msmeStatus, setMsmeStatus] = useState(partner.msme_status || 'Not Registered')
+  const [operatingFrom, setOperatingFrom] = useState(partner.operating_from || '')
+  const [fleetSize, setFleetSize] = useState(partner.fleet_size || '')
   const [bankAccount, setBankAccount] = useState(partner.bank_account_no || '')
   const [bankIfsc, setBankIfsc] = useState(partner.bank_ifsc || '')
   const [slaCommitment, setSlaCommitment] = useState(partner.sla_commitment || '2 Hours')
@@ -107,6 +113,8 @@ export function EditTplPartnerModal({
       contactName: ['contact_name', 'contactName'],
       phone: ['phone'],
       msmeStatus: ['msme_status', 'msmeStatus'],
+      operatingFrom: ['operating_from', 'operatingFrom'],
+      fleetSize: ['fleet_size', 'fleetSize'],
     }
     const candidates = aliases[key] || [key]
     for (const c of candidates) {
@@ -135,6 +143,8 @@ export function EditTplPartnerModal({
         partner.authorized_signatory_name || partner.authorizedSignatoryName || ''
       )
       setMsmeStatus(partner.msme_status || 'Not Registered')
+      setOperatingFrom(partner.operating_from || '')
+      setFleetSize(partner.fleet_size || '')
       setBankAccount(partner.bank_account_no || '')
       setBankIfsc(partner.bank_ifsc || '')
       setSlaCommitment(partner.sla_commitment || '2 Hours')
@@ -208,6 +218,8 @@ export function EditTplPartnerModal({
         if (contactName.trim()) payload.contactName = contactName.trim()
         if (phone.trim()) payload.phone = phone.trim()
         if (customId.trim()) payload.custom_id = customId.trim()
+        if (operatingFrom.trim()) payload.operatingFrom = operatingFrom.trim()
+        if (fleetSize.trim()) payload.fleetSize = fleetSize.trim()
         payload.slaCommitment = slaCommitment
         payload.taxTreatment = taxTreatment
       }
@@ -510,6 +522,36 @@ export function EditTplPartnerModal({
                 error={err('customId')}
                 hint="5-20 lowercase alphanumeric characters"
               />
+              <div className="sm:col-span-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <Input
+                    label="Operating Location / Base City"
+                    value={operatingFrom}
+                    onChange={e => setOperatingFrom(e.target.value)}
+                    placeholder="e.g. Mumbai, Delhi NCR"
+                  />
+                  {fieldIssue('operatingFrom') && (
+                    <div className="mt-1.5 rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <span><strong>Fix requested:</strong> {fieldIssue('operatingFrom')}</span>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <Input
+                    label="Fleet Size / Vehicles"
+                    value={fleetSize}
+                    onChange={e => setFleetSize(e.target.value)}
+                    placeholder="e.g. 5 vehicles, Single, 10-20"
+                  />
+                  {fieldIssue('fleetSize') && (
+                    <div className="mt-1.5 rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <span><strong>Fix requested:</strong> {fieldIssue('fleetSize')}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
               <Select
                 label="SLA Commitment"
                 value={slaCommitment}

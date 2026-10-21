@@ -1,6 +1,7 @@
 import { supabase } from '@/services/supabase'
 import { adminOrgsAPI, orgAPI, peopleAPI, vendorAPI } from '@/services/api'
 import { errorMessage } from '@/utils/display'
+import { compressDocumentFile } from '@/utils/imageCompressor'
 
 const PUBLIC_URL_MARKER = '/storage/v1/object/public/kyc_documents/'
 
@@ -10,15 +11,16 @@ const PUBLIC_URL_MARKER = '/storage/v1/object/public/kyc_documents/'
  * the format (PDF, JPG, PNG) and size. Returns the storage path to save.
  */
 export async function uploadKycDocument(key: string, file: File): Promise<string> {
+  const { file: uploadFile } = await compressDocumentFile(file)
   let upload: { path: string; token: string }
   try {
-    upload = await vendorAPI.kycUploadUrl({ key, content_type: file.type, size: file.size })
+    upload = await vendorAPI.kycUploadUrl({ key, content_type: uploadFile.type, size: uploadFile.size })
   } catch (err) {
     throw new Error(errorMessage(err, 'We could not start the upload. Try again.'))
   }
   const { error } = await supabase.storage
     .from('kyc_documents')
-    .uploadToSignedUrl(upload.path, upload.token, file, { contentType: file.type })
+    .uploadToSignedUrl(upload.path, upload.token, uploadFile, { contentType: uploadFile.type })
   if (error) throw new Error('We could not upload the document. Try again.')
   return upload.path
 }
@@ -29,15 +31,16 @@ export async function uploadKycDocument(key: string, file: File): Promise<string
  * (already resolved) account id - never the staff member's. Returns the storage path to save.
  */
 export async function uploadKycDocumentFor(vendorUserId: string, key: string, file: File): Promise<string> {
+  const { file: uploadFile } = await compressDocumentFile(file)
   let upload: { path: string; token: string }
   try {
-    upload = await vendorAPI.adminKycUploadUrlFor(vendorUserId, { key, content_type: file.type, size: file.size })
+    upload = await vendorAPI.adminKycUploadUrlFor(vendorUserId, { key, content_type: uploadFile.type, size: uploadFile.size })
   } catch (err) {
     throw new Error(errorMessage(err, 'We could not start the upload. Try again.'))
   }
   const { error } = await supabase.storage
     .from('kyc_documents')
-    .uploadToSignedUrl(upload.path, upload.token, file, { contentType: file.type })
+    .uploadToSignedUrl(upload.path, upload.token, uploadFile, { contentType: uploadFile.type })
   if (error) throw new Error('We could not upload the document. Try again.')
   return upload.path
 }
@@ -48,15 +51,16 @@ export async function uploadKycDocumentFor(vendorUserId: string, key: string, fi
  * path to save with saveKycDocuments.
  */
 export async function uploadOrgKycDocument(key: string, file: File): Promise<string> {
+  const { file: uploadFile } = await compressDocumentFile(file)
   let upload: { path: string; token: string }
   try {
-    upload = await orgAPI.kycUploadUrl({ key, content_type: file.type, size: file.size })
+    upload = await orgAPI.kycUploadUrl({ key, content_type: uploadFile.type, size: uploadFile.size })
   } catch (err) {
     throw new Error(errorMessage(err, 'We could not start the upload. Try again.'))
   }
   const { error } = await supabase.storage
     .from('kyc_documents')
-    .uploadToSignedUrl(upload.path, upload.token, file, { contentType: file.type })
+    .uploadToSignedUrl(upload.path, upload.token, uploadFile, { contentType: uploadFile.type })
   if (error) throw new Error('We could not upload the document. Try again.')
   return upload.path
 }
@@ -67,15 +71,16 @@ export async function uploadOrgKycDocument(key: string, file: File): Promise<str
  * save with adminOrgsAPI.saveKycDocuments.
  */
 export async function uploadAdminOrgKycDocument(orgId: string, key: string, file: File): Promise<string> {
+  const { file: uploadFile } = await compressDocumentFile(file)
   let upload: { path: string; token: string }
   try {
-    upload = await adminOrgsAPI.kycUploadUrl(orgId, { key, content_type: file.type, size: file.size })
+    upload = await adminOrgsAPI.kycUploadUrl(orgId, { key, content_type: uploadFile.type, size: uploadFile.size })
   } catch (err) {
     throw new Error(errorMessage(err, 'We could not start the upload. Try again.'))
   }
   const { error } = await supabase.storage
     .from('kyc_documents')
-    .uploadToSignedUrl(upload.path, upload.token, file, { contentType: file.type })
+    .uploadToSignedUrl(upload.path, upload.token, uploadFile, { contentType: uploadFile.type })
   if (error) throw new Error('We could not upload the document. Try again.')
   return upload.path
 }
@@ -156,15 +161,16 @@ export async function openKycDocument(stored: string): Promise<void> {
  * backend (docs/people-plan.md). Returns the storage path to save with the document record.
  */
 export async function uploadPersonDocument(personId: string, docType: string, file: File): Promise<string> {
+  const { file: uploadFile } = await compressDocumentFile(file)
   let upload: { path: string; token: string }
   try {
-    upload = await peopleAPI.documentUploadUrl(personId, { doc_type: docType, file_name: file.name, content_type: file.type })
+    upload = await peopleAPI.documentUploadUrl(personId, { doc_type: docType, file_name: uploadFile.name, content_type: uploadFile.type })
   } catch (err) {
     throw new Error(errorMessage(err, 'We could not start the upload. Use a PDF, JPG or PNG under 10 MB.'))
   }
   const { error } = await supabase.storage
     .from('kyc_documents')
-    .uploadToSignedUrl(upload.path, upload.token, file, { contentType: file.type })
+    .uploadToSignedUrl(upload.path, upload.token, uploadFile, { contentType: uploadFile.type })
   if (error) throw new Error('We could not upload the file. Try again.')
   return upload.path
 }

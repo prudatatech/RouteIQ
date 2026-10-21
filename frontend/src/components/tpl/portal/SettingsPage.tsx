@@ -86,6 +86,8 @@ export default function SettingsPage() {
     { label: 'Bank A/C', value: partner.bank_account_no ? `****${String(partner.bank_account_no).slice(-4)}` : null, issueKey: 'bank_account_no' },
     { label: 'IFSC', value: partner.bank_ifsc, issueKey: 'bank_ifsc' },
     { label: 'Bank', value: [partner.bank_name, partner.bank_branch].filter(Boolean).join(', ') },
+    { label: 'Operating Location', value: partner.operating_from, issueKey: 'operating_from' },
+    { label: 'Fleet Size / Vehicles', value: partner.fleet_size, issueKey: 'fleet_size' },
   ]
 
   return (

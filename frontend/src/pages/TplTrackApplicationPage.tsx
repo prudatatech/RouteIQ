@@ -1,7 +1,7 @@
 import { errorMessage, formatDateTime } from '@/utils/display'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, CheckCircle2, Upload, Building2, FileCheck, IndianRupee, Clock, ArrowLeft, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react'
+import { Search, CheckCircle2, Upload, Building2, FileCheck, IndianRupee, Clock, ArrowLeft, ArrowRight, ShieldCheck, AlertCircle, Truck } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
@@ -10,6 +10,7 @@ import { Alert, Button, Card, FileButton, IfscField, Input, Select, StatusPill, 
 import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
 import { gstinError } from '@/utils/gstin'
 import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
+import { TPL_DOCUMENT_TYPES, TPL_DOCUMENT_SPECS, TPL_MSME_OPTIONS } from '@/components/tpl/constants'
 
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const ACCOUNT_PATTERN = /^\d{9,18}$/
@@ -31,14 +32,19 @@ interface TplDocument { id: string; doc_type: string; file_url: string }
 interface TplApplicationFull extends TplApplication {
   tpl_documents?: TplDocument[]
   contact_name?: string | null
+  phone?: string | null
   pan_number?: string | null
   gstin?: string | null
   entity_type?: string | null
   cin?: string | null
   authorizedSignatoryName?: string | null
   authorized_signatory_name?: string | null
+  msme_status?: string | null
   bank_account_no?: string | null
   bank_ifsc?: string | null
+  operating_from?: string | null
+  fleet_size?: string | null
+  truck_type?: string | null
   sla_commitment?: string | null
   tax_treatment?: string | null
 }
@@ -54,6 +60,9 @@ export function FixDetails({ applicationId, pan, full, onSaved }: { applicationI
   const [entityType, setEntityType] = useState(full.entity_type || '')
   const [cin, setCin] = useState(full.cin || '')
   const [authorizedSignatoryName, setAuthorizedSignatoryName] = useState(full.authorized_signatory_name || full.authorizedSignatoryName || '')
+  const [msmeStatus, setMsmeStatus] = useState(full.msme_status || 'Not Registered')
+  const [operatingFrom, setOperatingFrom] = useState(full.operating_from || '')
+  const [fleetSize, setFleetSize] = useState(full.fleet_size || '')
   const [bankAccount, setBankAccount] = useState(full.bank_account_no || '')
   const [bankIfsc, setBankIfsc] = useState(full.bank_ifsc || '')
   const [slaCommitment, setSlaCommitment] = useState(full.sla_commitment || '2 Hours')
@@ -104,6 +113,9 @@ export function FixDetails({ applicationId, pan, full, onSaved }: { applicationI
         contactName: contactName.trim(),
         entityType,
         authorizedSignatoryName: authorizedSignatoryName.trim(),
+        msmeStatus,
+        ...(operatingFrom.trim() ? { operatingFrom: operatingFrom.trim() } : {}),
+        ...(fleetSize.trim() ? { fleetSize: fleetSize.trim() } : {}),
         ...(panNumber.trim() ? { pan: panNumber.trim().toUpperCase() } : {}),
         ...(gst.trim() ? { gst: gst.trim().toUpperCase() } : {}),
         ...(cin.trim() ? { cin: cin.trim().toUpperCase() } : {}),
@@ -164,6 +176,20 @@ export function FixDetails({ applicationId, pan, full, onSaved }: { applicationI
               <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
                 <AlertCircle size={14} className="shrink-0" />
                 <span>Fix requested: {fieldIssue('entity_type')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <Select
+              label="MSME status"
+              value={msmeStatus}
+              onChange={e => setMsmeStatus(e.target.value)}
+              options={TPL_MSME_OPTIONS.map(v => ({ value: v, label: v }))}
+            />
+            {fieldIssue('msme_status') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('msme_status')}</span>
               </p>
             )}
           </div>
@@ -236,11 +262,41 @@ export function FixDetails({ applicationId, pan, full, onSaved }: { applicationI
         </div>
       </div>
 
-      {/* 3. Operational Terms */}
+      {/* 3. Operational Terms & Fleet Scope */}
       <div className="space-y-3">
         <div className="flex items-center gap-2 border-b border-border pb-2">
           <Clock size={16} className="text-brand" />
-          <h4 className="text-xs font-bold text-text uppercase tracking-wider">Service Levels &amp; Tax Terms</h4>
+          <h4 className="text-xs font-bold text-text uppercase tracking-wider">Service Levels &amp; Fleet Operations</h4>
+        </div>
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+          <div>
+            <Input
+              label="Base operating location / city"
+              value={operatingFrom}
+              onChange={e => setOperatingFrom(e.target.value)}
+              placeholder="e.g. Mumbai, Navi Mumbai, Delhi NCR"
+            />
+            {fieldIssue('operating_from') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('operating_from')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <Input
+              label="Fleet size / declared vehicles"
+              value={fleetSize}
+              onChange={e => setFleetSize(e.target.value)}
+              placeholder="e.g. 5 vehicles, Single, 10-20"
+            />
+            {fieldIssue('fleet_size') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('fleet_size')}</span>
+              </p>
+            )}
+          </div>
         </div>
         <OperationalTermsFields
           slaCommitment={slaCommitment}
@@ -272,6 +328,26 @@ function FixDocumentsList({ applicationId, pan, full, onReplaced }: { applicatio
     return acc
   }, [])
 
+  const uploadedTypes = new Set(uniqueDocs.map(d => d.doc_type))
+  const missingDocTypes = TPL_DOCUMENT_TYPES.filter(t => !uploadedTypes.has(t))
+
+  const sortedMissing = [...missingDocTypes].sort((a, b) => {
+    const aFlagged = full.document_issues?.[a] ? 1 : 0
+    const bFlagged = full.document_issues?.[b] ? 1 : 0
+    if (aFlagged !== bFlagged) return bFlagged - aFlagged
+    const aReq = TPL_DOCUMENT_SPECS[a]?.evaluateRequirement({
+      entityType: full.entity_type,
+      msmeStatus: full.msme_status,
+      authorizedSignatoryName: full.authorized_signatory_name || full.authorizedSignatoryName,
+    })?.level === 'required' ? 1 : 0
+    const bReq = TPL_DOCUMENT_SPECS[b]?.evaluateRequirement({
+      entityType: full.entity_type,
+      msmeStatus: full.msme_status,
+      authorizedSignatoryName: full.authorized_signatory_name || full.authorizedSignatoryName,
+    })?.level === 'required' ? 1 : 0
+    return bReq - aReq
+  })
+
   const replace = (doc: TplDocument) => async (file: File) => {
     setUploadingType(doc.doc_type)
     try {
@@ -287,44 +363,130 @@ function FixDocumentsList({ applicationId, pan, full, onReplaced }: { applicatio
     }
   }
 
-  if (uniqueDocs.length === 0) {
-    return <p className="text-sm text-muted">No documents uploaded yet.</p>
+  const uploadMissing = (docType: string) => async (file: File) => {
+    setUploadingType(docType)
+    try {
+      const path = await uploadTplDocument(file, docType, { applicationId, verifyPan: pan })
+      const documents = [
+        ...uniqueDocs.map(d => ({ type: d.doc_type, url: d.file_url })),
+        { type: docType, url: path },
+      ]
+      await tplAPI.updateApplication(applicationId, { verify_pan: pan, documents })
+      toast.success(full.status === 'rejected' ? 'Document uploaded. Your application is back under review.' : 'Document uploaded successfully')
+      onReplaced()
+    } catch (err) {
+      toast.error(errorMessage(err, 'We could not save this document. Try again.'))
+    } finally {
+      setUploadingType(null)
+    }
   }
 
   return (
-    <div className="space-y-3">
-      {uniqueDocs.map(doc => {
-        const issue = full.document_issues?.[doc.doc_type]
-        return (
-          <div key={doc.id} className={clsx('rounded-card border p-4 transition-all', issue ? 'border-warning bg-warning/5 shadow-xs' : 'border-border bg-surface')}>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-bold text-text flex items-center gap-2">
-                <FileCheck size={16} className="text-brand shrink-0" />
-                {doc.doc_type}
-              </span>
-              {issue ? (
-                <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>
-              ) : (
-                <span className="text-[11px] font-semibold text-success flex items-center gap-1">
-                  <CheckCircle2 size={13} /> Active on file
-                </span>
-              )}
-            </div>
-            {issue && (
-              <p className="mt-2 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium flex items-start gap-1.5">
-                <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                <span>{issue}</span>
-              </p>
-            )}
-            <div className="mt-3 pt-2.5 border-t border-border flex items-center justify-between text-xs">
-              <span className="text-muted">PDF or JPEG (max 10MB)</span>
-              <FileButton variant="secondary" icon={<Upload size={14} />} accept=".pdf,.jpg,.jpeg,.png" disabled={uploadingType === doc.doc_type} onFile={replace(doc)}>
-                {uploadingType === doc.doc_type ? 'Uploading…' : 'Replace this document'}
-              </FileButton>
-            </div>
+    <div className="space-y-6">
+      {uniqueDocs.length > 0 && (
+        <div className="space-y-3">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-text">Uploaded Documents ({uniqueDocs.length})</h4>
+          {uniqueDocs.map(doc => {
+            const issue = full.document_issues?.[doc.doc_type]
+            return (
+              <div key={doc.id} className={clsx('rounded-card border p-4 transition-all', issue ? 'border-warning bg-warning/5 shadow-xs' : 'border-border bg-surface')}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-bold text-text flex items-center gap-2">
+                    <FileCheck size={16} className="text-brand shrink-0" />
+                    {doc.doc_type}
+                  </span>
+                  {issue ? (
+                    <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>
+                  ) : (
+                    <span className="text-[11px] font-semibold text-success flex items-center gap-1">
+                      <CheckCircle2 size={13} /> Active on file
+                    </span>
+                  )}
+                </div>
+                {issue && (
+                  <p className="mt-2 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium flex items-start gap-1.5">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span>{issue}</span>
+                  </p>
+                )}
+                <div className="mt-3 pt-2.5 border-t border-border flex items-center justify-between text-xs">
+                  <span className="text-muted">PDF or JPEG (max 10MB)</span>
+                  <FileButton variant="secondary" icon={<Upload size={14} />} accept=".pdf,.jpg,.jpeg,.png" disabled={uploadingType === doc.doc_type} onFile={replace(doc)}>
+                    {uploadingType === doc.doc_type ? 'Uploading…' : 'Replace this document'}
+                  </FileButton>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {sortedMissing.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <div className="border-b border-border pb-1.5">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-text">
+              {uniqueDocs.length === 0 ? 'Upload Compliance Documents' : 'Upload Additional / Missing Documents'}
+            </h4>
+            <p className="text-[11px] text-muted">Upload any requested or compliance documents to speed up your approval.</p>
           </div>
-        )
-      })}
+          <div className="grid grid-cols-1 gap-3">
+            {sortedMissing.map(docType => {
+              const spec = TPL_DOCUMENT_SPECS[docType]
+              const req = spec?.evaluateRequirement({
+                entityType: full.entity_type,
+                msmeStatus: full.msme_status,
+                authorizedSignatoryName: full.authorized_signatory_name || full.authorizedSignatoryName,
+              })
+              const issue = full.document_issues?.[docType]
+              const badgeColor =
+                req?.level === 'required'
+                  ? 'bg-brand/10 text-brand border-brand/20'
+                  : req?.level === 'recommended'
+                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
+                  : 'bg-surface text-muted border-border'
+
+              return (
+                <div
+                  key={docType}
+                  className={clsx(
+                    'rounded-card border p-3.5 transition-all',
+                    issue ? 'border-warning bg-warning/5 shadow-xs' : 'border-border/80 bg-surface/80'
+                  )}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-text truncate">{spec?.label || docType}</span>
+                        {req && (
+                          <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded border ${badgeColor}`}>
+                            {req.badgeText}
+                          </span>
+                        )}
+                        {issue && (
+                          <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted mt-0.5">{issue ? `Compliance note: ${issue}` : req?.reason || spec?.hint}</p>
+                    </div>
+                    <div className="shrink-0 flex items-center justify-end">
+                      <FileButton
+                        variant={issue || req?.level === 'required' ? 'primary' : 'secondary'}
+                        size="sm"
+                        icon={<Upload size={13} />}
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        disabled={uploadingType === docType}
+                        onFile={uploadMissing(docType)}
+                      >
+                        {uploadingType === docType ? 'Uploading…' : 'Upload'}
+                      </FileButton>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

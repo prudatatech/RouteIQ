@@ -109,8 +109,55 @@ describe('FixDetails in TplTrackApplicationPage', () => {
         contactName: 'Ramesh Patel',
         entityType: 'Partnership',
         authorizedSignatoryName: 'Ramesh Patel',
+        msmeStatus: 'Not Registered',
       }))
       expect(toast.success).toHaveBeenCalledWith('Details saved')
+      expect(onSaved).toHaveBeenCalled()
+    })
+  })
+
+  it('renders and submits msme_status, operating_from, and fleet_size with flagged alerts', async () => {
+    tplAPI.updateApplication.mockResolvedValueOnce({ success: true })
+    const onSaved = vi.fn()
+
+    render(
+      <FixDetails
+        applicationId="app-uuid-1"
+        pan="AAPFU0939F"
+        full={{
+          ...sampleApplication,
+          msme_status: 'Small',
+          operating_from: 'Bhiwandi, Maharashtra',
+          fleet_size: '12 vehicles',
+          field_issues: {
+            operating_from: 'Specify exact warehouse base or hub address',
+            msme_status: 'Upload valid MSME Udyam certificate matching this declaration',
+          },
+        }}
+        onSaved={onSaved}
+      />
+    )
+
+    expect(screen.getByText(/Specify exact warehouse base or hub address/i)).toBeTruthy()
+    expect(screen.getByText(/Upload valid MSME Udyam certificate matching this declaration/i)).toBeTruthy()
+
+    const locationInput = screen.getByLabelText(/Base operating location/i) as HTMLInputElement
+    expect(locationInput.value).toBe('Bhiwandi, Maharashtra')
+    fireEvent.change(locationInput, { target: { value: 'Bhiwandi Logistics Hub, Thane' } })
+
+    const fleetInput = screen.getByLabelText(/Fleet size \/ declared vehicles/i) as HTMLInputElement
+    expect(fleetInput.value).toBe('12 vehicles')
+    fireEvent.change(fleetInput, { target: { value: '15 trucks' } })
+
+    const saveButton = screen.getByRole('button', { name: /Save updated details/i })
+    fireEvent.click(saveButton)
+
+    await waitFor(() => {
+      expect(tplAPI.updateApplication).toHaveBeenCalledWith('app-uuid-1', expect.objectContaining({
+        msmeStatus: 'Small',
+        operatingFrom: 'Bhiwandi Logistics Hub, Thane',
+        fleetSize: '15 trucks',
+      }))
       expect(onSaved).toHaveBeenCalled()
     })
   })

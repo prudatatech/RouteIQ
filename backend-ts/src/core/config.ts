@@ -111,13 +111,13 @@ export const settings = {
   TPL_UPLOAD_MAX_BYTES: envInt('TPL_UPLOAD_MAX_BYTES', 10 * 1024 * 1024),
   TPL_UPLOAD_URLS_PER_HOUR: envInt('TPL_UPLOAD_URLS_PER_HOUR', 30),
   // Expense receipts go in the same private bucket under expenses/
-  EXPENSE_RECEIPT_MAX_BYTES: envInt('EXPENSE_RECEIPT_MAX_BYTES', 5 * 1024 * 1024),
+  EXPENSE_RECEIPT_MAX_BYTES: envInt('EXPENSE_RECEIPT_MAX_BYTES', 10 * 1024 * 1024),
   // Service invoices, job cards and photos go in the same private bucket under vehicle-service/
   SERVICE_ATTACHMENT_MAX_BYTES: envInt('SERVICE_ATTACHMENT_MAX_BYTES', 10 * 1024 * 1024),
   // How often the scheduler adds each vehicle's GPS distance to its odometer
   ODOMETER_SYNC_INTERVAL_MINUTES: envInt('ODOMETER_SYNC_INTERVAL_MINUTES', 30),
   // Proof-of-delivery photo and signature go in the same private bucket under pod/
-  POD_UPLOAD_MAX_BYTES: envInt('POD_UPLOAD_MAX_BYTES', 5 * 1024 * 1024),
+  POD_UPLOAD_MAX_BYTES: envInt('POD_UPLOAD_MAX_BYTES', 10 * 1024 * 1024),
   // Cargo claim documents (photos, PDFs) go in the same private bucket under claims/
   // The lowest bid (rupees) a return trip takes when staff set no price for it and the pricing engine has none either
   CAPACITY_MIN_BID_INR: envInt('CAPACITY_MIN_BID_INR', 500),
@@ -126,7 +126,7 @@ export const settings = {
   CLAIM_MAX_WITHOUT_DECLARED_VALUE: envInt('CLAIM_MAX_WITHOUT_DECLARED_VALUE', 100_000),
   // A delivery whose live ETA slips this many minutes past its planned arrival opens a delay case
   CARGO_DELAY_EXCEPTION_MINUTES: envInt('CARGO_DELAY_EXCEPTION_MINUTES', 120),
-  VEHICLE_PHOTO_MAX_BYTES: envInt('VEHICLE_PHOTO_MAX_BYTES', 5 * 1024 * 1024),
+  VEHICLE_PHOTO_MAX_BYTES: envInt('VEHICLE_PHOTO_MAX_BYTES', 10 * 1024 * 1024),
   VEHICLE_DOCUMENT_MAX_BYTES: envInt('VEHICLE_DOCUMENT_MAX_BYTES', 10 * 1024 * 1024),
 
   // Secret for the keyed hash of identity numbers (Aadhaar, PAN, licence...) used to spot duplicates.

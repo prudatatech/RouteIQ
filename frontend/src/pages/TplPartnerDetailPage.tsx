@@ -879,8 +879,11 @@ export default function TplPartnerDetailPage() {
             { key: 'entity_type', label: 'Entity Type', currentValue: partner.entity_type },
             { key: 'cin', label: 'CIN', currentValue: partner.cin },
             { key: 'authorized_signatory_name', label: 'Authorized Signatory', currentValue: partner.authorized_signatory_name },
+            { key: 'msme_status', label: 'MSME Status', currentValue: partner.msme_status },
             { key: 'bank_account_no', label: 'Bank Account Number', currentValue: partner.bank_account_no },
             { key: 'bank_ifsc', label: 'Bank IFSC Code', currentValue: partner.bank_ifsc },
+            { key: 'operating_from', label: 'Operating Location', currentValue: partner.operating_from },
+            { key: 'fleet_size', label: 'Fleet Size / Vehicles', currentValue: partner.fleet_size },
           ]}
           initialIssues={partner.field_issues ?? {}}
           busy={flagDetails.isPending}

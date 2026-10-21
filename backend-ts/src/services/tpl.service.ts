@@ -229,9 +229,9 @@ export const tplService = {
         sla_commitment: slaCommitment || '2 Hours',
         tax_treatment: taxTreatment || null,
         status: 'pending',
-        operating_from: operatingFrom || null,
-        fleet_size: fleetSize || null,
-        truck_type: truckType || null,
+        operating_from: operatingFrom ?? data.operating_from ?? null,
+        fleet_size: fleetSize ?? data.fleet_size ?? null,
+        truck_type: truckType ?? data.truck_type ?? null,
         user_id: user_id || null,
         created_by: created_by || null,
       })
@@ -419,6 +419,10 @@ export const tplService = {
    */
   async updateApplication(id: string, data: any, asStaff: boolean = false) {
     const { custom_id, companyName, contactName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents, entityType, cin, authorizedSignatoryName } = data;
+    const cleanMsmeStatus = msmeStatus ?? data.msme_status;
+    const operatingFrom = data.operatingFrom ?? data.operating_from;
+    const fleetSize = data.fleetSize ?? data.fleet_size;
+    const truckType = data.truckType ?? data.truck_type;
     if (data.email !== undefined && !EMAIL_PATTERN.test(String(data.email).trim())) throw new HttpError(400, 'Enter a valid email address, for example name@company.in');
     assertApplicationFields(data ?? {}, true);
 
@@ -474,12 +478,15 @@ export const tplService = {
         ...(entityType !== undefined ? { entity_type: entityType || null } : {}),
         ...(cin !== undefined ? { cin: cin ? String(cin).trim().toUpperCase() : null } : {}),
         ...(authorizedSignatoryName !== undefined ? { authorized_signatory_name: authorizedSignatoryName || null } : {}),
-        ...(msmeStatus !== undefined ? { msme_status: msmeStatus || 'Not Registered' } : {}),
+        ...(cleanMsmeStatus !== undefined ? { msme_status: cleanMsmeStatus || 'Not Registered' } : {}),
         ...(bankAccount !== undefined ? { bank_account_no: bankAccount || null } : {}),
         ...(bankIfsc !== undefined ? { bank_ifsc: bankIfsc ? String(bankIfsc).trim().toUpperCase() : null } : {}),
         ...bank.columns,
         ...(slaCommitment !== undefined ? { sla_commitment: slaCommitment || '2 Hours' } : {}),
         ...(taxTreatment !== undefined ? { tax_treatment: taxTreatment || null } : {}),
+        ...(operatingFrom !== undefined ? { operating_from: operatingFrom || null } : {}),
+        ...(fleetSize !== undefined ? { fleet_size: fleetSize || null } : {}),
+        ...(truckType !== undefined ? { truck_type: truckType || null } : {}),
         ...(wasRejected ? { status: 'pending', rejection_reason: null, document_issues: null, field_issues: null } : {}),
     };
     const { error: partnerErr } = Object.keys(columns).length === 0
@@ -537,6 +544,20 @@ export const tplService = {
         if (Object.keys(remaining).length !== Object.keys(current.document_issues).length) {
           await supabase.from('tpl_partners').update({ document_issues: Object.keys(remaining).length > 0 ? remaining : null }).eq('id', id);
         }
+      }
+    }
+
+    if (!asStaff && (wasRejected || current.document_issues || current.field_issues)) {
+      try {
+        await notificationService.notifyStaff(
+          '3PL partner updated application',
+          `${current.company_name} updated their application details / documents for review.`,
+          'tpl_update',
+          { partner_id: current.id },
+          PLATFORM,
+        );
+      } catch (e) {
+        console.error('[tpl] Update notification failed:', e);
       }
     }
 
