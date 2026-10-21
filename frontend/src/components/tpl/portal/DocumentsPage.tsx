@@ -92,15 +92,12 @@ export default function DocumentsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Documents" description="Your application documents. Upload missing documents or replace one if it changes." />
-      
-      {hasFlaggedDocs ? (
-        <Alert tone="warning" title="Attention: Flagged Documents Require Correction">
-          Platform reviewer has requested revisions on the highlighted document(s) below. Please check the feedback notes and upload updated copies.
-        </Alert>
-      ) : (
-        <Alert tone="info">Replacing an existing document sends your profile back to MargixIndia for review. Your existing orders stay open.</Alert>
-      )}
+      <PageHeader
+        title="Documents"
+        description={hasFlaggedDocs
+          ? 'Please re-upload the flagged document(s) highlighted below to proceed with compliance review.'
+          : 'Your compliance documents on file. Upload missing files or update existing ones.'}
+      />
 
       {missingDocTypes.length > 0 && (
         <Card padded>
@@ -136,14 +133,7 @@ export default function DocumentsPage() {
 
       {documents.length > 0 && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-semibold uppercase text-muted">Uploaded Documents</h3>
-            {hasFlaggedDocs && (
-              <span className="text-xs font-bold text-warning flex items-center gap-1">
-                <AlertCircle size={13} /> {Object.keys(partner.document_issues!).length} item(s) flagged for revision
-              </span>
-            )}
-          </div>
+          <h3 className="text-xs font-semibold uppercase text-muted">Uploaded Documents</h3>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {documents.map(doc => {
               const issue = partner.document_issues?.[doc.doc_type]
@@ -153,8 +143,8 @@ export default function DocumentsPage() {
                   padded
                   data-flagged={issue ? 'true' : undefined}
                   className={clsx(
-                    'transition-all duration-300',
-                    issue ? 'border-warning ring-2 ring-warning/60 bg-warning/5 shadow-raised' : ''
+                    'transition-all duration-200',
+                    issue ? 'border-warning/70 bg-warning/5 shadow-xs' : 'border-border bg-surface'
                   )}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -182,19 +172,20 @@ export default function DocumentsPage() {
                   </div>
 
                   {issue && (
-                    <div className="mt-3 rounded-control bg-warning/10 border border-warning/20 p-2.5 text-xs text-warning font-medium flex items-start gap-2">
-                      <AlertCircle size={15} className="shrink-0 mt-0.5 text-warning" />
-                      <div>
-                        <span className="font-bold block text-[10px] uppercase tracking-wider text-warning">Reviewer Note</span>
-                        <span className="text-text font-normal">{issue}</span>
+                    <div className="mt-3 rounded-control bg-warning/10 border border-warning/30 p-2.5 text-xs">
+                      <div className="flex items-center gap-1.5 font-semibold text-warning">
+                        <AlertCircle size={14} className="shrink-0" />
+                        <span>Reviewer feedback:</span>
                       </div>
+                      <p className="mt-1 text-text leading-relaxed font-normal">{issue}</p>
                     </div>
                   )}
 
-                  <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border pt-3">
+                  <div className="mt-4 flex items-center gap-2.5 border-t border-border pt-3">
                     <Button
                       variant="secondary"
                       size="sm"
+                      className="flex-1"
                       icon={<Eye size={14} />}
                       onClick={async () => {
                         try { await openKycDocument(doc.file_url) } catch (err) {
@@ -207,6 +198,7 @@ export default function DocumentsPage() {
                     <FileButton
                       variant={issue ? 'primary' : 'secondary'}
                       size="sm"
+                      className="flex-1 font-semibold"
                       icon={<UploadCloud size={14} />}
                       loading={uploading === doc.id}
                       accept=".pdf,.png,.jpg,.jpeg"

@@ -3,8 +3,8 @@ import { NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams }
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
-import { Lock, LogOut } from 'lucide-react'
-import { Alert, Button, EmptyState, ErrorState, IconButton, Spinner, StatusPill } from '@/components/ui'
+import { AlertCircle, Clock, Lock, LogOut } from 'lucide-react'
+import { Alert, Button, Card, CardHeader, EmptyState, ErrorState, IconButton, PageHeader, Spinner, StatusPill } from '@/components/ui'
 import { NotificationsBell } from '@/components/ui/NotificationsBell'
 import { supabase } from '@/services/supabase'
 import { tplAPI, tplNetworkAPI } from '@/services/api'
@@ -21,25 +21,130 @@ import LanesPage from '@/components/tpl/portal/LanesPage'
 import DocumentsPage from '@/components/tpl/portal/DocumentsPage'
 import SettingsPage from '@/components/tpl/portal/SettingsPage'
 
-const LINKS = [
-  { to: '', label: 'Orders' },
-  { to: 'fleet', label: 'Fleet' },
-  { to: 'drivers', label: 'Drivers' },
-  { to: 'statements', label: 'Statements' },
-  { to: 'earnings', label: 'Earnings' },
-  { to: 'lanes', label: 'Lanes' },
-  { to: 'documents', label: 'Documents' },
-  { to: 'settings', label: 'Settings' },
-] as const
-
 function CenteredState({ children }: { children: React.ReactNode }) {
   return <div className="flex min-h-screen items-center justify-center bg-bg p-6"><div className="w-full max-w-md">{children}</div></div>
 }
 
+function ApplicationOverview({ partner, base }: { partner: PortalPartner; base: string }) {
+  const docIssueCount = partner.document_issues ? Object.keys(partner.document_issues).length : 0
+  const fieldIssueCount = partner.field_issues ? Object.keys(partner.field_issues).length : 0
+  const hasIssues = docIssueCount > 0 || fieldIssueCount > 0
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Application Status"
+        description="Track the verification and review of your 3PL carrier application."
+        actions={<StatusPill status={partner.status} />}
+      />
+
+      {hasIssues ? (
+        <Card padded className="border-warning/40 bg-warning/5">
+          <div className="flex items-start gap-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-warning/20 text-warning">
+              <AlertCircle size={20} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base font-semibold text-text">Action Required: Compliance Review Updates</h2>
+              <p className="mt-1 text-sm text-muted">
+                Our compliance team reviewed your application and requested revisions. Please update the flagged items below so your account can be approved.
+              </p>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {docIssueCount > 0 && (
+                  <div className="rounded-control border border-border bg-surface p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-sm text-text">Documents</span>
+                        <StatusPill tone="warning" dot={false}>{docIssueCount} flagged</StatusPill>
+                      </div>
+                      <p className="mt-1.5 text-xs text-muted">
+                        Flagged: {Object.keys(partner.document_issues!).join(', ')}
+                      </p>
+                    </div>
+                    <div className="mt-4">
+                      <NavLink
+                        to={`${base}/documents?highlight=flagged`}
+                        className="inline-flex items-center justify-center w-full rounded-control bg-brand text-brand-fill px-3 py-1.5 text-xs font-semibold hover:opacity-90 transition-opacity"
+                      >
+                        Re-upload Documents
+                      </NavLink>
+                    </div>
+                  </div>
+                )}
+
+                {fieldIssueCount > 0 && (
+                  <div className="rounded-control border border-border bg-surface p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-sm text-text">Company &amp; Bank Details</span>
+                        <StatusPill tone="warning" dot={false}>{fieldIssueCount} flagged</StatusPill>
+                      </div>
+                      <p className="mt-1.5 text-xs text-muted">
+                        Flagged: {Object.keys(partner.field_issues!).map(k => k.replace(/_/g, ' ')).join(', ')}
+                      </p>
+                    </div>
+                    <div className="mt-4">
+                      <NavLink
+                        to={`${base}/settings?highlight=flagged`}
+                        className="inline-flex items-center justify-center w-full rounded-control bg-brand text-brand-fill px-3 py-1.5 text-xs font-semibold hover:opacity-90 transition-opacity"
+                      >
+                        Edit Details
+                      </NavLink>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+      ) : (
+        <Card padded className="border-border">
+          <div className="flex items-start gap-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-brand-soft text-brand">
+              <Clock size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-text">
+                {partner.status === 'rejected' ? 'Application Not Approved' : 'Application Under Review'}
+              </h2>
+              <p className="mt-1 text-sm text-muted">
+                {partner.status === 'rejected'
+                  ? 'Your application could not be approved at this time. You can review your details and documents.'
+                  : 'Your application has been received and is currently being verified by our compliance team. Once approved, you will be able to accept load offers, manage your fleet, and track payouts.'}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <Card padded>
+        <CardHeader title="Application Summary" />
+        <div className="pt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+          <div>
+            <span className="text-muted block">Company</span>
+            <span className="font-semibold text-text text-sm">{partner.company_name}</span>
+          </div>
+          <div>
+            <span className="text-muted block">3PL ID</span>
+            <span className="font-mono font-semibold text-text text-sm">{partner.custom_id || '—'}</span>
+          </div>
+          <div>
+            <span className="text-muted block">Company PAN</span>
+            <span className="font-mono font-semibold text-text text-sm">{partner.pan_number || '—'}</span>
+          </div>
+          <div>
+            <span className="text-muted block">Documents on File</span>
+            <span className="font-semibold text-text text-sm">{partner.tpl_documents?.length ?? 0} uploaded</span>
+          </div>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
 /**
- * The 3PL partner portal at /3pl-portal/:id. It is the partner's own: an account may only open the portal of the
- * partner record linked to its sign-in, whatever id the address carries (the API enforces this too).
- * Orders is the home page; Earnings, Lanes, Documents and Settings are pages of their own.
+ * The 3PL partner portal at /3pl-portal/:id.
  */
 export default function TplDashboardPage() {
   const { id } = useParams()
@@ -72,7 +177,6 @@ export default function TplDashboardPage() {
   const openOffers = (offers.data?.items ?? []).filter(o => o.status === 'offered').length
 
   const partner = partnerQuery.data
-  // An approved settings request arrives through realtime
   const hadPending = useRef(false)
   useEffect(() => {
     if (!partner) return
@@ -80,7 +184,6 @@ export default function TplDashboardPage() {
     hadPending.current = !!partner.pending_updates
   }, [partner])
 
-  // Old links used one page with ?tab=; each tab is a page now
   const base = `/3pl-portal/${id}`
   const legacy = legacyTabPage(new URLSearchParams(location.search).get('tab'))
   const atBase = location.pathname.replace(/\/$/, '') === base
@@ -123,7 +226,6 @@ export default function TplDashboardPage() {
     )
   }
 
-  // The API only shows the full record to the partner's own account: anything else is not this account's portal
   if (partnerQuery.error || !partner || !value || partner.user_id !== userId) {
     return (
       <CenteredState>
@@ -139,11 +241,29 @@ export default function TplDashboardPage() {
 
   if (legacyTarget) return <Navigate to={legacyTarget} replace />
 
-  const statusTitle: Record<string, string> = {
-    pending: 'Your profile is in review',
-    paused: 'Your account is paused',
-    rejected: 'Your application was not approved',
-  }
+  const isPendingOrRejected = partner.status === 'pending' || partner.status === 'rejected'
+  const docIssueCount = partner.document_issues ? Object.keys(partner.document_issues).length : 0
+  const fieldIssueCount = partner.field_issues ? Object.keys(partner.field_issues).length : 0
+
+  const links = isPendingOrRejected ? [
+    { to: '', label: 'Overview' },
+    { to: 'documents', label: 'Documents', badge: docIssueCount },
+    { to: 'settings', label: 'Company & Bank Details', badge: fieldIssueCount },
+  ] : [
+    { to: '', label: 'Orders' },
+    { to: 'fleet', label: 'Fleet' },
+    { to: 'drivers', label: 'Drivers' },
+    { to: 'statements', label: 'Statements' },
+    { to: 'earnings', label: 'Earnings' },
+    { to: 'lanes', label: 'Lanes' },
+    { to: 'documents', label: 'Documents', badge: docIssueCount },
+    { to: 'settings', label: 'Settings', badge: fieldIssueCount },
+  ]
+
+  const currentPath = location.pathname.replace(/\/$/, '')
+  const isOnDocuments = currentPath.endsWith('/documents')
+  const isOnSettings = currentPath.endsWith('/settings')
+  const isOnOverview = currentPath === base
 
   return (
     <PortalContext.Provider value={value}>
@@ -165,7 +285,7 @@ export default function TplDashboardPage() {
           </div>
           <nav aria-label="Partner portal" className="mx-auto max-w-content overflow-x-auto px-4 sm:px-6">
             <ul className="flex min-w-max gap-0.5 sm:gap-1">
-              {LINKS.map(link => (
+              {links.map(link => (
                 <li key={link.label}>
                   <NavLink
                     to={link.to ? `${base}/${link.to}` : base}
@@ -176,7 +296,12 @@ export default function TplDashboardPage() {
                     )}
                   >
                     {link.label}
-                    {link.to === '' && openOffers > 0 && (
+                    {link.badge !== undefined && link.badge > 0 && (
+                      <span className="rounded-full bg-warning/20 px-1.5 py-0.5 text-xs font-semibold tabular text-warning" aria-label={`${link.badge} flagged items`}>
+                        {link.badge}
+                      </span>
+                    )}
+                    {link.to === '' && !isPendingOrRejected && openOffers > 0 && (
                       <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs tabular text-brand" aria-label={`${openOffers} offers waiting`}>{openOffers}</span>
                     )}
                   </NavLink>
@@ -187,64 +312,70 @@ export default function TplDashboardPage() {
         </header>
 
         <main className="mx-auto max-w-content space-y-6 px-4 py-6 sm:px-6 lg:py-8">
-          {partner.document_issues && Object.keys(partner.document_issues).length > 0 && (
-            <Alert
-              tone="warning"
-              title="Action required: Platform flagged your uploaded document(s)"
-              action={
-                <NavLink to={`${base}/documents?highlight=flagged`} className={clsx(
-                  'inline-flex items-center justify-center rounded-control border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-subtle transition-colors'
-                )}>
-                  View flagged documents
-                </NavLink>
-              }
-            >
-              Margix compliance requested updates on {Object.keys(partner.document_issues).length} document(s): {Object.keys(partner.document_issues).join(', ')}. Please re-upload updated copies.
-            </Alert>
-          )}
-
-          {partner.field_issues && Object.keys(partner.field_issues).length > 0 && (
+          {/* Subtle cross-page notices for pending partner (only shown when not on the relevant page or overview) */}
+          {isPendingOrRejected && fieldIssueCount > 0 && !isOnSettings && !isOnOverview && (
             <Alert
               tone="warning"
               title="Action required: Correct flagged details"
               action={
-                <NavLink to={`${base}/settings?highlight=flagged`} className={clsx(
-                  'inline-flex items-center justify-center rounded-control border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-subtle transition-colors'
-                )}>
+                <NavLink to={`${base}/settings?highlight=flagged`} className="inline-flex items-center justify-center rounded-control border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-subtle transition-colors">
                   Edit details
                 </NavLink>
               }
             >
-              Margix compliance flagged application details for revision: {Object.keys(partner.field_issues).map(k => k.replace(/_/g, ' ')).join(', ')}. Please update them in Settings.
+              Compliance also flagged company/bank details for revision: {Object.keys(partner.field_issues!).map(k => k.replace(/_/g, ' ')).join(', ')}.
             </Alert>
           )}
 
-          {(!partner.pan_number || !partner.bank_account_no) && !partner.field_issues && (
+          {isPendingOrRejected && docIssueCount > 0 && !isOnDocuments && !isOnOverview && (
             <Alert
               tone="warning"
-              title="Action required: Complete KYC & Bank Details"
+              title="Action required: Flagged document(s)"
               action={
-                <NavLink to={`${base}/settings`} className={clsx(
-                  'inline-flex items-center justify-center rounded-control border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-subtle transition-colors'
-                )}>
-                  Complete details
+                <NavLink to={`${base}/documents?highlight=flagged`} className="inline-flex items-center justify-center rounded-control border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-subtle transition-colors">
+                  View documents
                 </NavLink>
               }
             >
-              Your account is missing compliance details (PAN, GSTIN, and Bank Payout details). Please complete them to ensure seamless operations and settlements.
+              Compliance also requested updates on {docIssueCount} document(s): {Object.keys(partner.document_issues!).join(', ')}.
             </Alert>
           )}
-          {partner.status !== 'active' && (
-            <Alert tone={partner.status === 'rejected' ? 'danger' : 'warning'} title={statusTitle[partner.status] ?? 'Your account is not active'}>
-              {partner.status === 'pending'
-                ? 'You cannot accept new loads until we approve it. Your existing orders stay open. We will notify you.'
-                : partner.status === 'paused'
-                  ? 'MargixIndia dispatch paused your account, so you cannot accept new loads. Your existing orders stay open. Contact dispatch to resume.'
-                  : 'You cannot accept new loads. Contact MargixIndia dispatch to have your account reviewed.'}
+
+          {/* Active/paused partner notices */}
+          {!isPendingOrRejected && partner.status !== 'active' && (
+            <Alert tone="warning" title="Your account is paused">
+              MargixIndia dispatch paused your account, so you cannot accept new loads. Contact dispatch to resume.
             </Alert>
           )}
+          {!isPendingOrRejected && docIssueCount > 0 && !isOnDocuments && (
+            <Alert
+              tone="warning"
+              title="Document update required"
+              action={
+                <NavLink to={`${base}/documents?highlight=flagged`} className="inline-flex items-center justify-center rounded-control border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-subtle transition-colors">
+                  View documents
+                </NavLink>
+              }
+            >
+              Compliance requested updates on {docIssueCount} document(s): {Object.keys(partner.document_issues!).join(', ')}.
+            </Alert>
+          )}
+          {!isPendingOrRejected && fieldIssueCount > 0 && !isOnSettings && (
+            <Alert
+              tone="warning"
+              title="Detail update required"
+              action={
+                <NavLink to={`${base}/settings?highlight=flagged`} className="inline-flex items-center justify-center rounded-control border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text hover:bg-surface-subtle transition-colors">
+                  Edit details
+                </NavLink>
+              }
+            >
+              Compliance flagged details for revision: {Object.keys(partner.field_issues!).map(k => k.replace(/_/g, ' ')).join(', ')}.
+            </Alert>
+          )}
+
           <Routes>
-            <Route index element={<OrdersPage />} />
+            <Route index element={isPendingOrRejected ? <ApplicationOverview partner={partner} base={base} /> : <OrdersPage />} />
             <Route path="fleet" element={<FleetPage />} />
             <Route path="drivers" element={<DriversPage />} />
             <Route path="statements" element={<StatementsPage />} />
