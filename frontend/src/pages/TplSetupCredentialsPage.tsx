@@ -48,7 +48,10 @@ export default function TplSetupCredentialsPage() {
     if (password.length < 10) found.password = 'Password must be at least 10 characters.'
     else if (password !== confirmPassword) found.confirm = 'The passwords do not match.'
     setErrors(found)
-    if (Object.keys(found).length > 0) return
+    if (Object.keys(found).length > 0) {
+      toast.error(Object.values(found)[0])
+      return
+    }
     setLoading(true)
     try {
       await tplAPI.setupPassword(email.trim(), otp, password)

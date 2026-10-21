@@ -153,9 +153,29 @@ export default function CompanyKycPage() {
   const documentsDone = missingDocs.length === 0
   const currentStep = !companyDetailsDone ? 0 : !bankDetailsDone ? 1 : !documentsDone ? 2 : STEPS.length
 
+  const handleGstChange = (val: string) => {
+    const upper = val.toUpperCase()
+    setGstin(upper)
+    if (!pan.trim() && upper.length >= 12) {
+      const derived = upper.slice(2, 12)
+      if (PAN_PATTERN.test(derived)) {
+        setPan(derived)
+      }
+    }
+  }
+
   const trySubmit = () => {
     setAttemptedSubmit(true)
-    if (canSubmit) submit.mutate()
+    if (canSubmit) {
+      submit.mutate()
+    } else {
+      const firstError = Object.values(fieldErrors)[0]
+      if (firstError) {
+        toast.error(firstError)
+      } else if (missingDocs.length > 0) {
+        toast.error(`Please upload required documents: ${missingDocs.map(d => d.label).join(', ')}`)
+      }
+    }
   }
 
   return (
@@ -182,7 +202,7 @@ export default function CompanyKycPage() {
         <div>
           <p className="mb-3 text-sm font-medium text-text">Company details</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input label="GSTIN" value={gstin} onChange={e => setGstin(e.target.value.toUpperCase())} maxLength={15} inputClassName="uppercase" error={err('gstin')} />
+            <Input label="GSTIN" value={gstin} onChange={e => handleGstChange(e.target.value)} maxLength={15} inputClassName="uppercase" error={err('gstin')} />
             <Input label="PAN" value={pan} onChange={e => setPan(e.target.value.toUpperCase())} maxLength={10} inputClassName="uppercase" error={err('pan')} />
             <Select label="Entity type" value={entityType} onChange={e => setEntityType(e.target.value)} options={ENTITY_TYPE_OPTIONS} placeholder="Choose the entity type" error={err('entityType')} />
             {entityTypeRequiresCin(entityType) && (

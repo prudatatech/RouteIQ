@@ -96,7 +96,9 @@ export default function QuickAddTruckModal({ open, onClose, onSuccess }: Props) 
     e?.preventDefault()
     const formatted = cleanPlate(plateNumber)
     if (!formatted || formatted.length < 4) {
-      setPlateError('Please enter a valid registration number (minimum 4 characters)')
+      const msg = 'Please enter a valid registration number (minimum 4 characters)'
+      setPlateError(msg)
+      toast.error(msg)
       return
     }
     mutation.mutate()

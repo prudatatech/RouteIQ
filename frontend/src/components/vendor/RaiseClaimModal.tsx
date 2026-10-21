@@ -55,7 +55,11 @@ export default function RaiseClaimModal({ open, loads, onClose, onFiled }: {
 
   const submit = () => {
     setAttempted(true)
-    if (errors.load || errors.type || errors.amount || errors.notes) return
+    const first = errors.load || errors.type || errors.amount || errors.notes
+    if (first) {
+      toast.error(first)
+      return
+    }
     create.mutate()
   }
 

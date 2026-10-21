@@ -44,7 +44,10 @@ export function OdometerModal({ vehicleId, plate, current, open, onClose }: {
     if (km == null || km < 0) next.km = 'Enter the reading on the dashboard, in km.'
     if (lower && reason.trim().length < 3) next.reason = 'This is lower than the current reading. Say why it is being corrected.'
     setErrors(next)
-    if (Object.keys(next).length > 0) return
+    if (Object.keys(next).length > 0) {
+      toast.error(Object.values(next)[0])
+      return
+    }
     setError('')
     save.mutate({ km: km!, why: lower ? reason.trim() : undefined })
   }
@@ -116,7 +119,10 @@ export function PlanModal({ vehicleId, plan, open, onClose }: {
     if (last === undefined) next.last = 'Use numbers only.'
     if (km === null && days === null) next.km = 'Set how often it is due: every some km, every some days, or both.'
     setErrors(next)
-    if (Object.keys(next).length > 0) return
+    if (Object.keys(next).length > 0) {
+      toast.error(Object.values(next)[0])
+      return
+    }
     setError('')
     save.mutate({ item: item.trim(), interval_km: km ?? null, interval_days: days ?? null, last_done_km: last ?? null, last_done_at: lastAt || null })
   }

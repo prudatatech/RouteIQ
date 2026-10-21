@@ -125,6 +125,17 @@ export function StaffCreateApplicationDrawer({ open, onClose, onCreated }: {
     if (!customIdTouched) set('customId', value.trim() ? suggestCustomId(value) : '')
   }
 
+  const applyGst = (value: string) => {
+    const upper = value.toUpperCase()
+    set('gst', upper)
+    if (!form.pan.trim() && upper.length >= 12) {
+      const derived = upper.slice(2, 12)
+      if (PAN_PATTERN.test(derived)) {
+        set('pan', derived)
+      }
+    }
+  }
+
   const uploadDoc = async (docType: string, file: File) => {
     if (!customIdValid) {
       toast.error('Choose a valid 3PL ID above before attaching documents.')
@@ -158,7 +169,11 @@ export function StaffCreateApplicationDrawer({ open, onClose, onCreated }: {
 
   const submit = async () => {
     setAttemptedSubmit(true)
-    if (!canSubmit) return
+    if (!canSubmit) {
+      const firstError = Object.values(fieldErrors)[0]
+      toast.error(firstError || 'Please fix the highlighted errors before saving.')
+      return
+    }
     setSubmitting(true)
     try {
       const namedCorridors = form.corridors.filter(c => c.name.trim())
@@ -294,7 +309,7 @@ export function StaffCreateApplicationDrawer({ open, onClose, onCreated }: {
                 </div>
 
                 <div>
-                  <Input label="GSTIN" value={form.gst} onChange={e => set('gst', e.target.value.toUpperCase())} maxLength={15} inputClassName="uppercase font-mono" error={err('gst')} />
+                  <Input label="GSTIN" value={form.gst} onChange={e => applyGst(e.target.value)} maxLength={15} inputClassName="uppercase font-mono" error={err('gst')} />
                   {form.gst && !err('gst') && (
                     <p className="mt-1 text-xs text-muted">
                       {validateGstinFormat(form.gst, form.pan).valid ? (

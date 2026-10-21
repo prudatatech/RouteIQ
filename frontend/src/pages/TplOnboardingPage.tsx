@@ -111,6 +111,42 @@ export default function TplOnboardingPage() {
   const [uploadingDocType, setUploadingDocType] = useState<string | null>(null)
   const [viewer, setViewer] = useState<{ url: string; name: string } | null>(null)
 
+  const [attemptedStep0, setAttemptedStep0] = useState(false)
+  const [attemptedStep2, setAttemptedStep2] = useState(false)
+  const [attemptedStep3, setAttemptedStep3] = useState(false)
+
+  const step0Errors = {
+    companyName: !companyName.trim() ? 'Company name is required.' : undefined,
+    ownerName: !ownerName.trim() ? 'Contact person is required.' : undefined,
+    email: !email.trim() ? 'Email is required.' : !EMAIL_PATTERN.test(email.trim()) ? 'Please enter a valid email address.' : undefined,
+    mobile: !mobile.trim() ? 'Mobile number is required.' : mobile.replace(/\D/g, '').length < 10 ? 'Please enter a valid 10-digit mobile number.' : undefined,
+    location: !location.trim() ? 'Operating location is required.' : undefined,
+  }
+
+  const step2Errors = {
+    entityType: !entityType ? 'Please select an entity type.' : undefined,
+    authorizedSignatoryName: !authorizedSignatoryName.trim() ? 'Please enter the authorized signatory name.' : undefined,
+    pan: !pan.trim() ? 'PAN is required.' : !PAN_PATTERN.test(pan.trim().toUpperCase()) ? 'Please enter a valid PAN (e.g. ABCDE1234F).' : undefined,
+    cin: entityTypeRequiresCin(entityType) && (!cin.trim() || !isCinFormat(cin.trim().toUpperCase())) ? 'Please enter a valid 21-digit CIN.' : undefined,
+    gst: gst.trim() ? gstinError(gst.trim().toUpperCase(), pan.trim().toUpperCase()) : undefined,
+  }
+
+  const step3Errors = {
+    bankAccount: !bankAccount.trim() ? 'Bank account is required.' : !ACCOUNT_PATTERN.test(bankAccount.trim()) ? 'Please enter a valid 9 to 18 digit bank account number.' : undefined,
+    bankIfsc: !bankIfsc.trim() ? 'Bank IFSC is required.' : !IFSC_PATTERN.test(bankIfsc.trim().toUpperCase()) ? 'Please enter a valid 11-character IFSC code.' : undefined,
+  }
+
+  const handleGstChange = (val: string) => {
+    const upper = val.toUpperCase()
+    setGst(upper)
+    if (!pan.trim() && upper.length >= 12) {
+      const derived = upper.slice(2, 12)
+      if (PAN_PATTERN.test(derived)) {
+        setPan(derived)
+      }
+    }
+  }
+
   // Step 2
   const [fleetSize, setFleetSize] = useState<'single' | 'multiple' | null>(null)
   const [truckType, setTruckType] = useState('')
@@ -313,17 +349,10 @@ export default function TplOnboardingPage() {
   const next = async () => {
     setDirection('forward')
     if (step === 0) {
-      if (!companyName || !ownerName || !email || !mobile || !location) {
-        toast.error('Please fill all fields.')
-        return
-      }
-      if (!EMAIL_PATTERN.test(email.trim())) {
-        toast.error('Please enter a valid email address.')
-        return
-      }
-      const digits = mobile.replace(/\D/g, '')
-      if (digits.length < 10) {
-        toast.error('Please enter a valid 10-digit mobile number.')
+      setAttemptedStep0(true)
+      const firstError = Object.values(step0Errors).find(Boolean)
+      if (firstError) {
+        toast.error(firstError)
         return
       }
       const [emailTaken, mobileTaken] = await Promise.all([checkEmailTaken(email), checkMobileTaken(mobile)])
@@ -340,37 +369,18 @@ export default function TplOnboardingPage() {
 
     if (onboardingMode === 'full') {
       if (step === 2) {
-        if (!entityType) {
-          toast.error('Please select an entity type.')
+        setAttemptedStep2(true)
+        const firstError = Object.values(step2Errors).find(Boolean)
+        if (firstError) {
+          toast.error(firstError)
           return
-        }
-        if (!authorizedSignatoryName.trim()) {
-          toast.error('Please enter the authorized signatory name.')
-          return
-        }
-        if (!pan.trim() || !PAN_PATTERN.test(pan.trim().toUpperCase())) {
-          toast.error('Please enter a valid PAN (e.g. ABCDE1234F).')
-          return
-        }
-        if (entityTypeRequiresCin(entityType) && (!cin.trim() || !isCinFormat(cin.trim().toUpperCase()))) {
-          toast.error('Please enter a valid 21-digit CIN.')
-          return
-        }
-        if (gst.trim()) {
-          const gstErr = gstinError(gst.trim().toUpperCase(), pan.trim().toUpperCase())
-          if (gstErr) {
-            toast.error(gstErr)
-            return
-          }
         }
       }
       if (step === 3) {
-        if (!bankAccount.trim() || !ACCOUNT_PATTERN.test(bankAccount.trim())) {
-          toast.error('Please enter a valid 9 to 18 digit bank account number.')
-          return
-        }
-        if (!bankIfsc.trim() || !IFSC_PATTERN.test(bankIfsc.trim().toUpperCase())) {
-          toast.error('Please enter a valid 11-character IFSC code.')
+        setAttemptedStep3(true)
+        const firstError = Object.values(step3Errors).find(Boolean)
+        if (firstError) {
+          toast.error(firstError)
           return
         }
       }
@@ -850,6 +860,7 @@ export default function TplOnboardingPage() {
                           required
                           placeholder="Registered logistics business name"
                           value={companyName}
+                          error={attemptedStep0 ? step0Errors.companyName : undefined}
                           onChange={(e) => {
                             setCompanyName(e.target.value)
                             if (!customId) setCustomId(suggestCustomId(e.target.value))
@@ -860,6 +871,7 @@ export default function TplOnboardingPage() {
                           required
                           placeholder="Full name of owner/manager"
                           value={ownerName}
+                          error={attemptedStep0 ? step0Errors.ownerName : undefined}
                           onChange={(e) => setOwnerName(e.target.value)}
                         />
                       </div>
@@ -873,7 +885,7 @@ export default function TplOnboardingPage() {
                             autoComplete="email"
                             placeholder="you@company.com"
                             hint={checkingEmail ? 'Checking availability…' : "We'll send application updates and portal credentials here."}
-                            error={emailTakenError}
+                            error={emailTakenError || (attemptedStep0 ? step0Errors.email : undefined)}
                             value={email}
                             onChange={(e) => { setEmail(e.target.value); setEmailTakenError(null) }}
                             onBlur={(e) => checkEmailTaken(e.target.value)}
@@ -893,7 +905,7 @@ export default function TplOnboardingPage() {
                             type="tel"
                             maxLength={10}
                             hint={checkingMobile ? 'Checking availability…' : undefined}
-                            error={mobileTakenError}
+                            error={mobileTakenError || (attemptedStep0 ? step0Errors.mobile : undefined)}
                             value={mobile}
                             onChange={(e) => { setMobile(e.target.value.replace(/\D/g, '')); setMobileTakenError(null) }}
                             onBlur={(e) => checkMobileTaken(e.target.value)}
@@ -911,6 +923,7 @@ export default function TplOnboardingPage() {
                         required
                         placeholder="E.g., Mumbai, Maharashtra or Bhiwandi Hub"
                         hint="Primary dispatch base, terminal or city where trucks operate"
+                        error={attemptedStep0 ? step0Errors.location : undefined}
                         value={location}
                         onChange={(e) => setLocation(e.target.value)}
                       />
@@ -1052,6 +1065,7 @@ export default function TplOnboardingPage() {
                         label="Entity Type"
                         required
                         value={entityType}
+                        error={attemptedStep2 ? step2Errors.entityType : undefined}
                         onChange={e => setEntityType(e.target.value)}
                       >
                         <option value="" disabled>Select legal entity classification...</option>
@@ -1065,6 +1079,7 @@ export default function TplOnboardingPage() {
                         required
                         placeholder="Full legal name of signatory"
                         value={authorizedSignatoryName}
+                        error={attemptedStep2 ? step2Errors.authorizedSignatoryName : undefined}
                         onChange={e => setAuthorizedSignatoryName(e.target.value)}
                       />
                     </div>
@@ -1077,6 +1092,7 @@ export default function TplOnboardingPage() {
                           placeholder="ABCDE1234F"
                           value={pan}
                           maxLength={10}
+                          error={attemptedStep2 ? step2Errors.pan : undefined}
                           onChange={e => setPan(e.target.value.toUpperCase())}
                           inputClassName="font-mono uppercase text-base"
                         />
@@ -1101,7 +1117,8 @@ export default function TplOnboardingPage() {
                           placeholder="07ABCDE1234F1Z5"
                           value={gst}
                           maxLength={15}
-                          onChange={e => setGst(e.target.value.toUpperCase())}
+                          error={attemptedStep2 ? step2Errors.gst : undefined}
+                          onChange={e => handleGstChange(e.target.value)}
                           inputClassName="font-mono uppercase text-base"
                         />
                         {gst && (
@@ -1127,6 +1144,7 @@ export default function TplOnboardingPage() {
                         placeholder="U74999DL2019PTC123456"
                         value={cin}
                         maxLength={21}
+                        error={attemptedStep2 ? step2Errors.cin : undefined}
                         onChange={e => setCin(e.target.value.toUpperCase())}
                         inputClassName="font-mono uppercase"
                         hint="21-character CIN from your Certificate of Incorporation"
@@ -1162,6 +1180,7 @@ export default function TplOnboardingPage() {
                         placeholder="9 to 18 digits"
                         inputMode="numeric"
                         value={bankAccount}
+                        error={attemptedStep3 ? step3Errors.bankAccount : undefined}
                         onChange={e => setBankAccount(e.target.value.replace(/\D/g, '').slice(0, 18))}
                         inputClassName="font-mono text-base"
                         hint={bankAccount ? `${bankAccount.length} digits entered` : 'Account number without spaces or dashes'}
@@ -1169,6 +1188,7 @@ export default function TplOnboardingPage() {
 
                       <IfscField
                         value={bankIfsc}
+                        error={attemptedStep3 ? step3Errors.bankIfsc : undefined}
                         onChange={setBankIfsc}
                       />
                     </div>

@@ -111,7 +111,10 @@ export function EditProfileModal({ detail, open, onClose }: { detail: PersonDeta
     if (f.personal_email.trim() && !isEmail(f.personal_email)) e.personal_email = 'Enter a valid email.'
     if (f.pincode.trim() && !/^\d{6}$/.test(f.pincode.trim())) e.pincode = 'PIN code is 6 digits.'
     setErrors(e)
-    if (Object.keys(e).length > 0) return
+    if (Object.keys(e).length > 0) {
+      toast.error(Object.values(e)[0])
+      return
+    }
     if (!isDriver && f.email.trim() !== (user.email ?? '')) {
       const ok = await confirm({
         title: 'Change the sign-in email?',

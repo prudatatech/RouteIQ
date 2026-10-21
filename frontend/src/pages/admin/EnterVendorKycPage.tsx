@@ -213,9 +213,24 @@ export default function EnterVendorKycPage() {
     }
   }
 
+  const handleGstChange = (val: string) => {
+    const upper = val.toUpperCase()
+    setField('gstNumber', upper)
+    if (!form.panNumber.trim() && upper.length >= 12) {
+      const derived = upper.slice(2, 12)
+      if (/^[A-Z]{5}\d{4}[A-Z]$/i.test(derived)) {
+        setField('panNumber', derived)
+      }
+    }
+  }
+
   const goNext = async () => {
     setAttempted(prev => ({ ...prev, [step]: true }))
-    if (!stepValid(step)) return
+    if (!stepValid(step)) {
+      const firstError = Object.values(stepErrors[step])[0]
+      if (firstError) toast.error(firstError)
+      return
+    }
     if (step === 0) {
       const id = await resolveApplicant()
       if (!id) return
@@ -285,10 +300,13 @@ export default function EnterVendorKycPage() {
     setAttempted({ 0: true, 1: true, 2: true, 3: true, 4: true })
     const firstInvalid = [0, 1, 2, 3, 4].find(i => !stepValid(i))
     if (firstInvalid !== undefined) {
+      const firstError = Object.values(stepErrors[firstInvalid])[0]
       if (firstInvalid !== step) {
-        toast.error(`Some details in "${STEPS[firstInvalid]}" need fixing`)
+        toast.error(`Some details in "${STEPS[firstInvalid]}" need fixing${firstError ? `: ${firstError}` : ''}`)
         setStep(firstInvalid)
         window.scrollTo(0, 0)
+      } else if (firstError) {
+        toast.error(firstError)
       }
       return
     }
@@ -373,7 +391,7 @@ export default function EnterVendorKycPage() {
               <Select label="Vendor type" required options={VENDOR_TYPES} value={form.vendorType} onChange={e => setField('vendorType', e.target.value)} />
               <Input label="PAN number" required value={form.panNumber} onChange={e => setField('panNumber', e.target.value.toUpperCase())} error={err(1, 'panNumber')} inputClassName="uppercase" hint="10-character company or proprietor PAN" />
               <div>
-                <Input label="GST number" value={form.gstNumber} onChange={e => setField('gstNumber', e.target.value.toUpperCase())} error={err(1, 'gstNumber')} inputClassName="uppercase" hint="Leave blank if not GST-registered" />
+                <Input label="GST number" value={form.gstNumber} onChange={e => handleGstChange(e.target.value)} error={err(1, 'gstNumber')} inputClassName="uppercase" hint="Leave blank if not GST-registered" />
                 <GstinStatus gstin={form.gstNumber} pan={form.panNumber} />
               </div>
               <Select label="MSME status" options={MSME_STATUSES} value={form.msmeStatus} onChange={e => setField('msmeStatus', e.target.value)} />

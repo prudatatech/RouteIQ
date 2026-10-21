@@ -91,7 +91,11 @@ export default function RaiseExceptionModal({ open, onClose, consignment, defaul
     else if (!Number.isInteger(n) || n < 0) next.pieces = 'Enter a whole number.'
     else if (maxPieces != null && n > maxPieces) next.pieces = `The shipment has ${maxPieces.toLocaleString('en-IN')} pieces.`
     setErrors(next)
-    if (Object.keys(next).length > 0 || !knownRef || !type) return
+    if (Object.keys(next).length > 0 || !knownRef || !type) {
+      const first = Object.values(next)[0]
+      if (first) toast.error(first)
+      return
+    }
     setServerError('')
     const vehicle = target?.where.vehicle ?? null
     const position = positionOf(vehicle)

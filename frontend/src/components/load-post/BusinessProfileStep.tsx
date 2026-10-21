@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import toast from 'react-hot-toast'
 import { Alert, Button, Card, Input, Select } from '@/components/ui'
 import type { BusinessProfile } from '@/types/load'
 import { checkGstin, normalizeGstin } from '@/utils/gstin'
@@ -26,7 +27,11 @@ export default function BusinessProfileStep({ initial, saving, error, onSave, on
 
   const submit = () => {
     setAttempted(true)
-    if (Object.keys(profileErrors(p)).length > 0) return
+    const errs = profileErrors(p)
+    if (Object.keys(errs).length > 0) {
+      toast.error(Object.values(errs)[0])
+      return
+    }
     onSave({ ...p, gstin: normalizeGstin(p.gstin), full_name: p.full_name.trim(), business_name: p.business_name.trim() })
   }
 

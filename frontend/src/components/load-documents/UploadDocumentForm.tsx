@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Paperclip } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { Button, FileButton, Input, Modal, Select } from '@/components/ui'
 import type { LoadDocument, UploadKind } from '@/types/loadDocuments'
 import {
@@ -35,7 +36,10 @@ export function UploadDocumentForm({ open, existing, busy, onClose, onSubmit }: 
   const submit = async () => {
     const found = validateUpload(values)
     setErrors(found)
-    if (Object.keys(found).length > 0) return
+    if (Object.keys(found).length > 0) {
+      toast.error(Object.values(found)[0] || 'Please fix the errors before saving.')
+      return
+    }
     await onSubmit(values, file)
   }
 

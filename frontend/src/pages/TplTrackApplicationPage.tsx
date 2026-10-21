@@ -6,9 +6,14 @@ import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
 import { uploadTplDocument } from '@/services/tplDocuments'
-import { Alert, Button, Card, FileButton, Input, Select, StatusPill } from '@/components/ui'
+import { Alert, Button, Card, FileButton, IfscField, Input, Select, StatusPill } from '@/components/ui'
 import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
+import { gstinError } from '@/utils/gstin'
 import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
+
+const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
+const ACCOUNT_PATTERN = /^\d{9,18}$/
+const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/i
 
 interface TplApplication {
   id: string
@@ -40,7 +45,7 @@ interface TplApplicationFull extends TplApplication {
 /**
  * Edits the company, tax, bank and operational details of a pending or rejected application.
  */
-function FixDetails({ applicationId, pan, full, onSaved }: { applicationId: string; pan: string; full: TplApplicationFull; onSaved: () => void }) {
+export function FixDetails({ applicationId, pan, full, onSaved }: { applicationId: string; pan: string; full: TplApplicationFull; onSaved: () => void }) {
   const [companyName, setCompanyName] = useState(full.company_name || '')
   const [contactName, setContactName] = useState(full.contact_name || '')
   const [panNumber, setPanNumber] = useState(full.pan_number || '')
@@ -52,27 +57,42 @@ function FixDetails({ applicationId, pan, full, onSaved }: { applicationId: stri
   const [bankIfsc, setBankIfsc] = useState(full.bank_ifsc || '')
   const [slaCommitment, setSlaCommitment] = useState(full.sla_commitment || '2 Hours')
   const [taxTreatment, setTaxTreatment] = useState(full.tax_treatment || '12% GTA (With ITC) - Forward Charge')
+  const [attempted, setAttempted] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  const errors: Record<string, string> = {}
+  if (!companyName.trim()) errors.companyName = 'Company name is required.'
+  if (!contactName.trim()) errors.contactName = 'Contact person is required.'
+  if (!entityType.trim()) errors.entityType = 'Choose the entity type.'
+  if (!authorizedSignatoryName.trim()) errors.authorizedSignatoryName = 'Enter the authorized signatory name.'
+  if (entityTypeRequiresCin(entityType) && !cin.trim()) errors.cin = 'CIN is required for this entity type.'
+  else if (cin.trim() && !isCinFormat(cin)) errors.cin = 'CIN looks incorrect (21 letters and digits, e.g. U74999DL2019PTC123456).'
+  if (panNumber.trim() && !PAN_PATTERN.test(panNumber.trim().toUpperCase())) errors.panNumber = 'PAN looks incorrect (e.g. ABCDE1234F).'
+  if (gst.trim()) {
+    const g = gstinError(gst.trim(), panNumber.trim() || undefined)
+    if (g) errors.gst = g
+  }
+  if (bankAccount.trim() && !ACCOUNT_PATTERN.test(bankAccount.trim())) errors.bankAccount = 'Bank account must be 9 to 18 digits.'
+  if (bankIfsc.trim() && !IFSC_PATTERN.test(bankIfsc.trim().toUpperCase())) errors.bankIfsc = 'IFSC looks incorrect (e.g. HDFC0001234).'
+
+  const err = (key: string) => (attempted ? errors[key] : undefined)
+
+  const handleGstChange = (val: string) => {
+    const upper = val.toUpperCase()
+    setGst(upper)
+    if (!panNumber.trim() && upper.length >= 12) {
+      const derived = upper.slice(2, 12)
+      if (PAN_PATTERN.test(derived)) {
+        setPanNumber(derived)
+      }
+    }
+  }
+
   const save = async () => {
-    if (!companyName.trim() || !contactName.trim()) {
-      toast.error('Company name and contact person are required.')
-      return
-    }
-    if (!entityType.trim()) {
-      toast.error('Choose the entity type.')
-      return
-    }
-    if (!authorizedSignatoryName.trim()) {
-      toast.error('Enter the authorized signatory name.')
-      return
-    }
-    if (entityTypeRequiresCin(entityType) && !cin.trim()) {
-      toast.error('CIN is required for this entity type.')
-      return
-    }
-    if (cin.trim() && !isCinFormat(cin)) {
-      toast.error('CIN looks incorrect (21 letters and digits, e.g. U74999DL2019PTC123456).')
+    setAttempted(true)
+    const firstError = Object.values(errors)[0]
+    if (firstError) {
+      toast.error(firstError)
       return
     }
     setSaving(true)
@@ -109,13 +129,13 @@ function FixDetails({ applicationId, pan, full, onSaved }: { applicationId: stri
           <h4 className="text-xs font-bold text-text uppercase tracking-wider">Company &amp; Governance</h4>
         </div>
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-          <Input label="Company name" required value={companyName} onChange={e => setCompanyName(e.target.value)} />
-          <Input label="Contact person" required value={contactName} onChange={e => setContactName(e.target.value)} />
-          <Select label="Entity type" required value={entityType} onChange={e => setEntityType(e.target.value)} options={ENTITY_TYPE_OPTIONS} placeholder="Choose entity type" />
+          <Input label="Company name" required value={companyName} error={err('companyName')} onChange={e => setCompanyName(e.target.value)} />
+          <Input label="Contact person" required value={contactName} error={err('contactName')} onChange={e => setContactName(e.target.value)} />
+          <Select label="Entity type" required value={entityType} error={err('entityType')} onChange={e => setEntityType(e.target.value)} options={ENTITY_TYPE_OPTIONS} placeholder="Choose entity type" />
           {entityTypeRequiresCin(entityType) && (
-            <Input label="CIN" required value={cin} onChange={e => setCin(e.target.value.toUpperCase())} placeholder="U74999DL2019PTC123456" maxLength={21} inputClassName="font-mono uppercase" />
+            <Input label="CIN" required value={cin} error={err('cin')} onChange={e => setCin(e.target.value.toUpperCase())} placeholder="U74999DL2019PTC123456" maxLength={21} inputClassName="font-mono uppercase" />
           )}
-          <Input label="Authorized signatory name" required value={authorizedSignatoryName} onChange={e => setAuthorizedSignatoryName(e.target.value)} className={entityTypeRequiresCin(entityType) ? '' : 'sm:col-span-2'} />
+          <Input label="Authorized signatory name" required value={authorizedSignatoryName} error={err('authorizedSignatoryName')} onChange={e => setAuthorizedSignatoryName(e.target.value)} className={entityTypeRequiresCin(entityType) ? '' : 'sm:col-span-2'} />
         </div>
       </div>
 
@@ -126,10 +146,10 @@ function FixDetails({ applicationId, pan, full, onSaved }: { applicationId: stri
           <h4 className="text-xs font-bold text-text uppercase tracking-wider">Tax &amp; Settlement Account</h4>
         </div>
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-          <Input label="PAN" value={panNumber} onChange={e => setPanNumber(e.target.value.toUpperCase())} placeholder="ABCDE1234F" maxLength={10} inputClassName="font-mono uppercase" />
-          <Input label="GSTIN" value={gst} onChange={e => setGst(e.target.value.toUpperCase())} placeholder="07ABCDE1234F1Z5" maxLength={15} inputClassName="font-mono uppercase" />
-          <Input label="Bank account number" value={bankAccount} onChange={e => setBankAccount(e.target.value)} inputClassName="font-mono" placeholder="9 to 18 digits" />
-          <Input label="Bank IFSC" value={bankIfsc} onChange={e => setBankIfsc(e.target.value.toUpperCase())} placeholder="HDFC0001234" maxLength={11} inputClassName="font-mono uppercase" />
+          <Input label="PAN" value={panNumber} error={err('panNumber')} onChange={e => setPanNumber(e.target.value.toUpperCase())} placeholder="ABCDE1234F" maxLength={10} inputClassName="font-mono uppercase" />
+          <Input label="GSTIN" value={gst} error={err('gst')} onChange={e => handleGstChange(e.target.value)} placeholder="07ABCDE1234F1Z5" maxLength={15} inputClassName="font-mono uppercase" />
+          <Input label="Bank account number" value={bankAccount} error={err('bankAccount')} onChange={e => setBankAccount(e.target.value)} inputClassName="font-mono" placeholder="9 to 18 digits" />
+          <IfscField label="Bank IFSC" value={bankIfsc} error={err('bankIfsc')} onChange={setBankIfsc} placeholder="HDFC0001234" required={false} />
         </div>
       </div>
 

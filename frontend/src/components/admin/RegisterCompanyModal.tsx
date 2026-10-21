@@ -85,7 +85,17 @@ export default function RegisterCompanyModal({ open, onClose, onRegistered, resu
   const close = () => { onClose(); reset() }
 
   const setField = (key: keyof DetailsForm, upper = false) => (value: string) => {
-    setDetails(f => ({ ...f, [key]: upper ? value.toUpperCase() : value }))
+    const nextVal = upper ? value.toUpperCase() : value
+    setDetails(f => {
+      const next = { ...f, [key]: nextVal }
+      if (key === 'gstin' && !f.pan.trim() && nextVal.length >= 12) {
+        const derived = nextVal.slice(2, 12)
+        if (PAN_PATTERN.test(derived)) {
+          next.pan = derived
+        }
+      }
+      return next
+    })
     setDetailErrors(e => ({ ...e, [key]: undefined }))
     setDetailFormError(null)
   }
@@ -178,7 +188,11 @@ export default function RegisterCompanyModal({ open, onClose, onRegistered, resu
     else { const g = gstinError(details.gstin, details.pan); if (g) errors.gstin = g }
     if (!details.pan.trim()) errors.pan = 'Enter the company PAN'
     else if (!PAN_PATTERN.test(details.pan.trim())) errors.pan = 'PAN looks incorrect (e.g. AAAAA0000A)'
-    if (Object.keys(errors).length > 0) { setDetailErrors(errors); return }
+    if (Object.keys(errors).length > 0) {
+      setDetailErrors(errors)
+      toast.error(Object.values(errors)[0])
+      return
+    }
     create.mutate()
   }
 
@@ -201,7 +215,16 @@ export default function RegisterCompanyModal({ open, onClose, onRegistered, resu
 
   const trySubmit = () => {
     setAttemptedSubmit(true)
-    if (canSubmit) submit.mutate()
+    if (canSubmit) {
+      submit.mutate()
+    } else {
+      const firstError = Object.values(fieldErrors)[0]
+      if (firstError) {
+        toast.error(firstError)
+      } else if (missingDocs.length > 0) {
+        toast.error(`Please upload required documents: ${missingDocs.map(d => d.label).join(', ')}`)
+      }
+    }
   }
 
   return (

@@ -55,8 +55,10 @@ export default function AddShipmentModal() {
   })
 
   const next = () => {
-    if (Object.keys(validateStep(step, formData)).length > 0) {
+    const stepErrs = validateStep(step, formData)
+    if (Object.keys(stepErrs).length > 0) {
       setAttempted(prev => new Set(prev).add(step))
+      toast.error(Object.values(stepErrs)[0] || 'Please fix the highlighted fields.')
       return
     }
     goTo(STEPS[stepIndex + 1].id)

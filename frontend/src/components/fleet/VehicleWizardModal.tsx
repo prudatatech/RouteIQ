@@ -242,8 +242,10 @@ export default function VehicleWizardModal({ isOpen, onClose, initialData = null
   }
 
   const handleNext = () => {
-    if (Object.keys(stepErrors(step)).length > 0) {
+    const errs = stepErrors(step)
+    if (Object.keys(errs).length > 0) {
       setAttempted(prev => new Set(prev).add(step))
+      toast.error(Object.values(errs)[0])
       return
     }
     if (step === 3) {
