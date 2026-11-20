@@ -18,8 +18,10 @@ MargixIndia is a multi-tenant logistics SaaS (source of truth: `docs/platform-mo
   `~/.claude/plans/mellow-fluttering-unicorn.md` (summary in memory `network-blueprint`).
 
 ## 2. Environment
-Everything runs on Azure, resource group `margix-rg` (Central India), one Container Apps environment `margix-env`,
-registry `margixacr7m52h4t5it6og`.
+Everything runs on Azure, account `manikanta4319@gmail.com` (subscription `f26e3afa-…71ab`, since 20 Nov 2026),
+resource group `margix-rg` (Central India), one Container Apps environment `margix-env`, registry
+`margixacrtw23bcqkuyb4m`. The previous account (`kushagratiwari252@gmail.com`, subscription `1c904442-…902c`) was
+disabled for billing; everything was moved with docs/DEPLOYMENT.md §4.6 (databases copied by `infra/clone-db.sh`).
 
 | | test (branch `test`) | live (branch `main`) |
 |---|---|---|
@@ -27,7 +29,7 @@ registry `margixacr7m52h4t5it6og`.
 | API | https://staging-api.margixindia.com/api/v1 | https://api.margixindia.com/api/v1 |
 | Data (auth/rest/storage gateway) | https://staging-data.margixindia.com | https://data.margixindia.com |
 | Container apps | `margix-test-*` | `margix-*` |
-| Postgres Flexible Server | `margix-test-pg` (B1ms) | `margix-pg` (B1ms) |
+| Postgres Flexible Server (South India) | `margix-test-pg-south` (B1ms) | `margix-pg-south` (B1ms) |
 
 - Self-hosted Supabase-style platform per stage (`infra/platform.bicep`, `infra/platform.sh`): gateway (Kong),
   auth (GoTrue), rest (PostgREST), rt (Realtime), storage (storage-api) + s3proxy to Azure Blob.
@@ -215,6 +217,19 @@ registry `margixacr7m52h4t5it6og`.
 - GitHub's Azure login (OIDC) occasionally fails to fetch a token: re-run the job.
 
 ## 5. Open items (ask the owner before starting new phases)
+- Owner actions after the move to the new Azure account (20 Nov 2026):
+  1. Run `./infra/github-oidc.sh` (signed in to the new account) so GitHub can deploy again; until then every
+     "Deploy to Azure" run fails at the Azure login.
+  2. Set the `DATABASE_URL` secret in the GitHub `test` and `production` environments to the new servers
+     (`margix-test-pg-south` / `margix-pg-south`; the admin login from `infra/platform.<stage>.env`). The migrate job
+     and the nightly live backup use it.
+  3. Uploaded files (KYC documents, POD photos, signatures) are still only in the old account's blob containers
+     (`margixobjects6ewdsxpj3n2`, `margixtestobjectstc6vku2`): the disabled subscription lists no blobs and gives no keys.
+     Re-enable it briefly (or ask Azure support for read access) and copy them to the new `margix[-test]-objects`
+     containers; until then those files show as missing. The database rows (`storage.objects`) are already moved.
+  4. Central India refuses every Postgres size on this account, so the servers run in South India (~20 ms per query
+     from the apps). A quota request for Central India would let them move back.
+  5. Once the files are copied, delete the old account's resource group.
 - Owner choices pending: put the Resend key on live; restore "Need unloading help" on delivery?; company board
   order within the same priority and date (newest first now, or longest-waiting first).
 - Owner configuration still missing: Twilio + Redis (SMS OTP), WhatsApp, TomTom key (route optimisation returns

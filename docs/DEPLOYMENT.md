@@ -21,7 +21,7 @@ share nothing: separate databases, servers, keys and schedulers.
 | Backend API, WebSocket, scheduler (`backend-ts/`) | **https://staging-api.margixindia.com** (`margix-test-api`, scales 0 to 1) | **https://api.margixindia.com** (`margix-api`, always on) |
 | Route optimizer (`ml-service/`) | `margix-test-ml` (internal only) | `margix-ml` (internal only) |
 | Sign-in, data API, realtime, files (the gateway) | **https://staging-data.margixindia.com** (`margix-test-gateway` → `-auth`, `-rest`, `-rt`, `-storage`) | **https://data.margixindia.com** (`margix-gateway` → `-auth`, `-rest`, `-rt`, `-storage`) |
-| Database | Azure Database for PostgreSQL `margix-test-pg` | Azure Database for PostgreSQL `margix-pg` |
+| Database | Azure Database for PostgreSQL `margix-test-pg-south` (South India) | Azure Database for PostgreSQL `margix-pg-south` (South India) |
 | Driver and customer apps (Expo EAS) | channel `preview` | channel `production` |
 | Deploys when | a push to `test` | a push to `main` (only through a pull request from `test`) |
 | Database changes applied by | the first job (`migrate`, environment `test`) of `.github/workflows/deploy-azure.yml` | the same job on `main` (environment `production`) |
@@ -33,9 +33,11 @@ with `./infra/deploy.sh --stage test` (default `live`); see [`infra/README.md`](
 The test URLs are printed by `./infra/deploy.sh --stage test` (the table shows names, since the addresses
 exist only after its first run).
 
-Azure details: subscription `1c904442-…902c` (account `kushagratiwari252@gmail.com`), resource group
-`margix-rg` in Central India (the Static Web App record sits in East Asia), budget `margix-budget` ($200,
-alerts at $50, $100 and $150).
+Azure details: subscription `f26e3afa-…71ab` (account `manikanta4319@gmail.com`), resource group
+`margix-rg` in Central India (the Static Web App record sits in East Asia; the two PostgreSQL servers sit in
+South India, because Central India refuses every Postgres size on this account), budget `margix-budget` ($200,
+alerts at $50, $100 and $150). Until 20 Nov 2026 everything ran in subscription `1c904442-…902c` (account
+`kushagratiwari252@gmail.com`), which Azure disabled for billing; see §4.6.
 
 **Why the same open-source services, on Azure.** The app relies on sign-in, row-level security (about 62
 policies on `auth.uid()`), file storage and realtime, not only Postgres. Those are open-source programs
@@ -248,14 +250,25 @@ Follow "Custom domains and DNS" and "Cutover from Railway / Vercel" in `infra/RE
 
 ### 4.6 Moving to a new Azure account (for example after the trial)
 
-1. Sign in: `az login` (the account owner signs in; nobody else types the password).
-2. Create `infra/azure.local.env` from `infra/azure.local.env.example` with the new `SUBSCRIPTION_ID` and `BUDGET_EMAIL`.
-3. Bring `infra/secrets.env` over from the old machine, or refill it (§4.3).
-4. Deploy: `./infra/deploy.sh`.
-5. Point DNS at the new addresses (§4.5).
-6. Delete the old account's resources: `az group delete -n margix-rg --subscription <old-id>`.
+The data lives in each stage's Azure PostgreSQL server and blob container, so it moves too. Keep the stage's
+`infra/platform.<stage>.env` and `infra/secrets.<stage>.env`: the same JWT secret and keys keep the web app's
+keys and signed-in users' tokens valid.
 
-No data export is needed: all data is in Supabase.
+1. Sign in: `az login` (the account owner signs in; nobody else types the password).
+2. In `infra/azure.local.env` set the new `SUBSCRIPTION_ID` and `BUDGET_EMAIL`. While the old account still exists
+   it holds the names `margix-pg` / `margix-test-pg` (Postgres names are global), so also set `LIVE_PG_SERVER` and
+   `TEST_PG_SERVER`; set `PG_LOCATION` if `platform.sh` fails with `SkuNotAvailable` in Central India.
+3. Infrastructure, per stage (no Docker): `./infra/deploy.sh --only-infra`, then `./infra/deploy.sh --stage test --only-infra`.
+4. Data platform, per stage: `./infra/platform.sh --stage <s>`.
+5. Database, per stage: `./infra/clone-db.sh --stage <s> --from-host <old server>.postgres.database.azure.com`.
+   It runs inside the new Container Apps environment, so it works when the old subscription is read-only (the old
+   servers admit Azure-hosted clients). It compares every table's row count with the source.
+6. Files: copy the old `margix[-test]-objects` blob container into the new one (needs the old account readable;
+   a disabled subscription lists no blobs and gives no keys).
+7. GitHub: the owner runs `./infra/github-oidc.sh`, and updates the `DATABASE_URL` secret in the `test` and
+   `production` environments to the new servers. Then run "Deploy to Azure" for `test` and `main`.
+8. Point DNS at the new addresses (§4.5) and add the custom domains to the new apps.
+9. Delete the old account's resources: `az group delete -n margix-rg --subscription <old-id>`.
 
 ### 4.7 Rolling back
 

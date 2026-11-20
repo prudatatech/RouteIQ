@@ -68,7 +68,13 @@ load_azure_env() {
   DATA_DOMAIN="${DATA_DOMAIN:-}"
   # The test stage uses its own names (TEST_*), never live's
   PG_SKU="${PG_SKU:-Standard_B1ms}"
-  if [[ "$STAGE" != live ]]; then PG_SKU="${TEST_PG_SKU:-Standard_B1ms}"; CUSTOM_DOMAIN="${TEST_CUSTOM_DOMAIN:-}"; API_DOMAIN="${TEST_API_DOMAIN:-}"; DATA_DOMAIN="${TEST_DATA_DOMAIN:-}"; fi
+  # Postgres server names are global across Azure, so a new account cannot reuse margix-pg while the old
+  # account still holds it: azure.local.env may set LIVE_PG_SERVER / TEST_PG_SERVER.
+  PG_SERVER="${LIVE_PG_SERVER:-${APP_PREFIX}-pg}"
+  # Some accounts get no Postgres capacity in LOCATION (SkuNotAvailable for every size): azure.local.env may
+  # set PG_LOCATION to a nearby region that has it.
+  PG_LOCATION="${PG_LOCATION:-$LOCATION}"
+  if [[ "$STAGE" != live ]]; then PG_SKU="${TEST_PG_SKU:-Standard_B1ms}"; PG_SERVER="${TEST_PG_SERVER:-${APP_PREFIX}-pg}"; CUSTOM_DOMAIN="${TEST_CUSTOM_DOMAIN:-}"; API_DOMAIN="${TEST_API_DOMAIN:-}"; DATA_DOMAIN="${TEST_DATA_DOMAIN:-}"; fi
   resolve_secrets_file
 }
 

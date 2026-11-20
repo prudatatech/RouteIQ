@@ -36,7 +36,7 @@ PF="$INFRA_DIR/platform.$STAGE.env"
 [[ -f "$PF" ]] || die "$PF is missing: run ./infra/platform.sh --stage $STAGE --init first"
 set -a; # shellcheck disable=SC1090
 source "$PF"; set +a
-PG_HOST="$P-pg.postgres.database.azure.com"
+PG_HOST="$PG_SERVER.postgres.database.azure.com"
 PG=(docker run --rm -i -e PGPASSWORD="$PG_ADMIN_PASSWORD" postgres:18-alpine psql "host=$PG_HOST port=5432 dbname=postgres user=$PG_ADMIN_USER sslmode=require" -q -v ON_ERROR_STOP=1)
 
 [[ "$(echo "SELECT count(*) FROM pg_tables WHERE schemaname = 'auth'" | "${PG[@]}" -At)" != "0" ]] \
