@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { LogIn, LogOut, Menu, X } from 'lucide-react'
@@ -100,12 +100,24 @@ export default function VendorLayout() {
     return () => { cancelled = true }
   }, [vendorProfile?.company_logo])
 
+  const menuPanel = useRef<HTMLDivElement>(null)
+  const menuToggle = useRef<HTMLButtonElement>(null)
+
   useEffect(() => { setMenuOpen(false) }, [location.pathname])
   useEffect(() => {
     if (!menuOpen) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (menuPanel.current?.contains(target) || menuToggle.current?.contains(target)) return
+      setMenuOpen(false)
+    }
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onPointerDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onPointerDown)
+    }
   }, [menuOpen])
 
   const signOut = async () => {
@@ -175,20 +187,21 @@ export default function VendorLayout() {
       <header className="sticky top-0 z-40 border-b border-border bg-surface">
         <div className="mx-auto flex h-16 max-w-content items-center justify-between gap-4 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-4 xl:gap-6">
-            <NavLink to={session ? '/vendor/loads' : '/vendor/request'} className="flex items-center gap-2.5">
-              <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
-              <span className="text-lg font-semibold text-text">MargixIndia</span>
-              <span className="hidden text-sm text-muted xl:inline">for vendors</span>
+            <NavLink to={session ? '/vendor/loads' : '/vendor/request'} className="flex shrink-0 items-center gap-2.5">
+              <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain shrink-0" />
+              <span className="text-lg font-semibold text-text whitespace-nowrap">MargixIndia</span>
+              <span className="hidden text-sm text-muted xl:inline whitespace-nowrap">for vendors</span>
             </NavLink>
-            <nav aria-label="Vendor" className="hidden items-center gap-1 lg:flex">{navLinks(false)}</nav>
+            <nav aria-label="Vendor" className="hidden items-center gap-1 lg:flex shrink-0">{navLinks(false)}</nav>
           </div>
-          <div className="hidden items-center gap-3 lg:flex">
+          <div className="hidden shrink-0 items-center gap-3 lg:flex">
             {isVendor && <NotificationsBell placement="right" />}
             {account(false)}
           </div>
-          <div className="flex items-center gap-1 lg:hidden">
+          <div className="flex shrink-0 items-center gap-1 lg:hidden">
             {isVendor && <NotificationsBell placement="right" />}
             <IconButton
+              ref={menuToggle}
               label={menuOpen ? 'Close menu' : 'Open menu'}
               icon={menuOpen ? <X size={20} /> : <Menu size={20} />}
               aria-expanded={menuOpen}
@@ -197,7 +210,7 @@ export default function VendorLayout() {
           </div>
         </div>
         {menuOpen && (
-          <div className="border-t border-border bg-surface px-4 py-3 lg:hidden">
+          <div ref={menuPanel} className="border-t border-border bg-surface px-4 py-3 lg:hidden">
             <nav aria-label="Vendor" className="flex flex-col gap-1">{navLinks(true)}</nav>
             <div className="mt-3 border-t border-border pt-3">{account(true)}</div>
           </div>

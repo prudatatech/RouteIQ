@@ -35,7 +35,7 @@ const COMPANY_OPERATIONAL_PATHS = [
   '/today', '/requests', '/bookings', '/vendor-requests',
   '/shipments', '/dispatch', '/cargo', '/emergency',
   '/fleet', '/vehicle-requests', '/routes', '/route-planner', '/optimize', '/live-map',
-  '/return-trips', '/3pl-partners', '/money', '/analytics', '/insights',
+  '/return-trips', '/money', '/analytics', '/insights',
 ]
 
 /** True for a page that belongs to running a logistic company's fleet and shipments, not to the platform. */
@@ -43,14 +43,24 @@ export function isCompanyOperationalPath(pathname: string): boolean {
   return COMPANY_OPERATIONAL_PATHS.some(base => pathname === base || pathname.startsWith(`${base}/`))
 }
 
+/** True for /return-trips opened on its "3PL partners" tab: reviewing and approving partners is the
+ * platform's job (ReturnTripsPage only offers the tab to a superadmin); the other tabs (open return
+ * trips, bids, pooling) stay a company's own, so they are not included here. */
+function isPlatformPartnersTab(pathname: string, search: string): boolean {
+  return pathname === '/return-trips' && new URLSearchParams(search).get('tab') === 'partners'
+}
+
 /**
  * Where a path may be opened by this actor: /platform/* and vendor KYC review are for the platform owner
  * only; day-to-day logistics pages are for a company (or the platform owner acting as one) but not for
- * someone acting as the platform, which owns no fleet of its own.
+ * someone acting as the platform, which owns no fleet of its own. 3PL partners — applying, reviewing,
+ * approving — are the platform's to review, so both a company (its own partners) and the platform (every
+ * application) may open those pages regardless of the rules above.
  */
-export function canOpenPath(pathname: string, active: Membership | null): boolean {
+export function canOpenPath(pathname: string, active: Membership | null, search = ''): boolean {
   if (pathname === '/platform' || pathname.startsWith('/platform/')) return isPlatformActor(active)
   if (isPlatformOnlyPath(pathname)) return isPlatformActor(active)
+  if (pathname.startsWith('/3pl-partners/') || isPlatformPartnersTab(pathname, search)) return true
   if (isCompanyOperationalPath(pathname)) return !isPlatformActor(active)
   return true
 }

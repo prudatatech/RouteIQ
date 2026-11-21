@@ -9,11 +9,13 @@ import { notificationService, PLATFORM } from './notification.service';
 import { emailService, fromAddress } from './email.service';
 import { gstinError, normalizeGstin } from '../utils/gstin';
 import { auditService, type AuditActor } from './audit.service';
-import { EMAIL_PATTERN, assertApplicationFields, assertPartnerSettings } from '../schemas/tpl';
+import { EMAIL_PATTERN, assertApplicationFields, assertFlagDocuments, assertFlagDetails, assertPartnerSettings, TPL_FIELD_LABELS } from '../schemas/tpl';
 import { formatRate, type RateUnit } from '../utils/corridor-match';
 import { isUuid } from '../core/validate';
+import { selectIn } from './finance.service';
 import { findAuthUserByEmail } from '../core/auth-users';
 import { invalidateRoleCache } from '../core/auth';
+import { entityTypeRequiresCin } from '../utils/entity-type';
 
 const OTP_TTL_SECONDS = 300;
 const OTP_MAX_ATTEMPTS = 5;
@@ -22,8 +24,40 @@ const otpKey = (email: string) => `otp:tpl:${email.toLowerCase()}`;
 
 const CUSTOM_ID_PATTERN = /^[a-z0-9_]{5,20}$/;
 
+/** Auto-generate a unique 3PL custom_id conforming to /^[a-z0-9_]{5,20}$/ */
+export async function generateUniqueCustomId(companyName: string = 'partner'): Promise<string> {
+  const base = (companyName || 'partner')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 14) || 'partner';
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    const prefix = base.slice(0, 20 - 1 - String(rand).length);
+    const candidate = `${prefix || 'tpl'}_${rand}`;
+    const { data: existing } = await supabase.from('tpl_partners').select('id').eq('custom_id', candidate).maybeSingle();
+    if (!existing) {
+      return candidate;
+    }
+  }
+  return `tpl_${Date.now().toString().slice(-8)}`;
+}
+
 /** Documents a 3PL applicant or partner can upload. */
-export const TPL_DOCUMENT_TYPES = ['PAN Card', 'GST Certificate', 'Cancelled Cheque', 'Signed Rate Agreement'] as const;
+export const TPL_DOCUMENT_TYPES = [
+  'PAN Card',
+  'GST Certificate',
+  'Cancelled Cheque',
+  'Certificate of Incorporation',
+  'Partnership Deed',
+  'Board Resolution / Letter of Authority',
+  'Authorized Signatory ID',
+  'Carriage by Road Registration',
+  'MSME / Udyam Certificate',
+  'Trade License / Shop & Establishment',
+  'Sample Consignment Note (LR)', // vocab-ok: statutory GTA document name; stored as the document type
+] as const;
 
 /** Accepted upload formats and the file extension each is stored under. */
 export const TPL_UPLOAD_CONTENT_TYPES: Record<string, string> = {
@@ -106,18 +140,47 @@ async function ifscColumns(ifsc: unknown): Promise<{ columns: Record<string, any
 
 export const tplService = {
   /**
+   * Whether an email or phone is already on an application - read-only, so the onboarding form can
+   * ask as the applicant fills it in and correct them before they finish the whole form, instead of
+   * only after they submit it. Mirrors the duplicate checks onboard() itself enforces.
+   */
+  async checkAvailability(field: 'email' | 'phone', value: unknown): Promise<{ taken: boolean }> {
+    if (field === 'email') {
+      const email = typeof value === 'string' ? value.trim().toLowerCase() : '';
+      if (!EMAIL_PATTERN.test(email)) return { taken: false };
+      const { data } = await supabase.from('tpl_partners').select('id').eq('email', email).maybeSingle();
+      return { taken: !!data };
+    }
+    let phone: string | null;
+    try {
+      phone = parseMobile(value);
+    } catch {
+      return { taken: false };
+    }
+    if (!phone) return { taken: false };
+    const { data } = await supabase.from('tpl_partners').select('id').eq('phone', phone).maybeSingle();
+    return { taken: !!data };
+  },
+
+  /**
    * Submit a new 3PL onboarding application
    */
   async onboard(data: any) {
-    const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents, operatingFrom, fleetSize, truckType, user_id } = data;
+    const {
+      custom_id, companyName, contactName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents,
+      operatingFrom, fleetSize, truckType, user_id, entityType, cin, authorizedSignatoryName, created_by,
+    } = data;
     const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
     const isQuick = !!fleetSize;
-    if (!companyName || !email || (!isQuick && !pan)) throw new HttpError(400, 'Company name, email and PAN are required');
+    if (!companyName || !contactName || !email || (!isQuick && !pan)) throw new HttpError(400, 'Company name, contact person, email and PAN are required');
     if (!EMAIL_PATTERN.test(email)) throw new HttpError(400, 'Enter a valid email address, for example name@company.in');
     
+    const cleanGst = typeof gst === 'string' ? gst.trim() : gst ? String(gst).trim() : '';
     if (!isQuick) {
-      const gstProblem = gstinError(gst, pan);
-      if (gstProblem) throw new HttpError(400, gstProblem);
+      if (cleanGst) {
+        const gstProblem = gstinError(cleanGst, pan);
+        if (gstProblem) throw new HttpError(400, gstProblem);
+      }
       assertApplicationFields(data);
     }
     const phone = parseMobile(data.phone);
@@ -126,27 +189,39 @@ export const tplService = {
     const { data: duplicate } = await supabase.from('tpl_partners').select('id').eq('email', email).maybeSingle();
     if (duplicate) throw new HttpError(409, 'An application with this email already exists. Use your tracking ID to view it.');
 
-    // custom_id names the partner's document folder, so it must be unique
-    if (custom_id) {
-      if (typeof custom_id !== 'string' || !CUSTOM_ID_PATTERN.test(custom_id)) {
-        throw new HttpError(400, 'Partner ID must be 5–20 lowercase letters, digits or underscores');
-      }
-      const { data: takenId } = await supabase.from('tpl_partners').select('id').eq('custom_id', custom_id).maybeSingle();
-      if (takenId) throw new HttpError(409, 'This partner ID is already taken. Please choose another.');
+    if (phone) {
+      const { data: phoneDuplicate } = await supabase.from('tpl_partners').select('id').eq('phone', phone).maybeSingle();
+      if (phoneDuplicate) throw new HttpError(409, 'An application with this mobile number already exists. Use your tracking ID to view it.');
     }
 
-    assertDocumentPaths(documents, custom_id ? [applicationFolder(custom_id)] : []);
+    // custom_id names the partner's document folder, so it must be unique
+    let assignedCustomId = custom_id ? String(custom_id).trim() : '';
+    if (assignedCustomId) {
+      if (typeof assignedCustomId !== 'string' || !CUSTOM_ID_PATTERN.test(assignedCustomId)) {
+        throw new HttpError(400, 'Partner ID must be 5–20 lowercase letters, digits or underscores');
+      }
+      const { data: takenId } = await supabase.from('tpl_partners').select('id').eq('custom_id', assignedCustomId).maybeSingle();
+      if (takenId) throw new HttpError(409, 'This partner ID is already taken. Please choose another.');
+    } else {
+      assignedCustomId = await generateUniqueCustomId(companyName);
+    }
+
+    assertDocumentPaths(documents, [applicationFolder(assignedCustomId), ...(custom_id ? [applicationFolder(custom_id)] : [])]);
 
     // 1. Create Partner Record
     const { data: partner, error: partnerErr } = await supabase
       .from('tpl_partners')
       .insert({
-        custom_id: custom_id || null,
+        custom_id: assignedCustomId,
         company_name: companyName,
+        contact_name: contactName,
         email: email,
         phone,
         pan_number: pan,
-        gstin: normalizeGstin(gst),
+        gstin: cleanGst ? normalizeGstin(cleanGst) : null,
+        entity_type: entityType || null,
+        cin: cin ? String(cin).trim().toUpperCase() : null,
+        authorized_signatory_name: authorizedSignatoryName || null,
         msme_status: msmeStatus || 'Not Registered',
         bank_account_no: bankAccount || null,
         bank_ifsc: bankIfsc ? String(bankIfsc).trim().toUpperCase() : null,
@@ -154,10 +229,11 @@ export const tplService = {
         sla_commitment: slaCommitment || '2 Hours',
         tax_treatment: taxTreatment || null,
         status: 'pending',
-        operating_from: operatingFrom || null,
-        fleet_size: fleetSize || null,
-        truck_type: truckType || null,
-        user_id: user_id || null
+        operating_from: operatingFrom ?? data.operating_from ?? null,
+        fleet_size: fleetSize ?? data.fleet_size ?? null,
+        truck_type: truckType ?? data.truck_type ?? null,
+        user_id: user_id || null,
+        created_by: created_by || null,
       })
       .select()
       .single();
@@ -199,114 +275,25 @@ export const tplService = {
       console.error('[tpl] Application notification failed:', e);
     }
 
+    // A quick applicant already has a Google-authenticated session (TplOnboardingPage requires one before
+    // showing the form), so `user_id` is already linked here — no separate password-based account or
+    // credential email is needed. They sign back in with Google and the backend resolves their 3PL role
+    // from tpl_partners.user_id. The applicant is only confirmed (acknowledged) here, not approved: approve()
+    // sends the one email that tells them they can start accepting loads.
     if (isQuick) {
-      const { emailService } = require('./email.service');
-      const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8).toUpperCase() + "!";
-      
-      const normalizedEmail = email ? email.trim().toLowerCase() : '';
-      let targetUserId = (user_id && isUuid(user_id)) ? user_id : null;
-      try {
-        let authSuccess = false;
-        if (normalizedEmail) {
-          try {
-            const { data: rpcRes, error: rpcErr } = await supabase.rpc('ensure_tpl_partner_auth', {
-              p_email: normalizedEmail,
-              p_password: tempPassword,
-            });
-            if (rpcRes?.user_id) {
-              targetUserId = rpcRes.user_id;
-              authSuccess = true;
-            } else if (rpcErr) {
-              console.warn('[tpl] ensure_tpl_partner_auth rpc failed, falling back:', rpcErr.message);
-            }
-          } catch (e: any) {
-            console.warn('[tpl] ensure_tpl_partner_auth rpc call error:', e?.message);
-          }
-        }
-
-        if (!authSuccess && targetUserId) {
-          const { data: updateRes, error: updateErr } = await supabase.auth.admin.updateUserById(targetUserId, {
-            email: normalizedEmail || undefined,
-            password: tempPassword,
-            email_confirm: true,
-            app_metadata: { role: 'vendor' },
-            user_metadata: { role: 'vendor', full_name: companyName },
-          });
-          if (updateRes?.user?.id) {
-            authSuccess = true;
-          } else if (updateErr) {
-            console.warn('[tpl] updateUserById on targetUserId failed, falling back:', updateErr.message);
-          }
-        }
-
-        if (!authSuccess && normalizedEmail) {
-          const existingAuth = await findAuthUserByEmail(normalizedEmail);
-          if (existingAuth?.id && isUuid(existingAuth.id)) {
-            targetUserId = existingAuth.id;
-            const { data: updRes, error: updErr } = await supabase.auth.admin.updateUserById(existingAuth.id, {
-              email: normalizedEmail,
-              password: tempPassword,
-              email_confirm: true,
-              app_metadata: { role: 'vendor' },
-              user_metadata: { role: 'vendor', full_name: companyName },
-            });
-            if (updRes?.user?.id) authSuccess = true;
-            else if (updErr) console.warn('[tpl] updateUserById on found auth user failed:', updErr.message);
-          } else {
-            const { data: created, error: createErr } = await supabase.auth.admin.createUser({
-              email: normalizedEmail,
-              password: tempPassword,
-              email_confirm: true,
-              app_metadata: { role: 'vendor' },
-              user_metadata: { role: 'vendor', full_name: companyName },
-            });
-            if (created?.user?.id) {
-              targetUserId = created.user.id;
-              authSuccess = true;
-            } else if (createErr) {
-              console.error('[tpl] createUser failed:', createErr.message);
-            }
-          }
-        }
-
-        if (targetUserId && authSuccess) {
-          await supabase.from('users').upsert({
-            id: targetUserId,
-            email: normalizedEmail || email,
-            full_name: companyName,
-            role: 'vendor',
-            is_active: true,
-          }, { onConflict: 'id' });
-
-          await supabase.from('tpl_partners').update({ user_id: targetUserId }).eq('id', partnerId);
-          invalidateRoleCache(targetUserId);
-        }
-      } catch (err) {
-        console.error('[tpl] quick onboard user setup error:', err);
-      }
-
       const html = `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; background-color: #fff; border: 2px solid #FFD300; border-radius: 8px; overflow: hidden;">
           <div style="background-color: #FFD300; padding: 20px; text-align: center;">
             <h1 style="color: #000; margin: 0;">Welcome to Margix India!</h1>
           </div>
           <div style="padding: 30px; color: #333;">
-            <p>Hi ${companyName},</p>
-            <p>You have successfully registered as a 3PL Truck Partner.</p>
-            <p>Your tracking ID is: <strong>${partnerId}</strong></p>
-            <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <p style="margin: 0;"><strong>Login Details:</strong></p>
-              <p style="margin: 5px 0;">Email / ID: ${email}</p>
-              <p style="margin: 5px 0;">Password: ${tempPassword}</p>
-            </div>
-            <a href="${settings.WEB_APP_URL}/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(tempPassword)}&next=${encodeURIComponent(`/3pl-portal/${partnerId}`)}" style="display: inline-block; background-color: #000; color: #FFD300; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Login to your Dashboard</a>
-            <p style="margin-top: 30px; font-size: 12px; color: #888;">If you signed in with Google, you can continue using Google Auth or use these fallback credentials.</p>
+            <p>Hi ${escapeHtml(contactName)},</p>
+            <p>Thanks for applying to become a 3PL Truck Partner. Your tracking ID is: <strong>${partnerId}</strong></p>
+            <p>Your application is now pending review. We will email you as soon as it is approved — you can keep signing in with Google in the meantime to check its status.</p>
           </div>
         </div>
       `;
-      
-      await emailService.send(email, 'Welcome to Margix - Your 3PL Access Details', html);
-      await emailService.send('u702pad-platform@margix.test', 'New 3PL Partner Onboarded', html);
+      await emailService.send(email, 'Margix India: application received', html);
     }
 
     return { partner, warnings: bank.check?.warnings ?? [] };
@@ -396,19 +383,59 @@ export const tplService = {
   },
 
   /**
+   * A partner's timeline, newest first: every staff decision already audited for it (approved,
+   * rejected, flagged, paused, resumed, deleted, a document replaced), the same way vendor KYC's
+   * review page builds its own history from `ai_agent_logs`. Read-only, so it is its own endpoint
+   * rather than folded into getPartner, which other write paths call on every request.
+   */
+  async getPartnerHistory(partnerId: string) {
+    const { data: logs, error } = await supabase
+      .from('ai_agent_logs')
+      .select('created_at, action, input_data')
+      .filter('input_data->>partner_id', 'eq', partnerId)
+      .like('action', 'tpl_%')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (error) throw new Error(`Failed to read this partner's history: ${error.message}`);
+
+    const actorIds = [...new Set((logs ?? []).map(l => l.input_data?.actor_id).filter(isUuid))] as string[];
+    const names = new Map<string, string>();
+    for (const a of await selectIn<{ id: string; full_name: string | null; email: string | null }>('users', 'id', actorIds, 'id, full_name, email')) {
+      names.set(a.id, a.full_name || a.email || 'Platform');
+    }
+
+    return (logs ?? []).map(l => ({
+      at: l.created_at as string,
+      // The partner's own account has the base 'vendor' role (3PL has no base role of its own), so
+      // its name resolves the same way staff's does - there is no generic actor_role to branch on.
+      actor: names.get(l.input_data?.actor_id) ?? 'Platform',
+      action: l.action as string,
+      detail: (l.input_data?.reason ?? l.input_data?.doc_type ?? null) as string | null,
+    }));
+  },
+
+  /**
    * Update an existing 3PL partner application (only if pending)
    */
-  async updateApplication(id: string, data: any) {
-    const { custom_id, companyName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents } = data;
+  async updateApplication(id: string, data: any, asStaff: boolean = false) {
+    const { custom_id, companyName, contactName, pan, gst, msmeStatus, bankAccount, bankIfsc, slaCommitment, taxTreatment, corridors, documents, entityType, cin, authorizedSignatoryName } = data;
+    const cleanMsmeStatus = msmeStatus ?? data.msme_status;
+    const operatingFrom = data.operatingFrom ?? data.operating_from;
+    const fleetSize = data.fleetSize ?? data.fleet_size;
+    const truckType = data.truckType ?? data.truck_type;
     if (data.email !== undefined && !EMAIL_PATTERN.test(String(data.email).trim())) throw new HttpError(400, 'Enter a valid email address, for example name@company.in');
     assertApplicationFields(data ?? {}, true);
 
-    const { data: current, error: currentErr } = await supabase.from('tpl_partners').select('id, status, custom_id, pan_number, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
+    const { data: current, error: currentErr } = await supabase.from('tpl_partners')
+      .select('id, status, custom_id, company_name, pan_number, document_issues, field_issues, tpl_documents(id, file_url, doc_type)').eq('id', id).maybeSingle();
     if (currentErr) throw new Error(`Failed to load 3PL partner: ${currentErr.message}`);
     if (!current) throw new HttpError(404, 'Application not found');
-    if (current.status !== 'pending') throw new HttpError(409, 'Only pending applications can be edited');
+    const allowedStatuses = asStaff ? ['pending', 'rejected', 'active', 'paused'] : ['pending', 'rejected', 'active'];
+    if (!allowedStatuses.includes(current.status)) throw new HttpError(409, 'Only a pending, rejected, or active application can be edited');
+    const wasRejected = current.status === 'rejected';
     // A GSTIN carries the PAN: check it against the new PAN, or the one on record
-    const gstProblem = gst !== undefined ? gstinError(gst, pan ?? current.pan_number) : undefined;
+    const cleanGst = typeof gst === 'string' ? gst.trim() : gst ? String(gst).trim() : '';
+    const gstProblem = cleanGst ? gstinError(cleanGst, pan ?? current.pan_number) : undefined;
     if (gstProblem) throw new HttpError(400, gstProblem);
     const existingDocuments = (current.tpl_documents as { id: string; file_url: string; doc_type: string }[] | null) ?? [];
     assertDocumentPaths(
@@ -419,25 +446,67 @@ export const tplService = {
     // The IFSC lookup only runs when the bank details are part of the edit
     const bank = bankIfsc !== undefined ? await ifscColumns(bankIfsc) : { columns: {}, check: null as IfscCheck | null };
 
-    // 1. Update the partner record: only the fields that were sent, so an edit of the name never wipes the partner ID or the tax details
-    const columns = {
-        ...(custom_id !== undefined ? { custom_id: custom_id || null } : {}),
+    // Auto-generate or validate custom_id if missing or updated
+    let updatedCustomId: string | undefined = undefined;
+    if (custom_id !== undefined) {
+      const cleanCustomId = custom_id ? String(custom_id).trim() : '';
+      if (cleanCustomId) {
+        if (!CUSTOM_ID_PATTERN.test(cleanCustomId)) {
+          throw new HttpError(400, 'Partner ID must be 5–20 lowercase letters, digits or underscores');
+        }
+        if (cleanCustomId !== current.custom_id) {
+          const { data: takenId } = await supabase.from('tpl_partners').select('id').eq('custom_id', cleanCustomId).maybeSingle();
+          if (takenId && takenId.id !== id) throw new HttpError(409, 'This partner ID is already taken. Please choose another.');
+        }
+        updatedCustomId = cleanCustomId;
+      } else {
+        updatedCustomId = current.custom_id || await generateUniqueCustomId(companyName ?? current.company_name);
+      }
+    } else if (!current.custom_id) {
+      updatedCustomId = await generateUniqueCustomId(companyName ?? current.company_name);
+    }
+
+    // 1. Update the partner record: only the fields that were sent, so an edit of the name never wipes the partner ID or the tax details.
+    // Editing a rejected application resubmits it: back to pending, the old reason and every document flag cleared.
+    const columns: Record<string, unknown> = {
+        ...(updatedCustomId !== undefined ? { custom_id: updatedCustomId } : {}),
         ...(companyName !== undefined ? { company_name: companyName } : {}),
+        ...(contactName !== undefined ? { contact_name: contactName } : {}),
         ...(data.phone !== undefined ? { phone: parseMobile(data.phone) } : {}),
         ...(pan !== undefined ? { pan_number: pan } : {}),
-        ...(gst !== undefined ? { gstin: normalizeGstin(gst) } : {}),
-        ...(msmeStatus !== undefined ? { msme_status: msmeStatus || 'Not Registered' } : {}),
+        ...(gst !== undefined ? { gstin: cleanGst ? normalizeGstin(cleanGst) : null } : {}),
+        ...(entityType !== undefined ? { entity_type: entityType || null } : {}),
+        ...(cin !== undefined ? { cin: cin ? String(cin).trim().toUpperCase() : null } : {}),
+        ...(authorizedSignatoryName !== undefined ? { authorized_signatory_name: authorizedSignatoryName || null } : {}),
+        ...(cleanMsmeStatus !== undefined ? { msme_status: cleanMsmeStatus || 'Not Registered' } : {}),
         ...(bankAccount !== undefined ? { bank_account_no: bankAccount || null } : {}),
         ...(bankIfsc !== undefined ? { bank_ifsc: bankIfsc ? String(bankIfsc).trim().toUpperCase() : null } : {}),
         ...bank.columns,
         ...(slaCommitment !== undefined ? { sla_commitment: slaCommitment || '2 Hours' } : {}),
         ...(taxTreatment !== undefined ? { tax_treatment: taxTreatment || null } : {}),
+        ...(operatingFrom !== undefined ? { operating_from: operatingFrom || null } : {}),
+        ...(fleetSize !== undefined ? { fleet_size: fleetSize || null } : {}),
+        ...(truckType !== undefined ? { truck_type: truckType || null } : {}),
+        ...(wasRejected ? { status: 'pending', rejection_reason: null, document_issues: null, field_issues: null } : {}),
     };
     const { error: partnerErr } = Object.keys(columns).length === 0
       ? { error: null }
-      : await supabase.from('tpl_partners').update(columns).eq('id', id).eq('status', 'pending'); // Only a pending application can be edited
+      : await supabase.from('tpl_partners').update(columns).eq('id', id).eq('status', current.status);
 
     if (partnerErr) throw new Error(`Failed to update 3PL partner: ${partnerErr.message}`);
+
+    // If any flagged fields were updated, clear their issue flags
+    if (!wasRejected && current.field_issues) {
+      const updatedKeys = new Set(Object.keys(columns));
+      const remainingFields = Object.fromEntries(
+        Object.entries(current.field_issues).filter(([field]) => !updatedKeys.has(field))
+      );
+      if (Object.keys(remainingFields).length !== Object.keys(current.field_issues).length) {
+        await supabase.from('tpl_partners').update({
+          field_issues: Object.keys(remainingFields).length > 0 ? remainingFields : null,
+        }).eq('id', id);
+      }
+    }
 
     // 2. Overwrite Corridors (delete old, insert new)
     if (corridors) {
@@ -467,6 +536,28 @@ export const tplService = {
       }
       for (const doc of toRemove) {
         await supabase.from('tpl_documents').delete().eq('id', doc.id);
+      }
+      // Replacing a flagged document clears its own flag, even without resubmitting the whole form.
+      if (!wasRejected && current.document_issues) {
+        const replacedTypes = new Set(toAdd.map(d => d.type));
+        const remaining = Object.fromEntries(Object.entries(current.document_issues).filter(([type]) => !replacedTypes.has(type)));
+        if (Object.keys(remaining).length !== Object.keys(current.document_issues).length) {
+          await supabase.from('tpl_partners').update({ document_issues: Object.keys(remaining).length > 0 ? remaining : null }).eq('id', id);
+        }
+      }
+    }
+
+    if (!asStaff && (wasRejected || current.document_issues || current.field_issues)) {
+      try {
+        await notificationService.notifyStaff(
+          '3PL partner updated application',
+          `${current.company_name} updated their application details / documents for review.`,
+          'tpl_update',
+          { partner_id: current.id },
+          PLATFORM,
+        );
+      } catch (e) {
+        console.error('[tpl] Update notification failed:', e);
       }
     }
 
@@ -506,23 +597,49 @@ export const tplService = {
     throw new HttpError(409, refusal(String(existing.status)));
   },
 
+  /** Tells an approved applicant with a linked (Google) account that they can start accepting loads. Never throws. */
+  async emailApprovedLogin(partner: { email?: string | null; company_name?: string | null }) {
+    if (!partner.email) return;
+    const link = `${settings.WEB_APP_URL}/login`;
+    try {
+      await emailService.send(
+        partner.email,
+        'MargixIndia: your 3PL application was approved',
+        `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+            <h2 style="color: #8C6600;">MargixIndia 3PL Network</h2>
+            <p>Hello ${escapeHtml(partner.company_name ?? '')},</p>
+            <p>Your 3PL partner application has been approved. Sign in with Google to open your partner portal and start receiving load offers.</p>
+            <p style="margin: 24px 0;"><a href="${escapeHtml(link)}" style="background-color: #8C6600; color: #ffffff; padding: 12px 20px; border-radius: 8px; text-decoration: none;">Sign in to my portal</a></p>
+          </div>
+        `,
+      );
+    } catch (e) {
+      console.error('[tpl] Approval email (linked account) failed:', e);
+    }
+  },
+
   /** Tells an approved applicant to set up their sign-in; the page sends the code and takes the password. Never throws. */
   async emailApproval(partner: { email?: string | null; company_name?: string | null }) {
     if (!partner.email) return;
     const link = `${settings.WEB_APP_URL}/3pl/onboard/setup?email=${encodeURIComponent(partner.email)}`;
-    await emailService.send(
-      partner.email,
-      'MargixIndia: your 3PL application was approved',
-      `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-          <h2 style="color: #8C6600;">MargixIndia 3PL Network</h2>
-          <p>Hello ${escapeHtml(partner.company_name ?? '')},</p>
-          <p>Your 3PL partner application has been approved. Set up your password to open your partner portal and start receiving load offers.</p>
-          <p style="margin: 24px 0;"><a href="${escapeHtml(link)}" style="background-color: #8C6600; color: #ffffff; padding: 12px 20px; border-radius: 8px; text-decoration: none;">Set up my account</a></p>
-          <p style="font-size: 12px; color: #666;">We will email you a 6-digit code on that page to confirm it is you. If the button does not work, copy this address into your browser: ${escapeHtml(link)}</p>
-        </div>
-      `,
-    );
+    try {
+      await emailService.send(
+        partner.email,
+        'MargixIndia: your 3PL application was approved',
+        `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+            <h2 style="color: #8C6600;">MargixIndia 3PL Network</h2>
+            <p>Hello ${escapeHtml(partner.company_name ?? '')},</p>
+            <p>Your 3PL partner application has been approved. Set up your password to open your partner portal and start receiving load offers.</p>
+            <p style="margin: 24px 0;"><a href="${escapeHtml(link)}" style="background-color: #8C6600; color: #ffffff; padding: 12px 20px; border-radius: 8px; text-decoration: none;">Set up my account</a></p>
+            <p style="font-size: 12px; color: #666;">We will email you a 6-digit code on that page to confirm it is you. If the button does not work, copy this address into your browser: ${escapeHtml(link)}</p>
+          </div>
+        `,
+      );
+    } catch (e) {
+      console.error('[tpl] Approval email (setup link) failed:', e);
+    }
   },
 
   /**
@@ -537,9 +654,36 @@ export const tplService = {
       .maybeSingle();
     if (fetchErr) throw new Error(`Failed to fetch partner: ${fetchErr.message}`);
     if (!partner) throw new HttpError(404, 'Partner not found');
+    if (partner.document_issues && Object.keys(partner.document_issues).length > 0) {
+      throw new HttpError(409, 'This application still has a flagged document waiting on the applicant to fix');
+    }
+    if (partner.field_issues && Object.keys(partner.field_issues).length > 0) {
+      throw new HttpError(409, 'This application still has flagged details waiting on the applicant to fix');
+    }
 
     const updates = partner.pending_updates;
-    const partnerUpdates: Record<string, unknown> = { status: 'active', pending_updates: null, rejection_reason: null };
+    const isQuick = !!partner.fleet_size;
+    // Flow 1 (Self Onboard): Applicant enters complete business & compliance details upfront, so
+    // we validate that compliance fields and documents are completed before activation.
+    // Flow 2 (Quick Onboard): Applicant enters initial contact & fleet details; staff approves and
+    // connects with them, after which compliance details are completed by the partner or entered
+    // manually by staff console.
+    if (!updates && !isQuick) {
+      const missing: string[] = [];
+      if (!partner.pan_number) missing.push('PAN');
+      if (!partner.bank_account_no || !partner.bank_ifsc) missing.push('bank details');
+      if (!partner.entity_type) missing.push('entity type');
+      if (!partner.authorized_signatory_name) missing.push('authorized signatory name');
+      if (entityTypeRequiresCin(partner.entity_type) && !partner.cin) missing.push('CIN');
+      const { count: docCount, error: docCountErr } = await supabase.from('tpl_documents').select('id', { count: 'exact', head: true }).eq('partner_id', id);
+      if (docCountErr) throw new Error(`Failed to count documents: ${docCountErr.message}`);
+      if (!docCount) missing.push('documents');
+      if (missing.length > 0) throw new HttpError(409, `This application is still missing: ${missing.join(', ')}`);
+    }
+    const partnerUpdates: Record<string, unknown> = { status: 'active', pending_updates: null, rejection_reason: null, document_issues: null, field_issues: null };
+    if (!partner.custom_id) {
+      partnerUpdates.custom_id = await generateUniqueCustomId(partner.company_name);
+    }
     if (updates) {
       if (updates.sla_commitment) partnerUpdates.sla_commitment = updates.sla_commitment;
       if (updates.tax_treatment) partnerUpdates.tax_treatment = updates.tax_treatment;
@@ -606,9 +750,13 @@ export const tplService = {
       console.error('[tpl] Error syncing user role on approve:', e);
     }
 
-    // A first-time applicant who hasn't set their password yet gets the setup link.
-    // Quick-onboarded partners already received credentials in onboard(), so skip.
-    if (!updates && !partner.user_id && !updatedPartner.user_id) await this.emailApproval(partner);
+    // A first-time approval always gets exactly one email: a linked (Google) account is told it can sign in now;
+    // an application with no linked account yet (e.g. staff-created, or an applicant who never signed in) gets a
+    // password-setup link instead.
+    if (!updates) {
+      if (updatedPartner.user_id) await this.emailApprovedLogin(updatedPartner);
+      else await this.emailApproval(partner);
+    }
     await auditService.record('staff-console', actor, 'tpl_approved', { partner_id: id, company_name: updatedPartner.company_name, profile_update: Boolean(updates) });
     return updatedPartner;
   },
@@ -647,6 +795,58 @@ export const tplService = {
   },
 
   /**
+   * Flag specific documents on a pending application, each with its own reason, instead of rejecting
+   * the whole thing. The application stays pending (the applicant's existing edit flow already handles
+   * replacing a document); the flag on a document clears the moment it is replaced or the applicant
+   * resubmits the whole form.
+   */
+  async flagDocuments(id: string, issues: unknown, actor: AuditActor) {
+    const { data: partner, error: fetchErr } = await supabase
+      .from('tpl_partners').select('id, status, company_name, document_issues, user_id').eq('id', id).maybeSingle();
+    if (fetchErr) throw new Error(`Failed to fetch partner: ${fetchErr.message}`);
+    if (!partner) throw new HttpError(404, 'Application not found');
+    if (partner.status !== 'pending') throw new HttpError(409, 'Documents can be flagged only while the application is waiting for review');
+
+    const flagged = assertFlagDocuments(issues, TPL_DOCUMENT_TYPES);
+    const merged = { ...(partner.document_issues ?? {}), ...flagged };
+    const { data: updated, error } = await supabase.from('tpl_partners')
+      .update({ document_issues: merged })
+      .eq('id', id).eq('status', 'pending').select().maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!updated) throw new HttpError(409, 'Documents can be flagged only while the application is waiting for review');
+
+    const list = Object.entries(flagged).map(([type, reason]) => `${type}: ${reason}`).join('; ');
+    await this.notifyPartner(partner, 'A document needs fixing', `We need you to fix the following before we can review your application: ${list}`, 'tpl_document_flagged', id);
+    await auditService.record('staff-console', actor, 'tpl_document_flagged', { partner_id: id, company_name: partner.company_name, issues: flagged });
+    return updated;
+  },
+
+  /**
+   * Flag specific application details on a pending application (PAN, GSTIN, Company Name, Bank details, etc.)
+   * with individual revision reasons.
+   */
+  async flagDetails(id: string, issues: unknown, actor: AuditActor) {
+    const { data: partner, error: fetchErr } = await supabase
+      .from('tpl_partners').select('id, status, company_name, field_issues, user_id').eq('id', id).maybeSingle();
+    if (fetchErr) throw new Error(`Failed to fetch partner: ${fetchErr.message}`);
+    if (!partner) throw new HttpError(404, 'Application not found');
+    if (partner.status !== 'pending') throw new HttpError(409, 'Details can be flagged only while the application is waiting for review');
+
+    const flagged = assertFlagDetails(issues);
+    const merged = { ...(partner.field_issues ?? {}), ...flagged };
+    const { data: updated, error } = await supabase.from('tpl_partners')
+      .update({ field_issues: merged })
+      .eq('id', id).eq('status', 'pending').select().maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!updated) throw new HttpError(409, 'Details can be flagged only while the application is waiting for review');
+
+    const list = Object.entries(flagged).map(([field, reason]) => `${TPL_FIELD_LABELS[field] || field}: ${reason}`).join('; ');
+    await this.notifyPartner(partner, 'Application details need correction', `We need you to fix the following details before we can review your application: ${list}`, 'tpl_details_flagged', id);
+    await auditService.record('staff-console', actor, 'tpl_details_flagged', { partner_id: id, company_name: partner.company_name, issues: flagged });
+    return updated;
+  },
+
+  /**
    * Activate a 3PL partner (Called when they set their password)
    */
   async activate(id: string, userId: string) {
@@ -667,7 +867,7 @@ export const tplService = {
   async getPartnerByUserId(userId: string) {
     let { data, error } = await supabase
       .from('tpl_partners')
-      .select('id, user_id, status, email')
+      .select('id, custom_id, user_id, status, email')
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -677,7 +877,7 @@ export const tplService = {
       if (email) {
         const { data: byEmail } = await supabase
           .from('tpl_partners')
-          .select('id, user_id, status, email')
+          .select('id, custom_id, user_id, status, email')
           .ilike('email', email)
           .maybeSingle();
         if (byEmail) {
@@ -745,10 +945,19 @@ export const tplService = {
    * path is checked here. An active partner goes back to review (operations
    * pause until staff approve again) and staff are told.
    */
-  async replaceDocument(partnerId: string, docId: string, path: unknown, actor: AuditActor) {
+  /**
+   * Swaps one of the partner's documents for a freshly uploaded file - e.g. a renewed PAN Card scan
+   * once the old one expires. The partner doing this themselves goes back to review (`asStaff: false`,
+   * the original behaviour): a change to a compliance document always gets a second look. Staff doing
+   * it on the partner's behalf (`asStaff: true`) - the gap this was added to close: a platform owner
+   * had no way to update an active partner's documents at all - skips both the ownership check and the
+   * review demotion, since staff is already the one who would have reviewed it.
+   */
+  async replaceDocument(partnerId: string, docId: string, path: unknown, actor: AuditActor, asStaff = false) {
     const partner = await this.getPartner(partnerId);
-    if (partner.user_id !== actor.user_id) throw new HttpError(403, 'Not authorized');
-    if (!['active', 'pending'].includes(partner.status)) {
+    if (!asStaff && partner.user_id !== actor.user_id) throw new HttpError(403, 'Not authorized');
+    const allowedStatuses = asStaff ? ['active', 'pending', 'paused', 'rejected'] : ['active', 'pending'];
+    if (!allowedStatuses.includes(partner.status)) {
       throw new HttpError(409, `Your account is ${partner.status}. Contact support before changing documents.`);
     }
     const documents = (partner.tpl_documents ?? []) as { id: string; doc_type: string; file_url: string }[];
@@ -762,22 +971,39 @@ export const tplService = {
     const { error } = await supabase.from('tpl_documents').update({ file_url: path, uploaded_at: uploadedAt }).eq('id', docId).eq('partner_id', partner.id);
     if (error) throw new Error(`Failed to update document: ${error.message}`);
 
-    if (partner.status === 'active') {
+    if (!asStaff && partner.status === 'active') {
       await this.transition(partner.id, ['active'], { status: 'pending' }, status => `Your account is ${status}.`);
     }
-    try {
-      await notificationService.notifyStaff(
-        '3PL partner changed a document',
-        `${partner.company_name} replaced its ${doc.doc_type} and needs a new review.`,
-        'tpl_update',
-        { partner_id: partner.id },
-        PLATFORM,
-      );
-    } catch (e) {
-      console.error('[tpl] Document notification failed:', e);
+    if (asStaff) {
+      // No account yet (e.g. a staff-entered application never signed in) - nobody to tell.
+      if (partner.user_id) {
+        try {
+          await notificationService.sendNotification(
+            partner.user_id,
+            'A document was updated',
+            `Staff replaced your ${doc.doc_type}.`,
+            'tpl_update',
+            { partner_id: partner.id },
+          );
+        } catch (e) {
+          console.error('[tpl] Document notification failed:', e);
+        }
+      }
+    } else {
+      try {
+        await notificationService.notifyStaff(
+          '3PL partner changed a document',
+          `${partner.company_name} replaced its ${doc.doc_type} and needs a new review.`,
+          'tpl_update',
+          { partner_id: partner.id },
+          PLATFORM,
+        );
+      } catch (e) {
+        console.error('[tpl] Document notification failed:', e);
+      }
     }
-    await auditService.record('partner-portal', actor, 'tpl_document_replaced', { partner_id: partner.id, doc_type: doc.doc_type });
-    return { id: docId, file_url: path, uploaded_at: uploadedAt, status: 'pending' as const };
+    await auditService.record('partner-portal', actor, 'tpl_document_replaced', { partner_id: partner.id, doc_type: doc.doc_type, as_staff: asStaff });
+    return { id: docId, file_url: path, uploaded_at: uploadedAt, status: (!asStaff && partner.status === 'active') ? 'pending' as const : partner.status };
   },
 
   /**
@@ -894,7 +1120,17 @@ export const tplService = {
 
     const { data: existing } = await supabase.from('users').select('id').eq('email', email).maybeSingle();
     if (existing) {
-      throw new HttpError(409, 'An account with this email already exists. Please contact support to link it.');
+      const { error: pwdErr } = await supabase.auth.admin.updateUserById(existing.id, {
+        password,
+        app_metadata: { role: 'vendor' },
+        user_metadata: { role: 'vendor', full_name: partner.company_name },
+      });
+      if (pwdErr) throw new Error(`Password update failed: ${pwdErr.message}`);
+
+      await supabase.from('users').update({ role: 'vendor', is_active: true }).eq('id', existing.id);
+      invalidateRoleCache(existing.id);
+      await this.activate(partner.id, existing.id);
+      return true;
     }
 
     const { data: created, error: createErr } = await supabase.auth.admin.createUser({
@@ -906,6 +1142,26 @@ export const tplService = {
     });
     if (createErr || !created.user) {
       if (createErr && /already (been )?registered|exists/i.test(createErr.message)) {
+        const authUser = await findAuthUserByEmail(email);
+        if (authUser) {
+          const { error: pwdErr } = await supabase.auth.admin.updateUserById(authUser.id, {
+            password,
+            app_metadata: { role: 'vendor' },
+            user_metadata: { role: 'vendor', full_name: partner.company_name },
+          });
+          if (pwdErr) throw new Error(`Password update failed: ${pwdErr.message}`);
+
+          await supabase.from('users').upsert({
+            id: authUser.id,
+            email,
+            full_name: partner.company_name,
+            role: 'vendor',
+            is_active: true,
+          }, { onConflict: 'id' });
+          invalidateRoleCache(authUser.id);
+          await this.activate(partner.id, authUser.id);
+          return true;
+        }
         throw new HttpError(409, 'An account with this email already exists. Please contact support to link it.');
       }
       throw new Error(`Account creation failed: ${createErr?.message}`);
@@ -916,6 +1172,7 @@ export const tplService = {
       email,
       full_name: partner.company_name,
       role: 'vendor',
+      is_active: true,
     });
     if (upsertErr) throw new Error(`Failed to create user profile: ${upsertErr.message}`);
 

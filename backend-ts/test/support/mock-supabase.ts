@@ -595,7 +595,12 @@ class MockSupabase {
           return send(405, { message: `Unsupported method ${req.method}` });
       }
 
-      res.setHeader('Content-Range', result.length ? `0-${result.length - 1}/${result.length}` : '*/0');
+      // A GET/HEAD result can be a `limit`/`offset` slice of `matching`: the total after the slash is the
+      // count PostgREST would report for `count: 'exact'` - every matching row, not just the page back.
+      const isRead = req.method === 'GET' || req.method === 'HEAD';
+      const total = isRead ? matching.length : result.length;
+      const readOffset = isRead ? Number(url.searchParams.get('offset') ?? 0) : 0;
+      res.setHeader('Content-Range', result.length ? `${readOffset}-${readOffset + result.length - 1}/${total}` : `*/${total}`);
       if (req.method === 'HEAD') return send(200);
 
       // .single() asks PostgREST for exactly one row as a bare object

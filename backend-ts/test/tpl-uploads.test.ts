@@ -12,6 +12,7 @@ const PARTNER = {
   company_name: 'Acme',
   status: 'pending',
   email: 'ops@acme.in',
+  phone: '9876543210',
   pan_number: 'ABCDE1234F',
   user_id: 'partner-user',
   tpl_corridors: [],
@@ -99,16 +100,24 @@ describe('POST /tpl/applications/upload-url', () => {
       expect(supabaseMock.signedUploads).toEqual([]);
     });
 
-    it('refuses PAN-only uploads once the application is no longer pending', async () => {
+    it('refuses PAN-only uploads once the application is no longer pending or rejected', async () => {
       supabaseMock.rows('tpl_partners')[0].status = 'approved';
       expect((await uploadUrl({ ...existing, verify_pan: 'ABCDE1234F' })).status).toBe(409);
+    });
+
+    it('lets the applicant upload a replacement while the application is rejected, to fix and resubmit', async () => {
+      supabaseMock.rows('tpl_partners')[0].status = 'rejected';
+      const res = await uploadUrl({ ...existing, verify_pan: 'ABCDE1234F' });
+      expect(res.status).toBe(200);
+      expect(res.body.path.startsWith(`${PARTNER.id}/`)).toBe(true);
     });
   });
 });
 
 describe('attaching uploaded documents', () => {
   const onboard = (documents: unknown) => request(app).post('/api/v1/tpl/onboard').send({
-    custom_id: 'fresh_3pl', companyName: 'Fresh', email: 'hi@fresh.in', pan: 'FGHIJ5678K', gst: '27FGHIJ5678K1Z1', documents,
+    custom_id: 'fresh_3pl', companyName: 'Fresh', contactName: 'Fresh Contact', email: 'hi@fresh.in', pan: 'FGHIJ5678K', gst: '27FGHIJ5678K1Z1',
+    entityType: 'Proprietorship', authorizedSignatoryName: 'Fresh Contact', documents,
   });
 
   it('accepts documents from the application\'s own upload folder', async () => {
@@ -188,6 +197,108 @@ describe('attaching uploaded documents', () => {
     expect(res.status).toBe(200);
     expect(supabaseMock.rows('tpl_documents').filter(d => d.partner_id === PARTNER.id)).toHaveLength(0);
   });
+
+  it('clears a flagged document the moment it is replaced, without touching other flags', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'partner-user', role: 'vendor', is_active: true }],
+      vendor_profiles: [],
+      tpl_partners: [{ ...PARTNER, document_issues: { 'PAN Card': 'Blurry scan', 'GST Certificate': 'Expired' } }],
+      tpl_documents: [{ id: 'doc-1', partner_id: PARTNER.id, file_url: 'acme_3pl/pan_card_old.pdf', doc_type: 'PAN Card' }],
+      tpl_corridors: [],
+    });
+    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`).send({
+      verify_pan: 'ABCDE1234F',
+      documents: [{ type: 'PAN Card', url: `${PARTNER.id}/pan_card_new.pdf` }],
+    });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].document_issues).toEqual({ 'GST Certificate': 'Expired' });
+  });
+
+  it('resubmitting a rejected application puts it back to pending and clears the reason and every flag', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'partner-user', role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
+      vendor_profiles: [],
+      tpl_partners: [{ ...PARTNER, status: 'rejected', rejection_reason: 'PAN mismatch', document_issues: { 'PAN Card': 'Blurry scan' } }],
+      tpl_documents: [{ id: 'doc-1', partner_id: PARTNER.id, file_url: 'acme_3pl/pan_card_old.pdf', doc_type: 'PAN Card' }],
+      tpl_corridors: [],
+    });
+    // Staff auth, not verify_pan: the PAN check has its own rate limit, already exercised above in this file.
+    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`)
+      .set('Authorization', `Bearer ${supabaseMock.signUserToken('super-1')}`)
+      .send({
+        companyName: 'Acme',
+        documents: [{ type: 'PAN Card', url: `${PARTNER.id}/pan_card_new.pdf` }],
+      });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0]).toMatchObject({ status: 'pending', rejection_reason: null, document_issues: null });
+  });
+
+  it('lets a rejected applicant fix non-document details (PAN, GSTIN, bank, SLA, tax) and resubmits', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'partner-user', role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
+      vendor_profiles: [],
+      tpl_partners: [{ ...PARTNER, status: 'rejected', rejection_reason: "PAN name doesn't match GSTIN", contact_name: 'Old Contact' }],
+      tpl_documents: [{ id: 'doc-1', partner_id: PARTNER.id, file_url: 'acme_3pl/pan_card_old.pdf', doc_type: 'PAN Card' }],
+      tpl_corridors: [],
+    });
+    // Staff auth, not verify_pan: the PAN check has its own rate limit, already exercised above in this file.
+    const res = await request(app).patch(`/api/v1/tpl/${PARTNER.id}`)
+      .set('Authorization', `Bearer ${supabaseMock.signUserToken('super-1')}`)
+      .send({
+        companyName: 'Acme Logistics Pvt Ltd',
+        contactName: 'New Contact',
+        pan: 'ABCDE1234F',
+        gst: '27ABCDE1234F1Z0',
+        bankAccount: '123456789012',
+        bankIfsc: 'HDFC0001234',
+        slaCommitment: '4 Hours',
+        taxTreatment: '5% GTA (No ITC) - Reverse Charge',
+      });
+    expect(res.status).toBe(200);
+    const row = supabaseMock.rows('tpl_partners')[0];
+    expect(row).toMatchObject({
+      status: 'pending',
+      rejection_reason: null,
+      company_name: 'Acme Logistics Pvt Ltd',
+      contact_name: 'New Contact',
+      gstin: '27ABCDE1234F1Z0',
+      sla_commitment: '4 Hours',
+      tax_treatment: '5% GTA (No ITC) - Reverse Charge',
+    });
+  });
+
+  it('lets staff edit an active or paused application, not just pending/rejected', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'partner-user', role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
+      vendor_profiles: [],
+      tpl_partners: [{ ...PARTNER, status: 'active' }],
+      tpl_documents: [],
+      tpl_corridors: [],
+    });
+    // Staff auth, not verify_pan: the PAN check has its own rate limit, already exercised above in this file.
+    const patch = (body: Record<string, unknown>) => request(app).patch(`/api/v1/tpl/${PARTNER.id}`)
+      .set('Authorization', `Bearer ${supabaseMock.signUserToken('super-1')}`).send(body);
+    expect((await patch({ companyName: 'Acme Renamed' })).status).toBe(200);
+
+    supabaseMock.rows('tpl_partners')[0].status = 'paused';
+    expect((await patch({ companyName: 'Acme' })).status).toBe(200);
+  });
+
+  it('lets the applicant\'s own session edit their active application, but not once it is paused', async () => {
+    supabaseMock.reset({
+      users: [{ id: 'partner-user', role: 'vendor', is_active: true }],
+      vendor_profiles: [],
+      tpl_partners: [{ ...PARTNER, status: 'active' }],
+      tpl_documents: [],
+      tpl_corridors: [],
+    });
+    const patch = (body: Record<string, unknown>) => request(app).patch(`/api/v1/tpl/${PARTNER.id}`)
+      .set('Authorization', `Bearer ${supabaseMock.signUserToken('partner-user')}`).send(body);
+    expect((await patch({ companyName: 'Acme Renamed' })).status).toBe(200);
+
+    supabaseMock.rows('tpl_partners')[0].status = 'paused';
+    expect((await patch({ companyName: 'Acme' })).status).toBe(409);
+  });
 });
 
 // Last in the file: it uses up this client's hourly allowance
@@ -204,9 +315,42 @@ describe('upload URL rate limit', () => {
 describe('3PL applicant phone', () => {
   it('rejects a phone number that is not a 10-digit Indian mobile', async () => {
     const res = await request(app).post('/api/v1/tpl/onboard').send({
-      companyName: 'Acme Logistics', email: 'new-partner@acme.in', pan: 'ABCDE1234F', gst: '27ABCDE1234F1Z0', phone: '12345',
+      companyName: 'Acme Logistics', contactName: 'New Contact', email: 'new-partner@acme.in', pan: 'ABCDE1234F', gst: '27ABCDE1234F1Z0', phone: '12345',
+      entityType: 'Proprietorship', authorizedSignatoryName: 'New Contact',
     });
     expect(res.status).toBe(400);
     expect(res.body.detail ?? res.body.error).toMatch(/mobile/i);
+  });
+
+  it('rejects a mobile number already on another application, the same as a duplicate email', async () => {
+    const res = await request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Acme Logistics', contactName: 'New Contact', email: 'new-partner@acme.in', pan: 'ABCDE1234F', gst: '27ABCDE1234F1Z0', phone: '9876543210',
+      entityType: 'Proprietorship', authorizedSignatoryName: 'New Contact',
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.detail ?? res.body.error).toMatch(/mobile number already exists/i);
+  });
+});
+
+describe('POST /tpl/check-availability', () => {
+  const check = (field: string, value: unknown) => request(app).post('/api/v1/tpl/check-availability').send({ field, value });
+
+  it('flags an email or phone already on an application', async () => {
+    expect((await check('email', 'ops@acme.in')).body).toEqual({ taken: true });
+    expect((await check('phone', '9876543210')).body).toEqual({ taken: true });
+  });
+
+  it('says an unused email or phone is free', async () => {
+    expect((await check('email', 'fresh@example.com')).body).toEqual({ taken: false });
+    expect((await check('phone', '9000000000')).body).toEqual({ taken: false });
+  });
+
+  it('is quiet about a value that is not even a valid email or phone yet - nothing to flag mid-type', async () => {
+    expect((await check('email', 'still-typin')).body).toEqual({ taken: false });
+    expect((await check('phone', '987')).body).toEqual({ taken: false });
+  });
+
+  it('rejects an unknown field', async () => {
+    expect((await check('username', 'x')).status).toBe(400);
   });
 });

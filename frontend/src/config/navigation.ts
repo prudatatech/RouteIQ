@@ -1,5 +1,5 @@
 import {
-  BarChart3, Banknote, CalendarCheck, Inbox, MapPinned, Package, Route, Settings, Truck, Users, Waypoints, type LucideIcon,
+  Banknote, CalendarCheck, Inbox, MapPinned, Route, Settings, Truck, Users, Waypoints, type LucideIcon,
   ClipboardList, Building2,
 } from 'lucide-react'
 
@@ -44,9 +44,14 @@ const everyone: StaffRole[] = ['admin', 'superadmin', 'manager']
 const moneyAndReports: StaffRole[] = ['admin', 'superadmin', 'finance']
 
 /**
- * The staff menu: eleven sections in the order the work happens (docs/workflow-blueprint.html).
- * Managers see the operations sections only: no Money, Reports, Settings, KYC or 3PL. The finance
- * role sees only Money and Reports: no operations, Settings, KYC or 3PL.
+ * The staff menu: nine sections in the order the work happens (docs/workflow-blueprint.html).
+ * Managers see the operations sections only: no Money, Settings, KYC or 3PL. The finance role sees
+ * only Money: no operations, Settings, KYC or 3PL.
+ *
+ * Shipments and Reports used to be their own top-level sections; both moved under the section their
+ * work belongs to (Dispatch, Money) once the menu reached eleven top-level entries - a shipment is
+ * dispatch work and Analytics/Insights are both ways to look at the same money/fleet numbers Money
+ * already covers. Neither page moved; only where the menu points to them changed.
  */
 export const navSections: NavSection[] = [
   {
@@ -60,15 +65,16 @@ export const navSections: NavSection[] = [
       { to: '/vendor-requests', label: 'Vendor loads', roles: everyone, badge: 'vendorLoads' },
     ],
   },
-  { to: '/shipments', label: 'Shipments', icon: Package, roles: everyone, children: [] },
   {
     to: '/dispatch', label: 'Dispatch', icon: Route, roles: everyone, badge: 'dispatch',
+    also: ['/shipments'],
     children: [
       { to: '/dispatch?tab=needs-vehicle', label: 'Needs a vehicle', roles: everyone, badge: 'needsVehicle' },
       { to: '/routes?status=pending', label: 'Trips to send', roles: everyone, badge: 'tripsToSend' },
       { to: '/routes', label: 'All trips', roles: everyone },
-      { to: '/route-planner', label: 'Plan a trip', roles: everyone },
-      { to: '/optimize', label: 'Optimize', roles: everyone },
+      { to: '/shipments', label: 'All shipments', roles: everyone },
+      { to: '/route-planner', label: 'Plan a trip by hand', roles: everyone },
+      { to: '/optimize', label: 'Auto-assign trips', roles: everyone },
     ],
   },
   {
@@ -101,24 +107,21 @@ export const navSections: NavSection[] = [
       { to: '/return-trips', label: 'Open return trips', roles: admins },
       { to: '/return-trips?tab=bids', label: 'Bids to decide', roles: admins, badge: 'bids' },
       { to: '/return-trips?tab=pool', label: 'Combine loads', roles: admins },
-      { to: '/return-trips?tab=partners', label: '3PL partners', roles: admins, badge: 'pendingPartners' },
+      // 3PL applications are the platform's to review (ReturnTripsPage only renders this tab for a
+      // superadmin); a company admin would otherwise see the link and its badge with nothing behind it.
+      { to: '/return-trips?tab=partners', label: '3PL partners', roles: superadmin, badge: 'pendingPartners' },
     ],
   },
   {
     to: '/money', label: 'Money', icon: Banknote, roles: moneyAndReports, badge: 'money',
     // Old claim links and notifications still open /cargo?tab=claims: keep Money lit for them
-    also: ['/cargo?tab=claims'],
+    also: ['/cargo?tab=claims', '/analytics', '/insights'],
     children: [
       { to: '/money', label: 'To price', roles: moneyAndReports, badge: 'money' },
       { to: '/money?tab=invoices', label: 'Invoices', roles: moneyAndReports, alsoMatch: ['/money/invoices'] },
       { to: '/money?tab=driver-pay', label: 'Driver pay', roles: moneyAndReports },
       { to: '/money?tab=expenses', label: 'Expenses', roles: moneyAndReports },
       { to: '/money?tab=claims', label: 'Claims', roles: moneyAndReports },
-    ],
-  },
-  {
-    to: '/analytics', label: 'Reports', icon: BarChart3, roles: moneyAndReports,
-    children: [
       { to: '/analytics', label: 'Analytics', roles: moneyAndReports },
       { to: '/insights', label: 'Insights', roles: moneyAndReports },
     ],
@@ -137,10 +140,15 @@ export const navSections: NavSection[] = [
 /** The platform owner's section. Shown only while acting as the platform organisation. */
 export const platformSection: NavSection = {
   to: '/platform/organisations', label: 'Platform', icon: Building2, roles: admins, badge: 'pendingOrgs',
+  also: ['/3pl-partners'],
   children: [
     { to: '/platform/organisations', label: 'Organisations', roles: admins, badge: 'pendingOrgs' },
     // Vendor verification is the platform's, not a company's (docs/platform-model.md)
     { to: '/admin/kyc', label: 'KYC review', roles: admins, badge: 'kyc' },
+    // Was only reachable from the Return trips section, which the platform menu drops entirely
+    // (the platform owns no fleet or shipments) - leaving no menu path to 3PL review at all while
+    // acting as the platform. ReturnTripsPage only renders this tab for a superadmin.
+    { to: '/return-trips?tab=partners', label: '3PL partners', roles: superadmin, badge: 'pendingPartners' },
   ],
 }
 
@@ -200,7 +208,7 @@ export interface QueueCounts {
   sos?: { count: number }
   problems?: { count: number; overdue: number }
   requests?: { count: number; bookings: number; vendor_loads: number }
-  needs_vehicle?: { count: number }
+  needs_vehicle?: { count: number; shipments?: number; vendor_loads?: number }
   trips_to_send?: { count: number }
   vehicle_requests?: { count: number }
   pending_vehicles?: { count: number }
@@ -216,7 +224,11 @@ export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners:
   const n = (q?: { count: number }) => q?.count ?? 0
   const sos = n(queues?.sos)
   const problems = n(queues?.problems)
-  const needsVehicle = n(queues?.needs_vehicle)
+  // Dispatch's "Needs a vehicle" tab lists shipments only (components/dispatch/logic.ts); a vendor load
+  // that is accepted and needs one is actioned from the Requests page instead, so each badge counts only
+  // what its own page shows, not the combined total GET /ops/today keeps for Today's queue card.
+  const needsVehicleShipments = queues?.needs_vehicle?.shipments ?? 0
+  const needsVehicleVendorLoads = queues?.needs_vehicle?.vendor_loads ?? 0
   const tripsToSend = n(queues?.trips_to_send)
   const vehicleRequests = n(queues?.vehicle_requests)
   const pendingVehicles = n(queues?.pending_vehicles)
@@ -227,9 +239,9 @@ export function navBadgeCounts(queues: QueueCounts | undefined, pendingPartners:
     today: sos + (queues?.problems?.overdue ?? 0),
     requests: n(queues?.requests),
     bookings: queues?.requests?.bookings ?? 0,
-    vendorLoads: queues?.requests?.vendor_loads ?? 0,
-    dispatch: needsVehicle + tripsToSend,
-    needsVehicle,
+    vendorLoads: (queues?.requests?.vendor_loads ?? 0) + needsVehicleVendorLoads,
+    dispatch: needsVehicleShipments + tripsToSend,
+    needsVehicle: needsVehicleShipments,
     tripsToSend,
     onTheRoad: sos + problems,
     problems,

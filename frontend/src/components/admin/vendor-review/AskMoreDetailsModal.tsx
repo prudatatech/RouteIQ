@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { Button, Input, Modal, Select, Textarea } from '@/components/ui'
 import type { InfoRequestInput } from './types'
 
@@ -36,7 +37,11 @@ export function AskMoreDetailsModal({ open, vendorName, busy, onClose, onSubmit 
   const update = (i: number, patch: Partial<Row>) => setRows(prev => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)))
   const submit = () => {
     const built = buildRequest(message, rows)
-    if (!built.ok) { setError(built.error); return }
+    if (!built.ok) {
+      setError(built.error)
+      toast.error(built.error)
+      return
+    }
     setError(null)
     onSubmit(built.data)
   }

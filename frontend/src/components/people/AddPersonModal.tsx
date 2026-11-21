@@ -112,11 +112,19 @@ export function AddPersonModal({ open, onClose }: { open: boolean; onClose: () =
       if (!isDriver && !isEmail(email)) e.email = 'Enter a valid work email.'
       if (phoneE164 && dup.matches.length > 0) e.phone = 'This number already belongs to someone on file.'
       setErrors(e)
-      if (Object.keys(e).length === 0) setStep('employment')
+      if (Object.keys(e).length === 0) {
+        setStep('employment')
+      } else {
+        toast.error(Object.values(e)[0])
+      }
       return
     }
     if (step === 'employment') {
-      if (isDriver && employer === 'partner' && !partnerId) { setErrors({ partner: 'Choose the partner.' }); return }
+      if (isDriver && employer === 'partner' && !partnerId) {
+        setErrors({ partner: 'Choose the partner.' })
+        toast.error('Choose the partner.')
+        return
+      }
       setErrors({})
       create.mutate()
     }

@@ -62,31 +62,31 @@ interface DriverActionRow {
 /** One row of a "needs attention" list. */
 function AttentionRow({ item }: { item: AttentionItem }) {
   return (
-        <div className="flex items-start gap-3 px-4 py-3">
-          <span
-            className={clsx(
-              'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
-              ['delay', 'idle', 'licence-expiring', 'documents'].includes(item.kind) ? 'bg-warning-soft text-warning' : 'bg-danger-soft text-danger',
-            )}
-            aria-hidden="true"
-          >
-            {item.kind === 'licence-expired' || item.kind === 'licence-expiring' || item.kind === 'documents'
-              ? <FileWarning size={16} />
-              : item.kind === 'alarm' ? <AlertCircle size={16} />
-              : item.kind === 'offline' ? <WifiOff size={16} />
-              : item.kind === 'delay' ? <Clock size={16} /> : <Truck size={16} />}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-text">{item.title}</p>
-            <p className="mt-0.5 break-words text-xs text-muted">{item.subtitle}</p>
-            {item.time && <p className="mt-0.5 text-xs text-muted">{item.time}</p>}
-          </div>
-          <div className="flex shrink-0 flex-col items-end">
-            {item.actions.map(a => (
-              <Button key={a.label} variant="ghost" size="sm" onClick={a.onClick}>{a.label}</Button>
-            ))}
-          </div>
-        </div>
+    <div className="flex items-start gap-3 px-4 py-3 hover:bg-surface-subtle/50 transition-colors">
+      <span
+        className={clsx(
+          'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control shadow-xs',
+          ['delay', 'idle', 'licence-expiring', 'documents'].includes(item.kind) ? 'bg-warning-soft text-warning' : 'bg-danger-soft text-danger',
+        )}
+        aria-hidden="true"
+      >
+        {item.kind === 'licence-expired' || item.kind === 'licence-expiring' || item.kind === 'documents'
+          ? <FileWarning size={16} />
+          : item.kind === 'alarm' ? <AlertCircle size={16} />
+          : item.kind === 'offline' ? <WifiOff size={16} />
+          : item.kind === 'delay' ? <Clock size={16} /> : <Truck size={16} />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-text">{item.title}</p>
+        <p className="mt-0.5 break-words text-xs text-muted leading-relaxed">{item.subtitle}</p>
+        {item.time && <p className="mt-0.5 text-xs text-muted font-medium">{item.time}</p>}
+      </div>
+      <div className="flex shrink-0 flex-col items-end">
+        {item.actions.map(a => (
+          <Button key={a.label} variant="secondary" size="sm" onClick={a.onClick}>{a.label}</Button>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -107,18 +107,18 @@ function alarmItem(alarms: FleetAlert[], open: () => void): AttentionItem {
 }
 
 const toneStyles: Record<QueueTone, { count: string; ring: string; icon: string }> = {
-  danger: { count: 'text-danger', ring: 'border-danger/40', icon: 'bg-danger-soft text-danger' },
-  warning: { count: 'text-warning', ring: 'border-border', icon: 'bg-warning-soft text-warning' },
-  info: { count: 'text-text', ring: 'border-border', icon: 'bg-info-soft text-info' },
+  danger: { count: 'text-danger', ring: 'border-danger/40 hover:border-danger/60', icon: 'bg-danger-soft text-danger' },
+  warning: { count: 'text-warning', ring: 'border-border hover:border-warning/50', icon: 'bg-warning-soft text-warning' },
+  info: { count: 'text-text', ring: 'border-border hover:border-brand/50', icon: 'bg-info-soft text-info' },
 }
 
 /** One work queue: what is waiting, and the one button that opens exactly that list. */
 function QueueCard({ queue, actions }: { queue: Queue; actions?: React.ReactNode }) {
   const tone = toneStyles[queue.tone]
   return (
-    <li className={clsx('flex flex-col gap-3 rounded-card border bg-surface p-4 sm:p-5', tone.ring)}>
+    <li className={clsx('flex flex-col gap-3 rounded-card border bg-surface p-4 sm:p-5 shadow-xs hover:shadow-raised transition-all duration-200', tone.ring)}>
       <div className="flex items-start gap-3">
-        <span className={clsx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full', tone.icon)} aria-hidden="true">
+        <span className={clsx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full shadow-xs', tone.icon)} aria-hidden="true">
           {queue.tone === 'danger' ? <ShieldAlert size={18} /> : queue.tone === 'warning' ? <AlertCircle size={18} /> : <Activity size={18} />}
         </span>
         <div className="min-w-0 flex-1">
@@ -166,30 +166,39 @@ export default function TodayPage() {
     },
   })
 
-  const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery<VehicleRow[]>({
+  const {
+    data: vehicles = [], isLoading: vehiclesLoading, error: vehiclesError, refetch: refetchVehicles,
+  } = useQuery<VehicleRow[]>({
     queryKey: ['vehicles', 'live'],
     queryFn: () => vehiclesAPI.list({ limit: 500 }) as Promise<VehicleRow[]>,
     refetchInterval: 5_000,
   })
 
   // Open fleet alarms (tamper, overspeed, low fuel, GPS lost, ...), the same list as Fleet > Alerts.
-  const { data: fleetAlarms = [] } = useQuery<FleetAlert[]>({
+  const {
+    data: fleetAlarms = [], isLoading: fleetAlarmsLoading, error: fleetAlarmsError, refetch: refetchFleetAlarms,
+  } = useQuery<FleetAlert[]>({
     queryKey: ['fleet-alerts', 'active'],
     queryFn: () => fleetAPI.alerts('active') as Promise<FleetAlert[]>,
     refetchInterval: 30_000,
   })
 
-  const { data: insights = [] } = useQuery<Insight[]>({
+  const {
+    data: insights = [], isLoading: insightsLoading, error: insightsError, refetch: refetchInsights,
+  } = useQuery<Insight[]>({
     queryKey: ['insights'],
     queryFn: () => analyticsAPI.insights() as Promise<Insight[]>,
     refetchInterval: 60_000,
   })
 
+  const isPeopleEligible = role === 'admin' || role === 'superadmin' || role === 'manager'
   // Driver licences and required documents. Optional: the list simply has no rows if the call fails.
-  const { data: peopleAttention } = useQuery({
+  const {
+    data: peopleAttention, isLoading: peopleAttentionLoading, error: peopleAttentionError, refetch: refetchPeopleAttention,
+  } = useQuery({
     queryKey: ['people', 'attention'],
     queryFn: peopleAPI.attention,
-    enabled: role === 'admin' || role === 'superadmin' || role === 'manager',
+    enabled: isPeopleEligible,
     refetchInterval: 5 * 60_000,
     retry: false,
   })
@@ -272,6 +281,15 @@ export default function TodayPage() {
   const fleetItems = attentionItems.filter(i => !PEOPLE_KINDS.includes(i.kind))
   const peopleItems = attentionItems.filter(i => PEOPLE_KINDS.includes(i.kind))
 
+  // "Fleet needs attention" draws on three queries; it is loading or erred if any of them is.
+  const fleetAttentionLoading = vehiclesLoading || fleetAlarmsLoading || insightsLoading
+  const fleetAttentionError = vehiclesError ?? fleetAlarmsError ?? insightsError
+  const retryFleetAttention = () => {
+    refetchVehicles()
+    refetchFleetAlarms()
+    refetchInsights()
+  }
+
   const queues = today.data ? splitQueues(buildQueues(today.data)) : null
   const live = today.data?.live
 
@@ -284,9 +302,12 @@ export default function TodayPage() {
       />
 
       {pendingOrgs !== null && pendingOrgs > 0 && (
-        <Card padded className="flex flex-wrap items-center justify-between gap-3">
+        <Card padded className="flex flex-wrap items-center justify-between gap-3 shadow-xs border-warning/40 bg-warning-soft/10">
           <div>
-            <h2 className="text-sm font-semibold text-text">Companies waiting for approval</h2>
+            <h2 className="text-sm font-semibold text-text flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-warning animate-pulse" />
+              Companies waiting for approval
+            </h2>
             <p className="mt-0.5 text-xs text-muted">New logistics companies cannot start until you approve them.</p>
           </div>
           <div className="flex items-center gap-4">
@@ -297,13 +318,14 @@ export default function TodayPage() {
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Stat label="Active trips" value={live?.active_trips ?? '–'} loading={today.isLoading} icon={<RouteIcon size={18} />} />
+        <Stat label="Active trips" value={live?.active_trips ?? '–'} loading={today.isLoading} icon={<RouteIcon size={18} />} className="shadow-xs hover:shadow-raised transition-all" />
         <Stat
           label="Vehicles on the road"
           value={live?.vehicles_on_road ?? '–'}
           hint={vehiclesLoading ? undefined : `${activeVehicles.length.toLocaleString('en-IN')} tracked, ${liveVehicleCount.toLocaleString('en-IN')} sending a position now`}
           loading={today.isLoading}
           icon={<Truck size={18} />}
+          className="shadow-xs hover:shadow-raised transition-all"
         />
         <Stat
           label="On-time rate"
@@ -311,8 +333,37 @@ export default function TodayPage() {
           hint={typeof live?.on_time_rate_pct === 'number' ? 'Trips completed today' : 'No trips started today'}
           loading={today.isLoading}
           icon={<Clock size={18} />}
+          className="shadow-xs hover:shadow-raised transition-all"
         />
       </div>
+
+      {/* The fleet's own health (alarms, offline vehicles, licences) is the most urgent thing on this page, so it sits right under the headline numbers. */}
+      <Card className="flex flex-col overflow-hidden">
+        <CardHeader
+          title="Fleet needs attention"
+          actions={fleetItems.length > 0 && <StatusPill tone="danger" dot={false}>{fleetItems.length}</StatusPill>}
+        />
+        <div className="max-h-[420px] flex-1 divide-y divide-border overflow-y-auto">
+          {fleetAttentionLoading ? (
+            <div className="space-y-3 p-4" aria-busy="true">
+              {[0, 1, 2].map(i => <Skeleton key={i} className="h-12 rounded-control" />)}
+            </div>
+          ) : fleetAttentionError ? (
+            <ErrorState compact title="We could not load fleet health" description="Check your connection and try again." onRetry={retryFleetAttention} />
+          ) : fleetItems.length === 0 ? (
+            <EmptyState compact icon={<Activity size={22} />} title="All clear" description="No fleet issues need attention right now." />
+          ) : (
+            fleetItems.map(item => <AttentionRow key={item.id} item={item} />)
+          )}
+        </div>
+        {!fleetAttentionLoading && !fleetAttentionError && rerouteCount > 0 && (
+          <div className="border-t border-border px-4 py-3">
+            <Button variant="ghost" size="sm" icon={<RouteIcon size={16} />} onClick={() => navigate('/optimize')}>
+              {rerouteCount.toLocaleString('en-IN')} reroute {rerouteCount === 1 ? 'suggestion' : 'suggestions'}: open Optimize
+            </Button>
+          </div>
+        )}
+      </Card>
 
       {today.isLoading && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3" aria-busy="true">
@@ -335,7 +386,13 @@ export default function TodayPage() {
               <QueueCard
                 key={queue.id}
                 queue={queue}
-                actions={queue.id === 'driverActions' && (driverActions.data?.length ?? 0) > 0 ? (
+                actions={queue.id !== 'driverActions' ? undefined : driverActions.isLoading ? (
+                  <div className="space-y-2" aria-busy="true">
+                    {[0, 1].map(i => <Skeleton key={i} className="h-14 rounded-control" />)}
+                  </div>
+                ) : driverActions.error ? (
+                  <ErrorState compact title="We could not load these notifications" description="Check your connection and try again." onRetry={() => driverActions.refetch()} />
+                ) : (driverActions.data?.length ?? 0) > 0 ? (
                   <ul className="divide-y divide-border rounded-control border border-border">
                     {driverActions.data!.map(n => {
                       const path = notificationPath({ type: n.type, data: n.data }, 'staff')
@@ -373,44 +430,29 @@ export default function TodayPage() {
       {/* Direct Load Allocation — Side-by-side trucks & loads with 1-tap direct assignment */}
       <DirectLoadAllocation />
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
-        <Card className="flex flex-col overflow-hidden">
-          <CardHeader
-            title="Live fleet"
-            description="Vehicles reporting position now."
-            actions={<Link to="/live-map" className={buttonClasses({ variant: 'ghost', size: 'sm' })}>Open live map</Link>}
-          />
-          <LiveMap vehicles={activeVehicles} selectedVehicleId={selectedVehicleId} className="h-[420px]" />
-        </Card>
+      <Card className="flex flex-col overflow-hidden">
+        <CardHeader
+          title="Live fleet"
+          description="Vehicles reporting position now."
+          actions={<Link to="/live-map" className={buttonClasses({ variant: 'ghost', size: 'sm' })}>Open live map</Link>}
+        />
+        <LiveMap vehicles={activeVehicles} selectedVehicleId={selectedVehicleId} className="h-[420px]" />
+      </Card>
 
-        <Card className="flex flex-col overflow-hidden">
-          <CardHeader
-            title="Fleet needs attention"
-            actions={fleetItems.length > 0 && <StatusPill tone="danger" dot={false}>{fleetItems.length}</StatusPill>}
-          />
-          <div className="max-h-[420px] flex-1 divide-y divide-border overflow-y-auto">
-            {fleetItems.length === 0 ? (
-              <EmptyState compact icon={<Activity size={22} />} title="All clear" description="No fleet issues need attention right now." />
-            ) : (
-              fleetItems.map(item => <AttentionRow key={item.id} item={item} />)
-            )}
-          </div>
-          {rerouteCount > 0 && (
-            <div className="border-t border-border px-4 py-3">
-              <Button variant="ghost" size="sm" icon={<RouteIcon size={16} />} onClick={() => navigate('/optimize')}>
-                {rerouteCount.toLocaleString('en-IN')} reroute {rerouteCount === 1 ? 'suggestion' : 'suggestions'}: open Optimize
-              </Button>
+      {isPeopleEligible && (peopleAttentionLoading || !!peopleAttentionError || peopleItems.length > 0) && (
+        <Card className="overflow-hidden">
+          <CardHeader title="People need attention" actions={peopleItems.length > 0 && <StatusPill tone="warning" dot={false}>{peopleItems.length}</StatusPill>} />
+          {peopleAttentionLoading ? (
+            <div className="space-y-3 p-4" aria-busy="true">
+              {[0, 1].map(i => <Skeleton key={i} className="h-12 rounded-control" />)}
+            </div>
+          ) : peopleAttentionError ? (
+            <ErrorState compact title="We could not load people needing attention" description="Check your connection and try again." onRetry={() => refetchPeopleAttention()} />
+          ) : (
+            <div className="divide-y divide-border">
+              {peopleItems.map(item => <AttentionRow key={item.id} item={item} />)}
             </div>
           )}
-        </Card>
-      </div>
-
-      {peopleItems.length > 0 && (
-        <Card className="overflow-hidden">
-          <CardHeader title="People need attention" actions={<StatusPill tone="warning" dot={false}>{peopleItems.length}</StatusPill>} />
-          <div className="divide-y divide-border">
-            {peopleItems.map(item => <AttentionRow key={item.id} item={item} />)}
-          </div>
         </Card>
       )}
     </Page>

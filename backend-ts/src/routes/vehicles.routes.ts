@@ -22,8 +22,11 @@ import { emptySosCounts, loadSosCounts } from '../services/sos.service';
 import { withDriverLicenceStatus } from '../services/people-docs.service';
 import { isRealPosition, recordGpsPoints } from '../services/gps-history.service';
 import { closeOpenJobsForVehicle } from '../services/maintenance.service';
-import { approveVehicle, countVehicleRequests, getMyRegistration, listVehicleRequests, registerDriverVehicle, rejectVehicle } from '../services/vehicle-approval.service';
+import { ShipmentService } from '../services/shipment.service';
+import { vehicleRcService } from '../services/vehicle-rc.service';
+import { approveVehicle, countVehicleRequests, getMyRegistration, listVehicleRequests, registerDriverVehicle, rejectVehicle, requestVehicleDocumentFixes } from '../services/vehicle-approval.service';
 import { createVehiclePhotoUploadUrl, deleteVehiclePhoto, listVehiclePhotos, removeVehiclePhotoFiles, saveVehiclePhoto } from '../services/vehicle-photos.service';
+import { createVehicleDocumentUploadUrl, saveVehicleDocument } from '../services/vehicle-documents.service';
 import { vehicleIdsOnActiveTrip, WORKING_STATUSES } from '../services/vehicle-activity';
 import { carrierStamp } from '../core/org-context';
 import { OWNED, scopeKey, scopeQuery } from '../core/org-scope';
@@ -182,6 +185,44 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// Self-heal a vehicle's available_capacity_kg/current_load_kg from its real active shipments and
+// loads, for the rare case a direct incremental write to it drifted from reality. Superadmin only;
+// not a normal operational action.
+router.post('/recalculate-capacity', requireAuth, requireRole('superadmin'), async (req: Request, res: Response) => {
+  try {
+    const checked = await ShipmentService.recalculateAllVehicleCapacities();
+    res.json({ success: true, checked });
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// Re-verifies a vehicle's RC with Cashfree on demand (e.g. to pick up a renewed insurance or
+// permit date without re-saving the whole vehicle). The same check also runs automatically
+// whenever a vehicle is created or its RC number changes.
+router.post('/:vehicle_id/verify-rc', requireAuth, requireRole(...STAFF_ROLES), rateLimitByUser('vehicle-verify-rc', 20, 60 * 60), async (req: Request, res: Response) => {
+  try {
+    const { data: vehicle } = await supabase.from('vehicles').select('id, rc_number').eq('id', req.params.vehicle_id).maybeSingle();
+    if (!vehicle) throw new HttpError(404, 'Vehicle not found');
+    if (!vehicle.rc_number) throw new HttpError(400, 'This vehicle has no RC number on file yet');
+    res.json(await vehicleRcService.verifyVehicleRc(vehicle.id, vehicle.rc_number, req.user!.user_id));
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+/** Best-effort RC check after a vehicle is created or its RC number changes - never fails the save. */
+async function maybeVerifyRc<T extends { id: string; rc_number?: string | null }>(vehicle: T, actorId: string | undefined): Promise<T & { rc_verification?: unknown }> {
+  if (!vehicle?.rc_number) return vehicle;
+  try {
+    const result = await vehicleRcService.verifyVehicleRc(vehicle.id, vehicle.rc_number, actorId ?? null);
+    return { ...vehicle, rc_verification_status: result.status, rc_verified_at: new Date().toISOString(), rc_verification: result };
+  } catch (e: any) {
+    console.error('[vehicles] RC verification failed:', e.message);
+    return vehicle;
+  }
+}
+
 // ── POST / ─────────────────────────────────────────────────
 router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -234,7 +275,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
         if (isUniqueViolation(adoptError)) throw new HttpError(409, DRIVER_TAKEN);
         if (adoptError) throw adoptError;
         await invalidateVehicleCaches();
-        res.status(201).json(adopted);
+        res.status(201).json(await maybeVerifyRc(adopted, req.user?.user_id));
         return;
       }
     }
@@ -254,7 +295,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     if (error) throw error;
 
     await invalidateVehicleCaches();
-    res.status(201).json(vehicle);
+    res.status(201).json(await maybeVerifyRc(vehicle, req.user?.user_id));
   } catch (e: any) {
     sendError(req, res, e);
   }
@@ -430,6 +471,39 @@ router.post('/:vehicle_id/reject', requireAuth, requireRole(...STAFF_ROLES), asy
   }
 });
 
+// POST /:vehicle_id/request-document-fixes — { issues: { <slot>: reason } }; the vehicle stays
+// pending_approval (not archived) with just those documents flagged
+router.post('/:vehicle_id/request-document-fixes', requireAuth, requireRole(...STAFF_ROLES), async (req: Request, res: Response) => {
+  try {
+    const vehicle = await requestVehicleDocumentFixes(req.params.vehicle_id, req.user!, req.body?.issues);
+    await invalidateVehicleCaches();
+    res.json(vehicle);
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// ── Vehicle documents (RC, insurance, fitness, permit, PUC): staff, or the vehicle's own driver ─────
+// POST /:vehicle_id/documents/upload-url — { slot, content_type, size } -> a signed upload URL for one file
+router.post('/:vehicle_id/documents/upload-url', requireAuth, requireRole(...STAFF_ROLES, 'driver'), requireVehicleAccess(req => req.params.vehicle_id), rateLimitByUser('vehicle-document-upload', 60, 60 * 60), async (req: Request, res: Response) => {
+  try {
+    res.json(await createVehicleDocumentUploadUrl(req.params.vehicle_id, req.body ?? {}));
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
+// PUT /:vehicle_id/documents/:slot — { file_path } records an uploaded file as the document, replacing the old one
+router.put('/:vehicle_id/documents/:slot', requireAuth, requireRole(...STAFF_ROLES, 'driver'), requireVehicleAccess(req => req.params.vehicle_id), async (req: Request, res: Response) => {
+  try {
+    const result = await saveVehicleDocument(req.params.vehicle_id, req.params.slot, req.body?.file_path);
+    await invalidateVehicleCaches();
+    res.json(result);
+  } catch (e: any) {
+    sendError(req, res, e);
+  }
+});
+
 // ── Vehicle photos (staff, or the vehicle's own driver) ─────
 const requirePhotoAccess = requireVehicleAccess(req => req.params.vehicle_id);
 
@@ -522,7 +596,7 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
 
     const { data: current, error: currentErr } = await supabase
       .from('vehicles')
-      .select('id, status, capacity_kg, driver_id, driver_name, driver_phone')
+      .select('id, status, capacity_kg, driver_id, driver_name, driver_phone, rc_number')
       .eq('id', req.params.vehicle_id)
       .maybeSingle();
     if (currentErr) throw currentErr;
@@ -619,7 +693,9 @@ router.patch('/:vehicle_id', requireAuth, requireRole('driver', 'admin', 'manage
     }
 
     await invalidateVehicleCaches();
-    res.json(vehicle);
+    // Re-verify only when the RC number itself actually changed, not on every unrelated edit
+    const rcChanged = updateData.rc_number !== undefined && updateData.rc_number !== current.rc_number;
+    res.json(rcChanged ? await maybeVerifyRc(vehicle, req.user?.user_id) : vehicle);
   } catch (e: any) {
     sendError(req, res, e);
   }

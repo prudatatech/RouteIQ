@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Check, MessageSquarePlus, X } from 'lucide-react'
+import { Check, FlagTriangleRight, MessageSquarePlus, X } from 'lucide-react'
 import {
   Alert, Button, EmptyState, ErrorState, Page, PageHeader, Skeleton, StatusPill, useConfirm,
 } from '@/components/ui'
 import { isNotFoundError } from '@/utils/display'
 import { useReviewActions, useVendorReview } from '@/components/admin/vendor-review/useVendorReview'
-import { useDocumentViewer } from '@/components/admin/vendor-review/useDocumentViewer'
+import { useDocumentViewer } from '@/components/admin/useDocumentViewer'
 import { AskMoreDetailsModal } from '@/components/admin/vendor-review/AskMoreDetailsModal'
+import { FlagDocumentsModal } from '@/components/admin/FlagDocumentsModal'
 import {
   AccountSection, ActivitySection, BusinessSection, DocumentsSection, HistorySection, KycFormSection, RequestsSection,
   StatusAlert, SummarySection,
@@ -15,6 +16,21 @@ import {
 import type { VendorReview } from '@/components/admin/vendor-review/types'
 
 const BACK = { to: '/admin/kyc', label: 'KYC review' }
+
+/**
+ * Every named document the vendor KYC wizard can ask for (VendorDocumentsPage.tsx's DOC_FIELDS /
+ * backend-ts vendor-review.service.ts's DOC_LABELS), minus the legacy whole-form upload
+ * (softCopyExcel/softCopyPdf) that is not a document in this sense. A vendor can leave an optional
+ * one (e.g. GST registration) unfiled; staff still need to be able to flag it - "you need to give us
+ * this" is a normal review action, so it must be offered even when kyc.documents has no row for it.
+ */
+const NAMED_DOCUMENT_LABELS: Record<string, string> = {
+  panScan: 'PAN card',
+  cancelledCheque: 'Cancelled cheque',
+  gstRegistration: 'GST registration',
+  msmeCert: 'MSME certificate',
+  companyLogo: 'Company logo',
+}
 
 const WHY_DISABLED: Record<string, string> = {
   pending: 'This vendor has not submitted KYC yet. You can decide once they do.',
@@ -52,12 +68,27 @@ export default function VendorReviewPage() {
 function ReviewView({ id, data }: { id: string; data: VendorReview }) {
   const { confirm, prompt } = useConfirm()
   const [askOpen, setAskOpen] = useState(false)
+  const [flagOpen, setFlagOpen] = useState(false)
   const viewer = useDocumentViewer()
-  const { approve, reject, askInfo } = useReviewActions(id, () => setAskOpen(false))
+  const { approve, reject, askInfo, flagDocuments, uploadDocument } = useReviewActions(id, () => { setAskOpen(false); setFlagOpen(false) })
   const { account, business, kyc } = data
   const name = business?.business_name || kyc.form?.name || account.full_name || 'Unnamed vendor'
   const canDecide = kyc.status === 'submitted'
-  const busy = approve.isPending || reject.isPending || askInfo.isPending
+  const busy = approve.isPending || reject.isPending || askInfo.isPending || flagDocuments.isPending
+  // Only the vendor's own named documents (not an "other" document filed from an answered info request)
+  const namedDocuments = kyc.documents.filter(d => !d.key.startsWith('other_'))
+  // Every document that can be flagged, including ones the vendor skipped - not just the ones uploaded
+  const uploadedByKey = new Map(namedDocuments.map(d => [d.key, d]))
+  const flaggableDocuments = Object.entries(NAMED_DOCUMENT_LABELS).map(([key, label]) => (
+    uploadedByKey.get(key) ?? { key, label: `${label} (not uploaded)` }
+  ))
+  // Named documents never uploaded, offered for staff to add directly once the KYC is anything but
+  // approved - the gap that otherwise leaves an application permanently stuck (e.g. one entered on
+  // the applicant's behalf without every document attached).
+  const missingNamedDocuments = kyc.status === 'approved'
+    ? []
+    : Object.entries(NAMED_DOCUMENT_LABELS).filter(([key]) => !uploadedByKey.has(key)).map(([key, label]) => ({ key, label }))
+  const existingDocUrls = Object.fromEntries(namedDocuments.map(d => [d.key, d.path]))
 
   const doApprove = async () => {
     const ok = await confirm({
@@ -94,6 +125,7 @@ function ReviewView({ id, data }: { id: string; data: VendorReview }) {
         actions={(
           <>
             <Button variant="secondary" icon={<MessageSquarePlus size={16} />} disabled={!canDecide || busy} onClick={() => setAskOpen(true)}>Ask for more details</Button>
+            <Button variant="secondary" icon={<FlagTriangleRight size={16} />} disabled={!canDecide || busy} onClick={() => setFlagOpen(true)}>Flag documents</Button>
             <Button variant="secondary" icon={<X size={16} />} disabled={!canDecide || busy} loading={reject.isPending} onClick={doReject}>Reject</Button>
             <Button icon={<Check size={16} />} disabled={!canDecide || busy} loading={approve.isPending} onClick={doApprove}>Approve</Button>
           </>
@@ -109,13 +141,27 @@ function ReviewView({ id, data }: { id: string; data: VendorReview }) {
         <BusinessSection business={business} />
       </div>
       <KycFormSection form={kyc.form} ifscVerifiedAt={kyc.ifsc_verified_at} />
-      <DocumentsSection documents={kyc.documents} viewer={viewer} />
+      <DocumentsSection
+        documents={kyc.documents}
+        issues={kyc.document_issues}
+        viewer={viewer}
+        missingNamed={missingNamedDocuments}
+        uploadingKey={uploadDocument.isPending ? uploadDocument.variables?.key ?? null : null}
+        onUpload={(key, file) => uploadDocument.mutate({ key, file, docUrls: existingDocUrls })}
+      />
       <RequestsSection requests={data.info_requests} viewer={viewer} />
       <ActivitySection activity={data.activity} />
       <HistorySection history={data.history} />
 
       {askOpen && (
         <AskMoreDetailsModal open vendorName={name} busy={askInfo.isPending} onClose={() => setAskOpen(false)} onSubmit={d => askInfo.mutate(d)} />
+      )}
+      {flagOpen && (
+        <FlagDocumentsModal
+          open entityName={name} documents={flaggableDocuments} busy={flagDocuments.isPending}
+          noneUploadedLabel="This vendor has not uploaded any named documents yet."
+          onClose={() => setFlagOpen(false)} onSubmit={issues => flagDocuments.mutate(issues)}
+        />
       )}
       {viewer.modal}
     </Page>

@@ -11,7 +11,7 @@ import type {
   ClosedSettlement, DispatchCheck, DocumentHistory, DocumentInput, DocumentPatch, GenerateKind, LoadDocument, LoadDocumentsResponse,
   LoadTimelineResponse, Settlement, UploadUrl,
 } from '@/types/loadDocuments'
-import type { CompanyProfile, InvoiceDetail, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
+import type { CompanyProfile, ExpensePage, InvoiceDetail, InvoicePage, InvoiceReport, InvoiceReportKind, InvoiceReportStatus, InvoiceSummary } from '@/utils/finance'
 import type {
   CompanyGroup, ExcludedPartner, Grouped, NetDriver, NetStatement, NetVehicle, NetVehicleInput, PartnerFleetSummary, AffiliationRules, StatementDeduction,
 } from '@/types/network'
@@ -127,12 +127,30 @@ api.interceptors.response.use(
 // Safety helper: ensure API list calls always return arrays
 const ensureArray = (data: unknown): unknown[] => Array.isArray(data) ? data : []
 // Vehicles API
+export interface RcVerificationResult {
+  id: string
+  status: 'valid' | 'invalid' | 'unavailable' | 'not_configured'
+  rc_number: string
+  verification_id: string | null
+  reference_id: string | null
+  owner_name: string | null
+  rc_status: string | null
+  rc_expiry_date: string | null
+  insurance_upto: string | null
+  pucc_upto: string | null
+  permit_valid_upto: string | null
+  blacklist_status: string | null
+  error_message: string | null
+}
+
 export const vehiclesAPI = {
   list: (params?: Record<string, unknown>) => api.get('/vehicles/', { params }).then(r => ensureArray(r.data)),
   get: (id: string) => api.get(`/vehicles/${id}`).then(r => r.data),
   create: (data: object) => api.post('/vehicles/', data).then(r => r.data),
   update: (id: string, data: object) => api.patch(`/vehicles/${id}`, data).then(r => r.data),
   delete: (id: string) => api.delete(`/vehicles/${id}`),
+  /** Re-checks this vehicle's RC with Cashfree on demand (also runs automatically on create, or when the RC number changes). */
+  verifyRc: (id: string): Promise<RcVerificationResult> => api.post(`/vehicles/${id}/verify-rc`).then(r => r.data),
   summary: () => api.get('/vehicles/summary').then(r => r.data),
   /** How many times each vehicle has raised an SOS: { [vehicle_id]: { total, last_30_days, open, cancelled } }. Staff only. */
   sosCounts: () => api.get('/vehicles/sos-counts').then(r => r.data as Record<string, { total: number; last_30_days: number; open: number; cancelled: number }>),
@@ -161,7 +179,11 @@ export interface VehiclePhoto {
 
 /** A vehicle a driver registered from the app, waiting for a decision. */
 export interface VehicleRequest {
-  vehicle: Record<string, unknown> & { id: string; plate_number: string; vehicle_type: string; capacity_kg?: number | null }
+  vehicle: Record<string, unknown> & {
+    id: string; plate_number: string; vehicle_type: string; capacity_kg?: number | null
+    /** { <slot>: reason }, slot one of rc | insurance | fitness | permit | puc. Set while staff wait on just those documents. */
+    document_issues?: Record<string, string> | null
+  }
   driver: { id: string; full_name: string | null; phone: string | null; email: string | null } | null
   photos: VehiclePhoto[]
   primary_photo_url: string | null
@@ -172,11 +194,19 @@ export interface VehicleRequest {
 export const orgAPI = {
   mine: () => api.get('/orgs/mine').then(r => (Array.isArray(r.data) ? r.data : []) as Membership[]),
   get: () => api.get('/org').then(r => r.data as OrgProfile),
-  update: (data: Partial<OrgProfileInput>) => api.patch('/org', data).then(r => r.data as OrgProfile),
+  update: (data: Partial<OrgProfileInput> & { profile?: Record<string, unknown> }) => api.patch('/org', data).then(r => r.data as OrgProfile),
   members: () => api.get('/org/members').then(r => (Array.isArray(r.data) ? r.data : []) as OrgMember[]),
   addMember: (data: { email?: string; phone?: string; role: OrgRole }) => api.post('/org/members', data).then(r => r.data as OrgMember),
   updateMember: (userId: string, data: { role?: OrgRole; status?: 'active' | 'removed' }) =>
     api.patch(`/org/members/${userId}`, data).then(r => r.data as OrgMember),
+  /** Signed upload URL for one KYC document of the active (logistic company) organisation. */
+  kycUploadUrl: (data: { key: string; content_type: string; size: number }): Promise<{ path: string; token: string; signed_url: string }> =>
+    api.post('/org/kyc/documents/upload-url', data).then(r => r.data),
+  /** Saves uploaded document paths on the organisation ahead of the final submit; clears a document's flag the moment it is re-uploaded. */
+  saveKycDocuments: (data: { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] }) =>
+    api.put('/org/kyc/documents', data).then(r => r.data as OrgRow),
+  /** Submits the organisation's KYC for review once every required document, GSTIN, PAN and bank detail is present. */
+  submitKyc: () => api.post('/org/kyc/submit').then(r => r.data as OrgRow),
 }
 
 export const orgRegisterAPI = {
@@ -195,6 +225,43 @@ export const adminOrgsAPI = {
     api.get('/admin/orgs', { params }).then(r => r.data as OrgPage),
   decide: (id: string, decision: 'approve' | 'reject' | 'suspend', reason?: string) =>
     api.put(`/admin/orgs/${id}/${decision}`, reason ? { reason } : {}).then(r => r.data as OrgRow),
+  /** Flags specific documents on a logistic company's KYC, each with its own reason, instead of rejecting the whole application. */
+  flagDocuments: (id: string, issues: Record<string, string>) =>
+    api.put(`/admin/orgs/${id}/flag-documents`, { issues }).then(r => r.data as OrgRow),
+  /**
+   * Staff registers a logistic company for an applicant who phoned or WhatsApp'd their details in
+   * instead of using the sign-up form. `applicant_email`/`applicant_full_name` find or invite the
+   * applicant's own account to own the company; the company lands `pending`, not yet KYC-submitted -
+   * staff finishes it with the methods below, same as self-service. The org's own `email` (distinct
+   * from the applicant's) is not settable here - the route reserves the top-level `email` key for
+   * the applicant; set it afterward via `update`.
+   */
+  createOnBehalf: (data: { applicant_email: string; applicant_full_name?: string } & Partial<Omit<OrgRegistration, 'email'>>) =>
+    api.post('/admin/orgs/create-on-behalf', {
+      kind: 'logistic_company',
+      email: data.applicant_email,
+      full_name: data.applicant_full_name,
+      name: data.name,
+      legal_name: data.legal_name,
+      gstin: data.gstin,
+      pan: data.pan,
+      state: data.state,
+      city: data.city,
+      address: data.address,
+      pincode: data.pincode,
+      phone: data.phone,
+    }).then(r => r.data as OrgRow),
+  /** PATCH /admin/orgs/:id: the same fields self-service sets via PATCH /org, plus the org's own `email` (which only this route - not create-on-behalf - can set) and bank details under `profile`. */
+  update: (id: string, data: Partial<OrgProfileInput> & { email?: string; profile?: Record<string, unknown> }) =>
+    api.patch(`/admin/orgs/${id}`, data).then(r => r.data as OrgRow),
+  /** Signed upload URL for one KYC document of a company staff is registering on behalf of an applicant. */
+  kycUploadUrl: (id: string, data: { key: string; content_type: string; size: number }): Promise<{ path: string; token: string; signed_url: string }> =>
+    api.post(`/admin/orgs/${id}/kyc/upload-url`, data).then(r => r.data),
+  /** Saves uploaded document paths on the company ahead of the final submit. */
+  saveKycDocuments: (id: string, data: { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] }) =>
+    api.put(`/admin/orgs/${id}/kyc/documents`, data).then(r => r.data as OrgRow),
+  /** Submits the company's KYC for review once every required document, GSTIN, PAN and bank detail is present. */
+  submitKyc: (id: string) => api.post(`/admin/orgs/${id}/kyc/submit`).then(r => r.data as OrgRow),
 }
 
 export const vehicleRequestsAPI = {
@@ -202,6 +269,14 @@ export const vehicleRequestsAPI = {
   count: () => api.get('/vehicles/requests/count').then(r => r.data as { pending: number }),
   approve: (id: string) => api.post(`/vehicles/${id}/approve`).then(r => r.data),
   reject: (id: string, reason: string) => api.post(`/vehicles/${id}/reject`, { reason }).then(r => r.data),
+  /** Flags one or more documents as needing a fix; the vehicle stays pending_approval, not archived. */
+  requestDocumentFixes: (id: string, issues: Record<string, string>) => api.post(`/vehicles/${id}/request-document-fixes`, { issues }).then(r => r.data),
+}
+
+export const vehicleDocumentsAPI = {
+  uploadUrl: (id: string, data: { slot: string; content_type: string; size: number }) =>
+    api.post(`/vehicles/${id}/documents/upload-url`, data).then(r => r.data as { path: string; token: string; bucket: string; signed_url: string }),
+  save: (id: string, slot: string, file_path: string) => api.put(`/vehicles/${id}/documents/${slot}`, { file_path }).then(r => r.data as { slot: string; url: string | null; issue_cleared: boolean }),
 }
 
 export const vehiclePhotosAPI = {
@@ -277,8 +352,11 @@ export const peopleAPI = {
   }) => api.post('/people', data).then(r => r.data as { id?: string; user?: { id: string } }),
   get: (id: string) => api.get(`/people/${id}`).then(r => r.data as PersonDetail),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/people/${id}`, data).then(r => r.data),
-  setStatus: (id: string, status: string, reason?: string, dates?: { leave_from?: string; leave_until?: string; suspended_until?: string }) =>
-    api.post(`/people/${id}/status`, { status, reason, ...dates }).then(r => r.data),
+  setStatus: (
+    id: string, status: string, reason?: string,
+    dates?: { leave_from?: string; leave_until?: string; suspended_until?: string },
+    confirm?: { confirm_release?: boolean; confirm_missing_documents?: boolean },
+  ) => api.post(`/people/${id}/status`, { status, reason, ...dates, ...confirm }).then(r => r.data),
   /** Sends (or resends) the sign-in invite. The server allows one every 10 minutes. */
   resendInvite: (id: string) => api.post(`/people/${id}/invite`).then(r => r.data),
   /** Superadmin, inactive people only. Clears personal data and keeps the record id. */
@@ -607,6 +685,10 @@ export const vendorAPI = {
   /** Ask the vendor for more details; the KYC moves to "More details asked". */
   requestKycInfo: (id: string, data: { message?: string; items: InfoRequestInput[] }): Promise<{ success: boolean }> =>
     api.post(`/vendor/kyc/${encodeURIComponent(id)}/request-info`, data).then(r => r.data),
+  /** Flags one or more already-submitted documents as needing a fix, each with its own reason; the KYC
+   * moves to "More details asked" too, not rejected - everything else about the application is kept. */
+  flagKycDocuments: (id: string, issues: Record<string, string>) =>
+    api.put(`/vendor/kyc/${encodeURIComponent(id)}/flag-documents`, { issues }).then(r => r.data),
   /** The vendor's own open requests for more details. */
   kycRequests: (): Promise<VendorKycRequest[]> =>
     api.get('/vendor/kyc/requests').then(r => (Array.isArray(r.data) ? r.data : (ensureArray(r.data?.items) as VendorKycRequest[]))),
@@ -653,6 +735,23 @@ export const vendorAPI = {
   /** Awards the load to this quote. Atomic: only one award can happen. */
   acceptQuote: (loadId: string, quoteId: string) =>
     api.post(`/vendor/loads/${encodeURIComponent(loadId)}/quotes/${encodeURIComponent(quoteId)}/accept`).then(r => r.data),
+  /** Staff only: finds or invites (by email) the account to enter a phoned-in applicant's KYC under.
+   * Call this first - document uploads and the final submit are scoped by the returned id. */
+  adminResolveKycApplicant: (data: { email: string; full_name?: string; company_name?: string }): Promise<{ vendorUserId: string; invited: boolean }> =>
+    api.post('/vendor/admin/kyc/applicants', data).then(r => r.data),
+  /** Staff only: a signed upload URL for one of the applicant's KYC documents, scoped under their
+   * (already resolved) account id rather than the caller's. */
+  adminKycUploadUrlFor: (vendorUserId: string, data: { key: string; content_type: string; size: number }): Promise<{ path: string; token: string; signed_url: string }> =>
+    api.post(`/vendor/admin/kyc/applicants/${encodeURIComponent(vendorUserId)}/upload-url`, data).then(r => r.data),
+  /** Staff only: saves a document path uploaded for a vendor whose KYC is already submitted (or
+   * rejected/info-requested) but missing a document - e.g. one skipped mid-wizard by whoever entered
+   * it on the applicant's behalf. Same shape as the self-service saveKycDocuments above. */
+  adminSaveKycDocumentsFor: (vendorUserId: string, data: { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] }) =>
+    api.put(`/vendor/admin/kyc/applicants/${encodeURIComponent(vendorUserId)}/documents`, data).then(r => r.data),
+  /** Staff only: submits a phoned-in applicant's KYC, in the same shape as submitKyc, plus the
+   * applicant's email (and optional name) so their account can be found or invited. */
+  adminCreateKycOnBehalf: (data: Record<string, unknown> & { email: string; full_name?: string }) =>
+    api.post('/vendor/admin/kyc/applicants/create', data).then(r => r.data),
 }
 
 /** Accepts a bare list or { items | quotes, quote_deadline, quote_requested, awarded }. */
@@ -856,7 +955,8 @@ const reportKey = (prefix: string) =>
 export const financeAPI = {
   summary: (range: DateParams) => api.get('/finance/summary', { params: range }).then(r => r.data),
   unpriced: (range: DateParams) => api.get('/finance/unpriced', { params: range }).then(r => ensureArray(r.data)),
-  invoices: (params: DateParams & { status?: string; requester?: string; overdue?: string; reports?: 'open' }) => api.get('/finance/invoices', { params }).then(r => ensureArray(r.data)),
+  invoices: (params: DateParams & { status?: string; requester?: string; overdue?: string; reports?: 'open'; limit?: number; offset?: number }) =>
+    api.get('/finance/invoices', { params }).then(r => r.data as InvoicePage),
   createInvoice: (target: { shipment_id: string } | { manifest_id: string }) => api.post('/finance/invoices', target).then(r => r.data),
   invoiceSummary: () => api.get('/finance/invoices/summary').then(r => r.data as InvoiceSummary),
   /** Offline payment: staff record how and when the money arrived. */
@@ -877,7 +977,8 @@ export const financeAPI = {
     api.post('/finance/unpriced/price', data).then(r => r.data as { invoice_id: string; invoice_number: string | null; amount: number }),
   company: () => api.get('/finance/company').then(r => r.data as CompanyProfile),
   saveCompany: (data: Partial<CompanyProfile>) => api.put('/finance/company', data).then(r => r.data as CompanyProfile),
-  expenses: (params: DateParams & { category?: string; vehicle_id?: string }) => api.get('/finance/expenses', { params }).then(r => ensureArray(r.data)),
+  expenses: (params: DateParams & { category?: string; vehicle_id?: string; limit?: number; offset?: number }) =>
+    api.get('/finance/expenses', { params }).then(r => r.data as ExpensePage),
   createExpense: (data: ExpenseInput) => api.post('/finance/expenses', data).then(r => r.data),
   updateExpense: (id: string, data: Partial<ExpenseInput>) => api.put(`/finance/expenses/${id}`, data).then(r => r.data),
   deleteExpense: (id: string) => api.delete(`/finance/expenses/${id}`),
@@ -992,7 +1093,12 @@ export const tplAPI = {
   /** Lightweight check for existing partner — works even for fresh OAuth users without a `users` row. */
   checkPartner: (data: { user_id?: string; email?: string }): Promise<{ id: string; status: string } | null> =>
     api.post('/tpl/check-partner', data).then(r => r.data),
+  /** Whether an email or phone is already on an application - read-only, so the onboarding form can ask as it is typed. */
+  checkAvailability: (field: 'email' | 'phone', value: string): Promise<{ taken: boolean }> =>
+    api.post('/tpl/check-availability', { field, value }).then(r => r.data),
   onboard: (data: Record<string, unknown>) => api.post('/tpl/onboard', data).then(r => r.data),
+  /** Superadmin only: enters a 3PL application on behalf of someone who phoned/WhatsApp'd their details in, instead of using the public wizard themselves. Same fields as onboard(); no account is linked yet. */
+  adminCreate: (data: Record<string, unknown>) => api.post('/tpl/admin/create', data).then(r => r.data),
   queue: (status?: string) => api.get('/tpl/queue', { params: { status } }).then(r => r.data),
   /** The partner record linked to this sign-in (the caller's own, or any for staff). */
   byUser: (userId: string) => api.get(`/tpl/by-user/${encodeURIComponent(userId)}`).then(r => r.data),
@@ -1000,6 +1106,10 @@ export const tplAPI = {
   getPartner: (id: string, pan?: string) => api.get(`/tpl/${id}`, { params: pan ? { pan } : undefined }).then(r => r.data),
   approve: (id: string) => api.post(`/tpl/approve/${id}`).then(r => r.data),
   reject: (id: string, reason: string) => api.post(`/tpl/reject/${id}`, { reason }).then(r => r.data),
+  /** Flags specific documents on a pending application, each with its own reason, instead of rejecting the whole thing. */
+  flagDocuments: (id: string, issues: Record<string, string>) => api.put(`/tpl/${id}/flag-documents`, { issues }).then(r => r.data),
+  /** Flags specific application details on a pending application, each with its own reason. */
+  flagDetails: (id: string, issues: Record<string, string>) => api.put(`/tpl/${id}/flag-details`, { issues }).then(r => r.data),
   updateApplication: (id: string, data: Record<string, unknown>) => api.patch(`/tpl/${id}`, data).then(r => r.data),
   /** Signed upload URL for one application document; use uploadTplDocument() from services/tplDocuments. */
   documentUploadUrl: (data: {
@@ -1022,6 +1132,9 @@ export const tplAPI = {
   delete: (id: string) => api.delete(`/tpl/${id}`).then(r => r.data),
   sendSetupOtp: (email: string) => api.post('/tpl/auth/send-otp', { email }).then(r => r.data),
   setupPassword: (email: string, otp: string, password: string) => api.post('/tpl/auth/setup-password', { email, otp, password }).then(r => r.data),
+  /** Every audited decision on this partner, newest first. Superadmin only. */
+  getPartnerHistory: (id: string): Promise<{ at: string; actor: string; action: string; detail: string | null }[]> =>
+    api.get(`/tpl/${id}/history`).then(r => r.data),
 }
 
 export interface OnlineGstin {

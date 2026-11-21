@@ -1,25 +1,58 @@
-import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useParams, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Eye, FileText, UploadCloud } from 'lucide-react'
-import { Alert, Button, Card, EmptyState, FileButton, PageHeader, useConfirm } from '@/components/ui'
+import clsx from 'clsx'
+import { AlertCircle, Eye, FileText, UploadCloud } from 'lucide-react'
+import { Button, Card, CardHeader, EmptyState, FileButton, PageHeader, StatusPill, useConfirm } from '@/components/ui'
+import { DocUploadField } from '@/components/kyc/DocUploadField'
 import { tplAPI } from '@/services/api'
 import { openKycDocument } from '@/services/kycDocuments'
 import { uploadTplDocument } from '@/services/tplDocuments'
+import { TPL_DOCUMENT_TYPES, TPL_DOCUMENT_SPECS, TPL_DOC_CATEGORIES } from '@/components/tpl/constants'
 import { errorMessage, formatDate } from '@/utils/display'
 import { usePortal, type PortalDocument } from './portalContext'
 
-/** Documents: what the partner uploaded at application, which they can open or replace (replacing goes back to review). */
+/** Documents: what the partner uploaded at application, which they can open, replace, or add missing KYC docs. */
 export default function DocumentsPage() {
   const { id } = useParams()
-  const { documents, reload } = usePortal()
+  const [searchParams] = useSearchParams()
+  const { partner, documents, reload } = usePortal()
   const { confirm } = useConfirm()
   const [uploading, setUploading] = useState<string | null>(null)
 
+  const uploadedDocTypes = new Set(documents.map(d => d.doc_type))
+  const missingDocTypes = TPL_DOCUMENT_TYPES.filter(t => !uploadedDocTypes.has(t))
+
+  const uploadNew = async (docType: string, file: File | undefined) => {
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('The file is over the 10 MB limit. Choose a smaller file.')
+      return
+    }
+    try {
+      setUploading(docType)
+      const fileName = await uploadTplDocument(file, docType, { applicationId: id! })
+        .catch((err: Error) => { throw new Error(`Upload failed: ${err.message}`) })
+      await tplAPI.updateApplication(id!, {
+        documents: [
+          ...documents.map(d => ({ type: d.doc_type, url: d.file_url })),
+          { type: docType, url: fileName },
+        ],
+      })
+      reload()
+      toast.success(`${docType} uploaded successfully`)
+    } catch (err) {
+      console.error('Document upload error:', err)
+      toast.error(errorMessage(err, 'Failed to upload document.'))
+    } finally {
+      setUploading(null)
+    }
+  }
+
   const replace = async (doc: PortalDocument, file: File | undefined) => {
     if (!file) return
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('The file is over the 2 MB limit. Choose a smaller file.')
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('The file is over the 10 MB limit. Choose a smaller file.')
       return
     }
     const ok = await confirm({
@@ -46,52 +79,180 @@ export default function DocumentsPage() {
     }
   }
 
+  const hasFlaggedDocs = partner.document_issues && Object.keys(partner.document_issues).length > 0
+
+  useEffect(() => {
+    if (searchParams.get('highlight') === 'flagged') {
+      const el = document.querySelector('[data-flagged="true"]')
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }
+  }, [searchParams, partner.document_issues])
+
   return (
     <div className="space-y-6">
-      <PageHeader title="Documents" description="Your application documents. Replace one if it changes." />
-      <Alert tone="info">Replacing a document sends your profile back to MargixIndia for review. Your existing orders stay open.</Alert>
-      {documents.length === 0 ? (
-        <EmptyState title="No documents on file" description="Your application documents appear here once they are uploaded. Contact MargixIndia dispatch if some are missing." />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {documents.map(doc => (
-            <Card key={doc.id} padded>
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-brand-soft text-brand">
-                  <FileText size={18} />
+      <PageHeader
+        title="Documents"
+        description={hasFlaggedDocs
+          ? 'Please re-upload the flagged document(s) highlighted below to proceed with compliance review.'
+          : 'Your compliance documents on file. Upload missing files or update existing ones.'}
+      />
+
+      {missingDocTypes.length > 0 && (
+        <Card padded>
+          <CardHeader
+            title="Upload Compliance Documents"
+            description="Upload missing compliance documents (PDF, JPG, PNG up to 10 MB). Mobile photos are auto-optimized in browser."
+          />
+          <div className="mt-4 space-y-6">
+            {TPL_DOC_CATEGORIES.map(category => {
+              const categoryMissing = missingDocTypes.filter(t => TPL_DOCUMENT_SPECS[t]?.category === category.id)
+              if (categoryMissing.length === 0) return null
+
+              return (
+                <div key={category.id} className="space-y-3">
+                  <div className="border-b border-border/80 pb-1">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-text">{category.title}</h4>
+                    <p className="text-xs text-muted">{category.subtitle}</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {categoryMissing.map(docType => {
+                      const spec = TPL_DOCUMENT_SPECS[docType]
+                      const req = spec?.evaluateRequirement({
+                        entityType: partner.entity_type,
+                        msmeStatus: partner.msme_status,
+                        authorizedSignatoryName: partner.authorized_signatory_name,
+                      })
+                      const issue = partner.document_issues?.[docType]
+
+                      const badgeColor =
+                        req?.level === 'required'
+                          ? 'bg-brand/10 text-brand border-brand/20'
+                          : req?.level === 'recommended'
+                          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
+                          : 'bg-surface text-muted border-border'
+
+                      return (
+                        <div key={docType} className="space-y-1.5" data-flagged={issue ? 'true' : undefined}>
+                          <div className="flex items-center justify-between text-xs px-0.5">
+                            <span className="font-medium text-text truncate">{spec?.label || docType}</span>
+                            {req && (
+                              <span className={`inline-block px-1.5 py-0.5 text-xs font-semibold rounded border ${badgeColor}`}>
+                                {req.badgeText}
+                              </span>
+                            )}
+                          </div>
+                          <DocUploadField
+                            label={docType}
+                            hint={issue ? `Fix Requested: ${issue}` : req?.reason || spec?.hint}
+                            busy={uploading === docType}
+                            onUpload={file => uploadNew(docType, file)}
+                            onRemove={() => {}}
+                            onView={() => {}}
+                          />
+                          {issue && (
+                            <div className="rounded-control bg-warning/10 border border-warning/30 p-2 text-xs text-warning flex items-start gap-1.5">
+                              <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                              <span>{issue}</span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <h2 className="truncate text-sm font-medium text-text">{doc.doc_type}</h2>
-                  <p className="mt-0.5 text-xs text-muted">Uploaded {formatDate(doc.uploaded_at)}</p>
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border pt-3">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon={<Eye size={14} />}
-                  onClick={async () => {
-                    try { await openKycDocument(doc.file_url) } catch (err) {
-                      toast.error(errorMessage(err, 'Could not open document.'))
-                    }
-                  }}
+              )
+            })}
+          </div>
+        </Card>
+      )}
+
+      {documents.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-xs font-semibold uppercase text-muted">Uploaded Documents</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {documents.map(doc => {
+              const issue = partner.document_issues?.[doc.doc_type]
+              return (
+                <Card
+                  key={doc.id}
+                  padded
+                  data-flagged={issue ? 'true' : undefined}
+                  className={clsx(
+                    'transition-all duration-200',
+                    issue ? 'border-warning/70 bg-warning/5 shadow-xs' : 'border-border bg-surface'
+                  )}
                 >
-                  View
-                </Button>
-                <FileButton
-                  variant="secondary"
-                  size="sm"
-                  icon={<UploadCloud size={14} />}
-                  loading={uploading === doc.id}
-                  accept=".pdf,.png,.jpg,.jpeg"
-                  onFile={file => replace(doc, file)}
-                >
-                  Update
-                </FileButton>
-              </div>
-            </Card>
-          ))}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className={clsx(
+                        'flex h-10 w-10 shrink-0 items-center justify-center rounded-control',
+                        issue ? 'bg-warning/20 text-warning' : 'bg-brand-soft text-brand'
+                      )}>
+                        <FileText size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h2 className="truncate text-sm font-semibold text-text">{doc.doc_type}</h2>
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted">Uploaded {formatDate(doc.uploaded_at)}</p>
+                      </div>
+                    </div>
+                    {issue ? (
+                      <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>
+                    ) : (
+                      <span className="text-xs font-semibold text-success flex items-center gap-1 shrink-0">
+                        Active
+                      </span>
+                    )}
+                  </div>
+
+                  {issue && (
+                    <div className="mt-3 rounded-control bg-warning/10 border border-warning/30 p-2.5 text-xs">
+                      <div className="flex items-center gap-1.5 font-semibold text-warning">
+                        <AlertCircle size={14} className="shrink-0" />
+                        <span>Reviewer feedback:</span>
+                      </div>
+                      <p className="mt-1 text-text leading-relaxed font-normal">{issue}</p>
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex items-center gap-2.5 border-t border-border pt-3">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="flex-1"
+                      icon={<Eye size={14} />}
+                      onClick={async () => {
+                        try { await openKycDocument(doc.file_url) } catch (err) {
+                          toast.error(errorMessage(err, 'Could not open document.'))
+                        }
+                      }}
+                    >
+                      View
+                    </Button>
+                    <FileButton
+                      variant={issue ? 'primary' : 'secondary'}
+                      size="sm"
+                      className="flex-1 font-semibold"
+                      icon={<UploadCloud size={14} />}
+                      loading={uploading === doc.id}
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      onFile={file => replace(doc, file)}
+                    >
+                      {issue ? 'Re-upload' : 'Update'}
+                    </FileButton>
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
         </div>
+      )}
+
+      {documents.length === 0 && missingDocTypes.length === 0 && (
+        <EmptyState title="No documents on file" description="Your application documents appear here once they are uploaded." />
       )}
     </div>
   )

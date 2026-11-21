@@ -44,7 +44,10 @@ export default function EditShipmentModal({ shipment, onClose }: { shipment: Shi
     if (!(totalWeight > 0)) next.weight = 'Enter a weight above 0.'
     if (price.trim() && !(Number(price) >= 0)) next.price = 'Enter a price of 0 or more, or leave it empty.'
     setErrors(next)
-    if (Object.keys(next).length > 0) return
+    if (Object.keys(next).length > 0) {
+      toast.error(Object.values(next)[0])
+      return
+    }
     // An empty price field clears the price (null); leaving it out would keep the old one
     mutation.mutate({ priority, total_items: totalItems, total_weight_kg: totalWeight, freight_charge: price.trim() ? Number(price) : null })
   }

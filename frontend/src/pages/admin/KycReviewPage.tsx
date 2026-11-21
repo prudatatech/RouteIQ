@@ -1,14 +1,15 @@
 import { useMemo } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '@/services/supabase'
+import { AlertCircle, CheckCircle2, Clock, Users } from 'lucide-react'
 import { vendorAPI } from '@/services/api'
-import { useEffectiveRole } from '@/store/effectiveRole'
 import {
-  Alert, Button, DataTable, Page, PageHeader, SearchInput, StatusPill, statusToLabel, Tabs, TabPanel,
+  Alert, Button, DataTable, Page, PageHeader, SearchInput, Stat, StatusPill, statusToLabel, Tabs, TabPanel,
   buttonClasses, parseSort, serializeSort, useOpenOnWork, useTabParam, useUrlState, type Column,
 } from '@/components/ui'
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh'
+import { usePendingPartnersCount } from '@/hooks/usePendingPartnersCount'
+import { useEffectiveRole } from '@/store/effectiveRole'
 import { formatDateTime, formatRelative } from '@/utils/display'
 import type { KycStatus, RegistryRow } from '@/components/admin/vendor-review/types'
 
@@ -17,12 +18,6 @@ type TabId = typeof TAB_IDS[number]
 
 const vendorName = (v: RegistryRow) => v.name || v.email || 'Unnamed vendor'
 
-async function countPendingPartners() {
-  const { count, error } = await supabase.from('tpl_partners').select('id', { count: 'exact', head: true }).eq('status', 'pending')
-  if (error) throw error
-  return count ?? 0
-}
-
 export default function KycReviewPage() {
   const navigate = useNavigate()
   const [tab, setTab] = useTabParam<TabId>(TAB_IDS, 'submitted')
@@ -30,13 +25,11 @@ export default function KycReviewPage() {
   const [sortParam, setSortParam] = useUrlState('sort', { fallback: tab === 'submitted' ? 'updated:asc' : 'updated:desc' })
   const sort = parseSort(sortParam)
   const [searchParams] = useSearchParams()
-  // 3PL applications are decided on a page only superadmin can open
-  const isSuperadmin = useEffectiveRole().role === 'superadmin'
 
   const vendors = useQuery({ queryKey: ['vendor-registry'], queryFn: () => vendorAPI.registryAll() })
-  const partners = useQuery({ queryKey: ['tpl-partners-pending-count'], queryFn: countPendingPartners, enabled: isSuperadmin })
+  const pendingPartners = usePendingPartnersCount() ?? 0
+  const isSuperadmin = useEffectiveRole().role === 'superadmin'
   useRealtimeRefresh('kyc_review_page', ['vendor_profiles'], [['vendor-registry']])
-  useRealtimeRefresh('kyc_review_page_partners', ['tpl_partners'], [['tpl-partners-pending-count']])
 
   const all = useMemo(() => vendors.data?.items ?? [], [vendors.data])
   const counts = useMemo(() => {
@@ -110,13 +103,16 @@ export default function KycReviewPage() {
     all: 'No vendors yet',
   }
 
-  const pendingPartners = isSuperadmin ? (partners.data ?? 0) : 0
-
   return (
     <Page>
       <PageHeader
-        title="KYC review"
-        description="Every vendor who signed up, where they are in KYC, and a full page to check, approve, reject or ask for more details. Vendors can bid only after approval."
+        title="Vendor KYC & Verification"
+        description="Every vendor registration and verification state: review GST, PAN, bank proof, and unlock highway load bidding."
+        actions={isSuperadmin ? (
+          <Link to="/admin/kyc/enter-on-behalf" className={buttonClasses({ variant: 'secondary' })}>
+            Enter application for someone
+          </Link>
+        ) : undefined}
       >
         <div className="space-y-4">
           {pendingPartners > 0 && (
@@ -129,9 +125,75 @@ export default function KycReviewPage() {
             </Alert>
           )}
           <Tabs label="Filter by KYC status" tabs={vendors.isLoading ? tabs.map(t => ({ ...t, count: undefined })) : tabs} value={tab} onChange={setTab} />
-          <SearchInput value={search} onChange={setSearch} label="Search vendors" placeholder="Search by name, email, phone, GST or city" className="max-w-sm" />
+          <div className="flex flex-wrap items-center gap-3">
+            <SearchInput value={search} onChange={setSearch} label="Search vendors" placeholder="Search by name, email, phone, GST or city" className="w-full sm:max-w-sm" />
+            {search && (
+              <Button variant="ghost" size="sm" onClick={() => setSearch('')}>
+                Clear search
+              </Button>
+            )}
+          </div>
         </div>
       </PageHeader>
+
+      {/* KYC Pipeline Pulse */}
+      <section aria-label="KYC review pulse" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <button
+          type="button"
+          onClick={() => setTab('submitted')}
+          className="text-left transition-all hover:scale-[1.01] focus:outline-none"
+        >
+          <Stat
+            label="Waiting Review"
+            value={vendors.isLoading ? '—' : counts.submitted.toLocaleString('en-IN')}
+            tone={counts.submitted > 0 ? 'warning' : 'default'}
+            hint={counts.submitted > 0 ? 'Urgent verification queue' : 'Queue cleared'}
+            icon={<Clock size={18} />}
+            className="h-full border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+          />
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('info_requested')}
+          className="text-left transition-all hover:scale-[1.01] focus:outline-none"
+        >
+          <Stat
+            label="Info Requested"
+            value={vendors.isLoading ? '—' : counts.info_requested.toLocaleString('en-IN')}
+            tone={counts.info_requested > 0 ? 'warning' : 'default'}
+            hint="Awaiting vendor correction"
+            icon={<AlertCircle size={18} />}
+            className="h-full border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+          />
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('approved')}
+          className="text-left transition-all hover:scale-[1.01] focus:outline-none"
+        >
+          <Stat
+            label="Approved Vendors"
+            value={vendors.isLoading ? '—' : counts.approved.toLocaleString('en-IN')}
+            tone="success"
+            hint="Active for spot & contract bidding"
+            icon={<CheckCircle2 size={18} />}
+            className="h-full border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+          />
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('all')}
+          className="text-left transition-all hover:scale-[1.01] focus:outline-none"
+        >
+          <Stat
+            label="Total Registered"
+            value={vendors.isLoading ? '—' : counts.all.toLocaleString('en-IN')}
+            hint="All vendor accounts on record"
+            icon={<Users size={18} />}
+            className="h-full border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
+          />
+        </button>
+      </section>
 
       <TabPanel id={tab}>
         <DataTable

@@ -1,9 +1,20 @@
 import { errorMessage, formatDateTime } from '@/utils/display'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, CheckCircle2 } from 'lucide-react'
+import { Search, CheckCircle2, Upload, Building2, FileCheck, Clock, ArrowLeft, ArrowRight, AlertCircle, } from 'lucide-react'
+import clsx from 'clsx'
+import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
-import { Alert, Button, buttonClasses, Card, Input, StatusPill } from '@/components/ui'
+import { uploadTplDocument } from '@/services/tplDocuments'
+import { Alert, Button, Card, FileButton, IfscField, Input, Select, StatusPill, humanize } from '@/components/ui'
+import { OperationalTermsFields } from '@/components/tpl/OperationalTermsFields'
+import { gstinError } from '@/utils/gstin'
+import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
+import { TPL_DOCUMENT_TYPES, TPL_DOCUMENT_SPECS, TPL_MSME_OPTIONS } from '@/components/tpl/constants'
+
+const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
+const ACCOUNT_PATTERN = /^\d{9,18}$/
+const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/i
 
 interface TplApplication {
   id: string
@@ -13,6 +24,513 @@ interface TplApplication {
   document_count?: number
   created_at?: string
   rejection_reason?: string | null
+  document_issues?: Record<string, string> | null
+  field_issues?: Record<string, string> | null
+}
+
+interface TplDocument { id: string; doc_type: string; file_url: string }
+interface TplApplicationFull extends TplApplication {
+  tpl_documents?: TplDocument[]
+  contact_name?: string | null
+  phone?: string | null
+  pan_number?: string | null
+  gstin?: string | null
+  entity_type?: string | null
+  cin?: string | null
+  authorizedSignatoryName?: string | null
+  authorized_signatory_name?: string | null
+  msme_status?: string | null
+  bank_account_no?: string | null
+  bank_ifsc?: string | null
+  operating_from?: string | null
+  fleet_size?: string | null
+  truck_type?: string | null
+  sla_commitment?: string | null
+  tax_treatment?: string | null
+}
+
+/**
+ * Edits the company, tax, bank and operational details of a pending or rejected application.
+ */
+export function FixDetails({ applicationId, pan, full, onSaved }: { applicationId: string; pan: string; full: TplApplicationFull; onSaved: () => void }) {
+  const [companyName, setCompanyName] = useState(full.company_name || '')
+  const [contactName, setContactName] = useState(full.contact_name || '')
+  const [panNumber, setPanNumber] = useState(full.pan_number || '')
+  const [gst, setGst] = useState(full.gstin || '')
+  const [entityType, setEntityType] = useState(full.entity_type || '')
+  const [cin, setCin] = useState(full.cin || '')
+  const [authorizedSignatoryName, setAuthorizedSignatoryName] = useState(full.authorized_signatory_name || full.authorizedSignatoryName || '')
+  const [msmeStatus, setMsmeStatus] = useState(full.msme_status || 'Not Registered')
+  const [operatingFrom, setOperatingFrom] = useState(full.operating_from || '')
+  const [fleetSize, setFleetSize] = useState(full.fleet_size || '')
+  const [bankAccount, setBankAccount] = useState(full.bank_account_no || '')
+  const [bankIfsc, setBankIfsc] = useState(full.bank_ifsc || '')
+  const [slaCommitment, setSlaCommitment] = useState(full.sla_commitment || '2 Hours')
+  const [taxTreatment, setTaxTreatment] = useState(full.tax_treatment || '12% GTA (With ITC) - Forward Charge')
+  const [attempted, setAttempted] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const errors: Record<string, string> = {}
+  if (!companyName.trim()) errors.companyName = 'Company name is required.'
+  if (!contactName.trim()) errors.contactName = 'Contact person is required.'
+  if (!entityType.trim()) errors.entityType = 'Choose the entity type.'
+  if (!authorizedSignatoryName.trim()) errors.authorizedSignatoryName = 'Enter the authorized signatory name.'
+  if (entityTypeRequiresCin(entityType) && !cin.trim()) errors.cin = 'CIN is required for this entity type.'
+  else if (cin.trim() && !isCinFormat(cin)) errors.cin = 'CIN looks incorrect (21 letters and digits, e.g. U74999DL2019PTC123456).'
+  if (panNumber.trim() && !PAN_PATTERN.test(panNumber.trim().toUpperCase())) errors.panNumber = 'PAN looks incorrect (e.g. ABCDE1234F).'
+  if (gst.trim()) {
+    const g = gstinError(gst.trim(), panNumber.trim() || undefined)
+    if (g) errors.gst = g
+  }
+  if (bankAccount.trim() && !ACCOUNT_PATTERN.test(bankAccount.trim())) errors.bankAccount = 'Bank account must be 9 to 18 digits.'
+  if (bankIfsc.trim() && !IFSC_PATTERN.test(bankIfsc.trim().toUpperCase())) errors.bankIfsc = 'IFSC looks incorrect (e.g. HDFC0001234).'
+
+  const err = (key: string) => (attempted ? errors[key] : undefined)
+
+  const handleGstChange = (val: string) => {
+    const upper = val.toUpperCase()
+    setGst(upper)
+    if (!panNumber.trim() && upper.length >= 12) {
+      const derived = upper.slice(2, 12)
+      if (PAN_PATTERN.test(derived)) {
+        setPanNumber(derived)
+      }
+    }
+  }
+
+  const save = async () => {
+    setAttempted(true)
+    const firstError = Object.values(errors)[0]
+    if (firstError) {
+      toast.error(firstError)
+      return
+    }
+    setSaving(true)
+    try {
+      await tplAPI.updateApplication(applicationId, {
+        verify_pan: pan,
+        companyName: companyName.trim(),
+        contactName: contactName.trim(),
+        entityType,
+        authorizedSignatoryName: authorizedSignatoryName.trim(),
+        msmeStatus,
+        ...(operatingFrom.trim() ? { operatingFrom: operatingFrom.trim() } : {}),
+        ...(fleetSize.trim() ? { fleetSize: fleetSize.trim() } : {}),
+        ...(panNumber.trim() ? { pan: panNumber.trim().toUpperCase() } : {}),
+        ...(gst.trim() ? { gst: gst.trim().toUpperCase() } : {}),
+        ...(cin.trim() ? { cin: cin.trim().toUpperCase() } : {}),
+        ...(bankAccount.trim() ? { bankAccount: bankAccount.trim() } : {}),
+        ...(bankIfsc.trim() ? { bankIfsc: bankIfsc.trim().toUpperCase() } : {}),
+        slaCommitment,
+        taxTreatment,
+      })
+      toast.success(full.status === 'rejected' ? 'Details saved. Your application is back under review.' : 'Details saved')
+      onSaved()
+    } catch (err) {
+      toast.error(errorMessage(err, 'We could not save your details. Try again.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const fieldIssue = (key: string) => full.field_issues?.[key]
+
+  return (
+    <div className="space-y-6">
+      {full.field_issues && Object.keys(full.field_issues).length > 0 && (
+        <Alert tone="warning" title="Action Needed: Fix Flagged Application Details">
+          <p className="text-xs">
+            Reviewer flagged {Object.keys(full.field_issues).length} item(s) below. Please correct the highlighted fields and save your updates.
+          </p>
+        </Alert>
+      )}
+
+      {/* 1. Identity & Corporate */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 border-b border-border pb-2">
+          <Building2 size={16} className="text-brand" />
+          <h4 className="text-xs font-semibold text-text uppercase ">Company &amp; Governance</h4>
+        </div>
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+          <div>
+            <Input label="Company name" required value={companyName} error={err('companyName')} onChange={e => setCompanyName(e.target.value)} />
+            {fieldIssue('company_name') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('company_name')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <Input label="Contact person" required value={contactName} error={err('contactName')} onChange={e => setContactName(e.target.value)} />
+            {fieldIssue('contact_name') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('contact_name')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <Select label="Entity type" required value={entityType} error={err('entityType')} onChange={e => setEntityType(e.target.value)} options={ENTITY_TYPE_OPTIONS} placeholder="Choose entity type" />
+            {fieldIssue('entity_type') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('entity_type')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <Select
+              label="MSME status"
+              value={msmeStatus}
+              onChange={e => setMsmeStatus(e.target.value)}
+              options={TPL_MSME_OPTIONS.map(v => ({ value: v, label: v }))}
+            />
+            {fieldIssue('msme_status') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('msme_status')}</span>
+              </p>
+            )}
+          </div>
+          {entityTypeRequiresCin(entityType) && (
+            <div>
+              <Input label="CIN" required value={cin} error={err('cin')} onChange={e => setCin(e.target.value.toUpperCase())} placeholder="U74999DL2019PTC123456" maxLength={21} inputClassName="font-mono uppercase" />
+              {fieldIssue('cin') && (
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                  <AlertCircle size={14} className="shrink-0" />
+                  <span>Fix requested: {fieldIssue('cin')}</span>
+                </p>
+              )}
+            </div>
+          )}
+          <div className={entityTypeRequiresCin(entityType) ? '' : 'sm:col-span-2'}>
+            <Input label="Authorized signatory name" required value={authorizedSignatoryName} error={err('authorizedSignatoryName')} onChange={e => setAuthorizedSignatoryName(e.target.value)} />
+            {fieldIssue('authorized_signatory_name') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('authorized_signatory_name')}</span>
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Tax & Banking */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 border-b border-border pb-2">
+          <FileCheck size={16} className="text-brand" />
+          <h4 className="text-xs font-semibold text-text uppercase ">Tax &amp; Settlement Account</h4>
+        </div>
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+          <div>
+            <Input label="PAN" value={panNumber} error={err('panNumber')} onChange={e => setPanNumber(e.target.value.toUpperCase())} placeholder="ABCDE1234F" maxLength={10} inputClassName="font-mono uppercase" />
+            {fieldIssue('pan_number') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('pan_number')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <Input label="GSTIN" value={gst} error={err('gst')} onChange={e => handleGstChange(e.target.value)} placeholder="07ABCDE1234F1Z5" maxLength={15} inputClassName="font-mono uppercase" />
+            {fieldIssue('gstin') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('gstin')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <Input label="Bank account number" value={bankAccount} error={err('bankAccount')} onChange={e => setBankAccount(e.target.value)} inputClassName="font-mono" placeholder="9 to 18 digits" />
+            {fieldIssue('bank_account_no') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('bank_account_no')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <IfscField label="Bank IFSC" value={bankIfsc} error={err('bankIfsc')} onChange={setBankIfsc} placeholder="HDFC0001234" required={false} />
+            {fieldIssue('bank_ifsc') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('bank_ifsc')}</span>
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Operational Terms & Fleet Scope */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 border-b border-border pb-2">
+          <Clock size={16} className="text-brand" />
+          <h4 className="text-xs font-semibold text-text uppercase ">Service Levels &amp; Fleet Operations</h4>
+        </div>
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+          <div>
+            <Input
+              label="Base operating location / city"
+              value={operatingFrom}
+              onChange={e => setOperatingFrom(e.target.value)}
+              placeholder="e.g. Mumbai, Navi Mumbai, Delhi NCR"
+            />
+            {fieldIssue('operating_from') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('operating_from')}</span>
+              </p>
+            )}
+          </div>
+          <div>
+            <Input
+              label="Fleet size / declared vehicles"
+              value={fleetSize}
+              onChange={e => setFleetSize(e.target.value)}
+              placeholder="e.g. 5 vehicles, Single, 10-20"
+            />
+            {fieldIssue('fleet_size') && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>Fix requested: {fieldIssue('fleet_size')}</span>
+              </p>
+            )}
+          </div>
+        </div>
+        <OperationalTermsFields
+          slaCommitment={slaCommitment}
+          taxTreatment={taxTreatment}
+          onSlaChange={setSlaCommitment}
+          onTaxChange={setTaxTreatment}
+        />
+      </div>
+
+      <div className="pt-2">
+        <Button fullWidth size="lg" loading={saving} onClick={save} className="font-semibold justify-center">
+          Save updated details
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function FixDocumentsList({ applicationId, pan, full, onReplaced }: { applicationId: string; pan: string; full: TplApplicationFull; onReplaced: () => void }) {
+  const [uploadingType, setUploadingType] = useState<string | null>(null)
+
+  const uniqueDocs = (full.tpl_documents ?? []).reduce<TplDocument[]>((acc, doc) => {
+    const existingIndex = acc.findIndex(d => d.doc_type === doc.doc_type)
+    if (existingIndex >= 0) {
+      acc[existingIndex] = doc
+    } else {
+      acc.push(doc)
+    }
+    return acc
+  }, [])
+
+  const uploadedTypes = new Set(uniqueDocs.map(d => d.doc_type))
+  const missingDocTypes = TPL_DOCUMENT_TYPES.filter(t => !uploadedTypes.has(t))
+
+  const sortedMissing = [...missingDocTypes].sort((a, b) => {
+    const aFlagged = full.document_issues?.[a] ? 1 : 0
+    const bFlagged = full.document_issues?.[b] ? 1 : 0
+    if (aFlagged !== bFlagged) return bFlagged - aFlagged
+    const aReq = TPL_DOCUMENT_SPECS[a]?.evaluateRequirement({
+      entityType: full.entity_type,
+      msmeStatus: full.msme_status,
+      authorizedSignatoryName: full.authorized_signatory_name || full.authorizedSignatoryName,
+    })?.level === 'required' ? 1 : 0
+    const bReq = TPL_DOCUMENT_SPECS[b]?.evaluateRequirement({
+      entityType: full.entity_type,
+      msmeStatus: full.msme_status,
+      authorizedSignatoryName: full.authorized_signatory_name || full.authorizedSignatoryName,
+    })?.level === 'required' ? 1 : 0
+    return bReq - aReq
+  })
+
+  const replace = (doc: TplDocument) => async (file: File) => {
+    setUploadingType(doc.doc_type)
+    try {
+      const path = await uploadTplDocument(file, doc.doc_type, { applicationId, verifyPan: pan })
+      const documents = uniqueDocs.map(d => (d.doc_type === doc.doc_type ? { type: d.doc_type, url: path } : { type: d.doc_type, url: d.file_url }))
+      await tplAPI.updateApplication(applicationId, { verify_pan: pan, documents })
+      toast.success(full.status === 'rejected' ? 'Document replaced. Your application is back under review.' : 'Document replaced')
+      onReplaced()
+    } catch (err) {
+      toast.error(errorMessage(err, 'We could not save this document. Try again.'))
+    } finally {
+      setUploadingType(null)
+    }
+  }
+
+  const uploadMissing = (docType: string) => async (file: File) => {
+    setUploadingType(docType)
+    try {
+      const path = await uploadTplDocument(file, docType, { applicationId, verifyPan: pan })
+      const documents = [
+        ...uniqueDocs.map(d => ({ type: d.doc_type, url: d.file_url })),
+        { type: docType, url: path },
+      ]
+      await tplAPI.updateApplication(applicationId, { verify_pan: pan, documents })
+      toast.success(full.status === 'rejected' ? 'Document uploaded. Your application is back under review.' : 'Document uploaded successfully')
+      onReplaced()
+    } catch (err) {
+      toast.error(errorMessage(err, 'We could not save this document. Try again.'))
+    } finally {
+      setUploadingType(null)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {uniqueDocs.length > 0 && (
+        <div className="space-y-3">
+          <h4 className="text-xs font-semibold uppercase  text-text">Uploaded Documents ({uniqueDocs.length})</h4>
+          {uniqueDocs.map(doc => {
+            const issue = full.document_issues?.[doc.doc_type]
+            return (
+              <div key={doc.id} className={clsx('rounded-card border p-4 transition-all', issue ? 'border-warning bg-warning/5 shadow-xs' : 'border-border bg-surface')}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-text flex items-center gap-2">
+                    <FileCheck size={16} className="text-brand shrink-0" />
+                    {doc.doc_type}
+                  </span>
+                  {issue ? (
+                    <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>
+                  ) : (
+                    <span className="text-xs font-semibold text-success flex items-center gap-1">
+                      <CheckCircle2 size={13} /> Active on file
+                    </span>
+                  )}
+                </div>
+                {issue && (
+                  <p className="mt-2 text-xs text-warning bg-warning/10 p-2 rounded-control font-medium flex items-start gap-1.5">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span>{issue}</span>
+                  </p>
+                )}
+                <div className="mt-3 pt-2.5 border-t border-border flex items-center justify-between text-xs">
+                  <span className="text-muted">PDF or JPEG (max 10MB)</span>
+                  <FileButton variant="secondary" icon={<Upload size={14} />} accept=".pdf,.jpg,.jpeg,.png" disabled={uploadingType === doc.doc_type} onFile={replace(doc)}>
+                    {uploadingType === doc.doc_type ? 'Uploading…' : 'Replace this document'}
+                  </FileButton>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {sortedMissing.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <div className="border-b border-border pb-1.5">
+            <h4 className="text-xs font-semibold uppercase  text-text">
+              {uniqueDocs.length === 0 ? 'Upload Compliance Documents' : 'Upload Additional / Missing Documents'}
+            </h4>
+            <p className="text-xs text-muted">Upload any requested or compliance documents to speed up your approval.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3">
+            {sortedMissing.map(docType => {
+              const spec = TPL_DOCUMENT_SPECS[docType]
+              const req = spec?.evaluateRequirement({
+                entityType: full.entity_type,
+                msmeStatus: full.msme_status,
+                authorizedSignatoryName: full.authorized_signatory_name || full.authorizedSignatoryName,
+              })
+              const issue = full.document_issues?.[docType]
+              const badgeColor =
+                req?.level === 'required'
+                  ? 'bg-brand/10 text-brand border-brand/20'
+                  : req?.level === 'recommended'
+                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
+                  : 'bg-surface text-muted border-border'
+
+              return (
+                <div
+                  key={docType}
+                  className={clsx(
+                    'rounded-card border p-3.5 transition-all',
+                    issue ? 'border-warning bg-warning/5 shadow-xs' : 'border-border/80 bg-surface/80'
+                  )}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-text truncate">{spec?.label || docType}</span>
+                        {req && (
+                          <span className={`inline-block px-1.5 py-0.5 text-xs font-semibold rounded border ${badgeColor}`}>
+                            {req.badgeText}
+                          </span>
+                        )}
+                        {issue && (
+                          <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted mt-0.5">{issue ? `Compliance note: ${issue}` : req?.reason || spec?.hint}</p>
+                    </div>
+                    <div className="shrink-0 flex items-center justify-end">
+                      <FileButton
+                        variant={issue || req?.level === 'required' ? 'primary' : 'secondary'}
+                        size="sm"
+                        icon={<Upload size={13} />}
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        disabled={uploadingType === docType}
+                        onFile={uploadMissing(docType)}
+                      >
+                        {uploadingType === docType ? 'Uploading…' : 'Upload'}
+                      </FileButton>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FixApplication({ applicationId, pan, mode, onDone }: { applicationId: string; pan: string; mode: 'full' | 'documents'; onDone: () => void }) {
+  const [full, setFull] = useState<TplApplicationFull | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = () => {
+    setLoading(true)
+    return tplAPI.getPartner(applicationId, pan)
+      .then(data => setFull(data as TplApplicationFull))
+      .catch(err => setError(errorMessage(err, 'We could not load your application. Check the PAN and try again.')))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const refresh = async () => {
+    await load()
+    onDone()
+  }
+
+  if (loading) return <p className="text-center text-sm text-muted py-6">Loading your application details…</p>
+  if (error || !full) return <Alert tone="danger">{error ?? 'Application not found'}</Alert>
+
+  return (
+    <div className="space-y-6">
+      {mode === 'full' && <FixDetails applicationId={applicationId} pan={pan} full={full} onSaved={refresh} />}
+      <div className={mode === 'full' ? 'border-t border-border pt-6' : ''}>
+        {mode === 'full' && (
+          <div className="flex items-center gap-2 mb-3">
+            <Upload size={16} className="text-brand" />
+            <h3 className="text-sm font-semibold text-text uppercase ">Uploaded Documents</h3>
+          </div>
+        )}
+        <FixDocumentsList applicationId={applicationId} pan={pan} full={full} onReplaced={refresh} />
+      </div>
+    </div>
+  )
 }
 
 export default function TplTrackApplicationPage() {
@@ -21,14 +539,15 @@ export default function TplTrackApplicationPage() {
   const [trackingId, setTrackingId] = useState(searchParams.get('id') ?? '')
   const [lookupError, setLookupError] = useState<string | null>(null)
   const [editPan, setEditPan] = useState('')
+  const [fixingDocs, setFixingDocs] = useState(false)
   const [loading, setLoading] = useState(false)
   const [application, setApplication] = useState<TplApplication | null>(null)
 
-  const handleTrack = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const cleaned = trackingId.trim()
+  const handleTrack = async (e?: React.FormEvent, idToTrack?: string) => {
+    if (e) e.preventDefault()
+    const cleaned = (idToTrack ?? trackingId).trim()
     if (!cleaned) {
-      setLookupError('Enter your tracking ID.')
+      setLookupError('Enter your 3PL tracking ID.')
       return
     }
     setLookupError(null)
@@ -36,6 +555,9 @@ export default function TplTrackApplicationPage() {
     try {
       const data = await tplAPI.getPartner(cleaned)
       setApplication(data as TplApplication)
+      if (searchParams.get('highlight') === 'flagged' || searchParams.get('fix')) {
+        setFixingDocs(true)
+      }
     } catch (err) {
       console.error(err)
       setLookupError((err as { response?: { status?: number } })?.response?.status === 404
@@ -47,116 +569,268 @@ export default function TplTrackApplicationPage() {
     }
   }
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-bg p-6">
-      <div className="w-full max-w-md space-y-6">
-        <Link to="/3pl/onboard" className="inline-block text-sm text-muted hover:text-text">
-          ← Back to the application form
-        </Link>
+  useEffect(() => {
+    const idParam = searchParams.get('id')?.trim()
+    const panParam = searchParams.get('pan')?.trim()
+    const fixParam = searchParams.get('fix')
+    if (panParam) setEditPan(panParam.toUpperCase())
+    if (fixParam) setFixingDocs(true)
+    if (idParam && !application) {
+      handleTrack(undefined, idParam)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
-        <Card padded>
-          <div className="mb-6 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-control bg-brand-soft text-brand">
-              <Search size={22} />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold text-text">Check your application</h1>
-              <p className="text-sm text-muted">See where your 3PL application is, or edit it while it is under review.</p>
-            </div>
+  const refreshAfterFix = async () => {
+    if (!application) return
+    try {
+      const data = await tplAPI.getPartner(application.id)
+      setApplication(data as TplApplication)
+    } catch { /* keep current state */ }
+  }
+
+  return (
+    <div className="min-h-screen bg-bg text-text flex flex-col">
+      {/* Top Navbar */}
+      <header className="border-b border-border bg-surface">
+        <div className="mx-auto flex h-16 w-full max-w-content items-center justify-between px-4 sm:px-6">
+          <Link to="/" className="flex items-center gap-2.5 rounded-control text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+            <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
+            <span className="text-lg font-semibold tracking-tight">
+              Margix<span className="text-brand">India</span>
+            </span>
+          </Link>
+          <div className="flex items-center gap-4 text-xs font-semibold">
+            <Link to="/3pl/onboard" className="text-muted hover:text-text">
+              New 3PL Application
+            </Link>
+            <Link to="/login" className="px-3 py-1.5 rounded-control border border-border bg-surface hover:bg-surface-subtle text-text">
+              Sign in
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 sm:py-12">
+        <div className={clsx('w-full space-y-6 transition-all duration-300', fixingDocs ? 'max-w-3xl' : 'max-w-lg')}>
+          <div className="flex items-center justify-between">
+            <Link to="/3pl/onboard" className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-text font-semibold transition-colors">
+              <ArrowLeft size={14} /> Back to partner registration
+            </Link>
+            <span className="text-xs font-mono text-muted">Carrier Status Portal</span>
           </div>
 
-          {!application ? (
-            <form noValidate onSubmit={handleTrack} className="space-y-4">
-              {lookupError && <Alert tone="danger">{lookupError}</Alert>}
-              <Input
-                label="Your 3PL ID"
-                required
-                value={trackingId}
-                onChange={e => setTrackingId(e.target.value)}
-                placeholder="e.g. acme_3pl"
-                hint="The ID you chose on the application form."
-                autoCapitalize="none"
-                autoComplete="off"
-                spellCheck={false}
-                className="font-mono"
-              />
-              <Button type="submit" fullWidth loading={loading}>Check application</Button>
-            </form>
-          ) : (
-            <div className="space-y-6">
-              <div className="rounded-control border border-border bg-surface-subtle p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h3 className="font-medium text-text">{application.company_name}</h3>
-                    <p className="mt-0.5 font-mono text-xs text-muted">{application.id}</p>
-                  </div>
-                  <StatusPill status={application.status} />
-                </div>
-                <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <dt className="text-xs text-muted">Corridors requested</dt>
-                    <dd className="mt-0.5 text-text">{application.corridor_count ?? 0}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted">Documents provided</dt>
-                    <dd className="mt-0.5 text-text">{application.document_count ?? 0}</dd>
-                  </div>
-                  <div className="col-span-2">
-                    <dt className="text-xs text-muted">Submitted on</dt>
-                    <dd className="mt-0.5 text-text">{formatDateTime(application.created_at)}</dd>
-                  </div>
-                </dl>
+          <Card padded className="shadow-raised border border-border">
+            <div className="mb-6 flex items-start gap-4 border-b border-border pb-5">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-card bg-brand-soft text-brand">
+                <Search size={22} />
               </div>
-
-              {application.status === 'pending' ? (
-                <div className="space-y-4">
-                  <p className="text-center text-sm text-muted">
-                    Your application is under review. We will email you when there is a decision. Until then you can change your details or upload missing documents.
-                  </p>
-                  <Input
-                    label="Company PAN"
-                    hint="Enter the PAN from your application to edit it."
-                    value={editPan}
-                    onChange={e => setEditPan(e.target.value.toUpperCase())}
-                    placeholder="ABCDE1234F"
-                    maxLength={10}
-                    className="font-mono"
-                  />
-                  <Button
-                    variant="secondary"
-                    fullWidth
-                    disabled={!editPan.trim()}
-                    onClick={() => navigate(`/3pl/onboard?edit=${application.id}&pan=${encodeURIComponent(editPan.trim())}`)}
-                  >
-                    Edit application details
-                  </Button>
-                  <Button variant="ghost" fullWidth onClick={() => setApplication(null)}>Check another application</Button>
-                </div>
-              ) : (
-                <div className="space-y-4 text-center">
-                  {application.status === 'rejected' ? (
-                    <>
-                      <p className="text-sm text-text">This application was not approved.</p>
-                      {application.rejection_reason && (
-                        <p className="text-sm text-muted">Reason: {application.rejection_reason}</p>
-                      )}
-                      <Link to="/3pl/onboard" className={buttonClasses({ variant: 'primary' })}>Apply again</Link>
-                    </>
-                  ) : (
-                    <>
-                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-soft text-success">
-                        <CheckCircle2 size={24} />
-                      </div>
-                      <p className="text-sm text-text">Your application was approved. You can no longer edit it. Set up your partner login to open your dashboard.</p>
-                      <Button onClick={() => navigate('/3pl/onboard/setup')}>Set up your partner login</Button>
-                    </>
-                  )}
-                </div>
-              )}
+              <div>
+                <h1 className="text-lg font-semibold text-text tracking-tight">Check 3PL Partner Application</h1>
+                <p className="text-xs sm:text-sm text-muted mt-0.5">
+                  Track verification status, address flagged compliance documents, or update bank details.
+                </p>
+              </div>
             </div>
-          )}
-        </Card>
-      </div>
+
+            {!application ? (
+              <form noValidate onSubmit={handleTrack} className="space-y-4">
+                {lookupError && <Alert tone="danger">{lookupError}</Alert>}
+                <Input
+                  label="Your 3PL Partner ID"
+                  required
+                  value={trackingId}
+                  onChange={e => setTrackingId(e.target.value)}
+                  placeholder="e.g. acme_3pl or tracking UUID"
+                  hint="The unique partner ID chosen during your registration."
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  spellCheck={false}
+                  inputClassName="font-mono text-base"
+                />
+                <Button type="submit" size="lg" fullWidth loading={loading} className="font-semibold justify-center">
+                  Check application status <ArrowRight size={15} className="ml-1" />
+                </Button>
+                <div className="pt-2 text-center">
+                  <p className="text-xs text-muted">
+                    Need help finding your application? <a href="mailto:support@margixindia.com" className="text-brand font-semibold hover:underline">Contact carrier support</a>
+                  </p>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-6">
+                {/* Application Overview Badge */}
+                <div className="rounded-card border border-border bg-surface-subtle p-5 space-y-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <span className="text-xs font-semibold uppercase  text-muted block">Registered Carrier</span>
+                      <h3 className="text-base sm:text-lg font-semibold text-text">{application.company_name}</h3>
+                      <p className="mt-0.5 font-mono text-xs text-muted">ID: {application.id}</p>
+                    </div>
+                    <StatusPill status={application.status} />
+                  </div>
+                  <dl className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-3 border-t border-border text-xs">
+                    <div>
+                      <dt className="text-muted font-medium">Corridors Requested</dt>
+                      <dd className="mt-0.5 text-text font-semibold text-sm">{application.corridor_count ?? 0} trips</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted font-medium">Documents on File</dt>
+                      <dd className="mt-0.5 text-text font-semibold text-sm">{application.document_count ?? 0} files</dd>
+                    </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <dt className="text-muted font-medium">Application Date</dt>
+                      <dd className="mt-0.5 text-text font-mono text-xs">{formatDateTime(application.created_at)}</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                {application.status === 'pending' ? (
+                  <div className="space-y-4">
+                    <div className="p-3.5 rounded-control bg-info/10 border border-info/20 text-xs text-info dark:text-info leading-relaxed">
+                      Your application is actively under review by Margix compliance. You will receive an email once approved. You can fix or replace documents and details below.
+                    </div>
+
+                    {application.field_issues && Object.keys(application.field_issues).length > 0 && (
+                      <Alert tone="warning" title="Action Needed: Fix Flagged Application Details">
+                        <p className="text-xs mb-1.5 font-medium">Compliance team flagged the following details for correction:</p>
+                        <ul className="list-disc space-y-1 pl-4 text-xs">
+                          {Object.entries(application.field_issues).map(([field, reason]) => (
+                            <li key={field}><strong className="font-semibold">{humanize(field)}</strong>: {reason}</li>
+                          ))}
+                        </ul>
+                      </Alert>
+                    )}
+
+                    {application.document_issues && Object.keys(application.document_issues).length > 0 && (
+                      <Alert tone="warning" title="Action Needed: Fix Flagged Documents">
+                        <ul className="list-disc space-y-1 pl-4 mt-1">
+                          {Object.entries(application.document_issues).map(([type, reason]) => (
+                            <li key={type}><strong className="font-semibold">{type}</strong>: {reason}</li>
+                          ))}
+                        </ul>
+                      </Alert>
+                    )}
+
+                    {fixingDocs ? (
+                      <FixApplication
+                        applicationId={application.id}
+                        pan={editPan.trim()}
+                        mode={application.field_issues && Object.keys(application.field_issues).length > 0 ? 'full' : 'documents'}
+                        onDone={refreshAfterFix}
+                      />
+                    ) : (
+                      <div className="p-4 rounded-card border border-border bg-surface space-y-3">
+                        <h4 className="text-xs font-semibold text-text uppercase ">
+                          {(application.field_issues && Object.keys(application.field_issues).length > 0) || (application.document_issues && Object.keys(application.document_issues).length > 0)
+                            ? 'Authorize Compliance Corrections'
+                            : 'Authorize Document Updates'}
+                        </h4>
+                        <Input
+                          label="Enter Company PAN to Edit"
+                          hint="Verification requires the PAN submitted with the application."
+                          value={editPan}
+                          onChange={e => setEditPan(e.target.value.toUpperCase())}
+                          placeholder="ABCDE1234F"
+                          maxLength={10}
+                          inputClassName="font-mono uppercase text-base"
+                        />
+                        <Button
+                          variant="secondary"
+                          fullWidth
+                          size="lg"
+                          disabled={!editPan.trim()}
+                          onClick={() => setFixingDocs(true)}
+                          className="font-semibold justify-center"
+                        >
+                          {application.field_issues && Object.keys(application.field_issues).length > 0
+                            ? 'Fix flagged details & documents'
+                            : application.document_issues && Object.keys(application.document_issues).length > 0
+                              ? 'Fix flagged documents'
+                              : 'Replace an uploaded document'}
+                        </Button>
+                      </div>
+                    )}
+                    <Button variant="ghost" fullWidth onClick={() => setApplication(null)}>
+                      ← Check another application ID
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-5 text-center">
+                    {application.status === 'rejected' ? (
+                      <div className="space-y-4 text-left">
+                        <Alert tone="danger" title="Application Not Approved">
+                          {application.rejection_reason || 'Compliance criteria were not met. You can fix details and resubmit.'}
+                        </Alert>
+
+                        {application.field_issues && Object.keys(application.field_issues).length > 0 && (
+                          <Alert tone="warning" title="Flagged Application Details">
+                            <ul className="list-disc space-y-1 pl-4 mt-1 text-xs">
+                              {Object.entries(application.field_issues).map(([field, reason]) => (
+                                <li key={field}><strong className="font-semibold">{humanize(field)}</strong>: {reason}</li>
+                              ))}
+                            </ul>
+                          </Alert>
+                        )}
+
+                        {application.document_issues && Object.keys(application.document_issues).length > 0 && (
+                          <Alert tone="warning" title="Flagged Document Issues">
+                            <ul className="list-disc space-y-1 pl-4 mt-1">
+                              {Object.entries(application.document_issues).map(([type, reason]) => (
+                                <li key={type}><strong className="font-semibold">{type}</strong>: {reason}</li>
+                              ))}
+                            </ul>
+                          </Alert>
+                        )}
+
+                        {fixingDocs ? (
+                          <FixApplication applicationId={application.id} pan={editPan.trim()} mode="full" onDone={refreshAfterFix} />
+                        ) : (
+                          <div className="p-4 rounded-card border border-border bg-surface space-y-3">
+                            <h4 className="text-xs font-semibold text-text uppercase ">Resubmit with Corrections</h4>
+                            <Input
+                              label="Company PAN"
+                              hint="Enter your PAN to unlock full editing and resubmit."
+                              value={editPan}
+                              onChange={e => setEditPan(e.target.value.toUpperCase())}
+                              placeholder="ABCDE1234F"
+                              maxLength={10}
+                              inputClassName="font-mono uppercase text-base"
+                            />
+                            <Button fullWidth size="lg" disabled={!editPan.trim()} onClick={() => setFixingDocs(true)} className="font-semibold justify-center">
+                              Fix application details &amp; resubmit
+                            </Button>
+                          </div>
+                        )}
+                        <div className="text-center pt-2">
+                          <Link to="/3pl/onboard" className="text-xs font-semibold text-brand hover:underline">
+                            Or start a brand new partner application
+                          </Link>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4 py-4">
+                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-success/10 text-success">
+                          <CheckCircle2 size={32} />
+                        </div>
+                        <div className="space-y-1">
+                          <h3 className="text-lg font-semibold text-text">Partner Application Approved!</h3>
+                          <p className="text-xs text-muted max-w-sm mx-auto">
+                            Your carrier credentials are confirmed. Set up your password now to access your 3PL partner dispatch dashboard.
+                          </p>
+                        </div>
+                        <Button size="lg" onClick={() => navigate('/3pl/onboard/setup')} className="font-semibold">
+                          Set up partner login credentials <ArrowRight size={15} className="ml-1" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+        </div>
+      </main>
     </div>
   )
 }

@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { HttpError } from '../core/errors';
 import { samePlace, validPlace } from '../core/places';
+import { ENTITY_TYPES, entityTypeRequiresCin, isCinFormat } from '../utils/entity-type';
 
 const GST_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
 const PAN_PATTERN = /^[A-Z]{5}\d{4}[A-Z]$/i;
@@ -81,6 +82,18 @@ export function assertKycContent(vendorId: string, input: KycSubmitInput): void 
   if (typeof form.panNumber === 'string' && form.panNumber.trim() && !PAN_PATTERN.test(form.panNumber.trim())) {
     throw new HttpError(400, 'PAN looks incorrect (for example AAAAA0000A)');
   }
+  if (typeof form.entityType !== 'string' || !(ENTITY_TYPES as readonly string[]).includes(form.entityType)) {
+    throw new HttpError(400, `Entity type is required (one of: ${ENTITY_TYPES.join(', ')})`);
+  }
+  if (typeof form.authorizedSignatoryName !== 'string' || !form.authorizedSignatoryName.trim()) {
+    throw new HttpError(400, 'The authorized signatory name is required');
+  }
+  if (entityTypeRequiresCin(form.entityType)) {
+    if (typeof form.cin !== 'string' || !form.cin.trim()) throw new HttpError(400, 'CIN is required for this entity type');
+    if (!isCinFormat(form.cin)) throw new HttpError(400, 'CIN looks incorrect (21 letters and digits, for example U74999DL2019PTC123456)');
+  } else if (typeof form.cin === 'string' && form.cin.trim() && !isCinFormat(form.cin)) {
+    throw new HttpError(400, 'CIN looks incorrect (21 letters and digits, for example U74999DL2019PTC123456)');
+  }
   assertOwnDocumentPaths(vendorId, form.docUrls, input.kycData.otherDocs);
   if (input.companyLogo && !isOwnKycPath(vendorId, input.companyLogo)) {
     throw new HttpError(400, 'The company logo must be a file you uploaded here');
@@ -110,6 +123,11 @@ export const RequestInfoSchema = z.object({
     kind: z.enum(['text', 'document'], { errorMap: () => ({ message: 'Each item is either text or a document' }) }),
     hint: z.string().trim().max(300, 'A hint is too long (at most 300 characters)').optional(),
   })).min(1, 'Ask for at least one item').max(10, 'Ask for at most 10 items'),
+});
+
+export const FlagKycDocumentsSchema = z.object({
+  issues: z.record(z.string(), z.string().trim().min(3, 'Say what is wrong with each document (at least 3 characters)').max(300, 'Reason is too long (at most 300 characters)'))
+    .refine(issues => Object.keys(issues).length > 0, 'Flag at least one document'),
 });
 
 export const KycRespondSchema = z.object({

@@ -4,6 +4,7 @@
  */
 import { HttpError } from '../core/errors';
 import { RATE_UNITS } from '../utils/corridor-match';
+import { ENTITY_TYPES, entityTypeRequiresCin, isCinFormat } from '../utils/entity-type';
 
 export const TPL_SLA_OPTIONS = ['2 Hours', '4 Hours', '6 Hours', '12 Hours'] as const;
 export const TPL_TAX_OPTIONS = ['12% GTA (With ITC) - Forward Charge', '5% GTA (No ITC) - Reverse Charge'] as const;
@@ -82,12 +83,120 @@ export function assertPartnerSettings(input: Record<string, unknown>): { sla_com
 /** A plain address check: something, an @, something, a dot, something. */
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** Checks a { "<doc type>": reason } payload: at least one entry, every key a real document type, every reason 3-300 characters. */
+export function assertFlagDocuments(issues: unknown, docTypes: readonly string[]): Record<string, string> {
+  if (!issues || typeof issues !== 'object' || Array.isArray(issues)) throw new HttpError(400, 'Flag at least one document');
+  const entries = Object.entries(issues as Record<string, unknown>);
+  if (entries.length === 0) throw new HttpError(400, 'Flag at least one document');
+  const out: Record<string, string> = {};
+  for (const [key, reason] of entries) {
+    if (!docTypes.includes(key)) throw new HttpError(400, `Unknown document: ${key}`);
+    if (typeof reason !== 'string' || reason.trim().length < 3 || reason.length > 300) {
+      throw new HttpError(400, 'Say what is wrong with each document (3 to 300 characters)');
+    }
+    out[key] = reason.trim();
+  }
+  return out;
+}
+
+export const TPL_FLAGGABLE_FIELDS = [
+  'company_name',
+  'contact_name',
+  'phone',
+  'pan_number',
+  'gstin',
+  'entity_type',
+  'cin',
+  'authorized_signatory_name',
+  'msme_status',
+  'bank_account_no',
+  'bank_ifsc',
+  'operating_from',
+  'fleet_size',
+] as const;
+
+export const TPL_FIELD_LABELS: Record<string, string> = {
+  company_name: 'Company Name',
+  contact_name: 'Contact Person',
+  phone: 'Mobile Number',
+  pan_number: 'PAN Number',
+  gstin: 'GSTIN',
+  entity_type: 'Entity Type',
+  cin: 'CIN',
+  authorized_signatory_name: 'Authorized Signatory',
+  msme_status: 'MSME Status',
+  bank_account_no: 'Bank Account Number',
+  bank_ifsc: 'Bank IFSC Code',
+  operating_from: 'Operating Location',
+  fleet_size: 'Fleet Size / Vehicles',
+};
+
+/** Normalizes frontend or payload field keys to snake_case column names */
+export function normalizeFieldKey(key: string): string {
+  const map: Record<string, string> = {
+    companyName: 'company_name',
+    contactName: 'contact_name',
+    phone: 'phone',
+    pan: 'pan_number',
+    panNumber: 'pan_number',
+    gst: 'gstin',
+    entityType: 'entity_type',
+    authorizedSignatoryName: 'authorized_signatory_name',
+    msmeStatus: 'msme_status',
+    bankAccount: 'bank_account_no',
+    bankAccountNo: 'bank_account_no',
+    bankIfsc: 'bank_ifsc',
+    operatingFrom: 'operating_from',
+    fleetSize: 'fleet_size',
+  };
+  return map[key] || key;
+}
+
+/** Checks a { "<field>": reason } payload for application details */
+export function assertFlagDetails(issues: unknown): Record<string, string> {
+  if (!issues || typeof issues !== 'object' || Array.isArray(issues)) throw new HttpError(400, 'Flag at least one detail');
+  const entries = Object.entries(issues as Record<string, unknown>);
+  if (entries.length === 0) throw new HttpError(400, 'Flag at least one detail');
+  const out: Record<string, string> = {};
+  for (const [rawKey, reason] of entries) {
+    const key = normalizeFieldKey(rawKey);
+    if (!(TPL_FLAGGABLE_FIELDS as readonly string[]).includes(key)) throw new HttpError(400, `Unknown detail field: ${rawKey}`);
+    if (typeof reason !== 'string' || reason.trim().length < 3 || reason.length > 300) {
+      throw new HttpError(400, 'Say what is wrong with each detail (3 to 300 characters)');
+    }
+    out[key] = reason.trim();
+  }
+  return out;
+}
+
+
 export function assertApplicationFields(data: Record<string, unknown>, partial = false): void {
-  if (!(partial && data.companyName === undefined) && !isText(data.companyName, 200)) {
+  if (!(partial && blank(data.companyName)) && !isText(data.companyName, 200)) {
     throw new HttpError(400, 'Company name is required (up to 200 characters)');
   }
-  if (!(partial && data.pan === undefined) && (typeof data.pan !== 'string' || !PAN_PATTERN.test(data.pan.trim()))) {
+  if (!(partial && blank(data.contactName)) && !isText(data.contactName, 200)) {
+    throw new HttpError(400, 'Contact person is required (up to 200 characters)');
+  }
+  if (!(partial && blank(data.pan)) && (typeof data.pan !== 'string' || !PAN_PATTERN.test(data.pan.trim()))) {
     throw new HttpError(400, 'PAN looks incorrect (for example ABCDE1234F)');
+  }
+  if (!(partial && blank(data.entityType)) && (typeof data.entityType !== 'string' || !(ENTITY_TYPES as readonly string[]).includes(data.entityType))) {
+    throw new HttpError(400, `Entity type is required (one of: ${ENTITY_TYPES.join(', ')})`);
+  }
+  if (!(partial && blank(data.authorizedSignatoryName)) && !isText(data.authorizedSignatoryName, 200)) {
+    throw new HttpError(400, 'The authorized signatory name is required (up to 200 characters)');
+  }
+  // The CIN requirement depends on the entity type on record for a partial edit, so this function (which
+  // sees only the fields being changed) checks CIN's format when given, and leaves "is it required"
+  // to the caller, which knows the partner's current entity type (see tpl.service.ts).
+  if (!blank(data.cin) && !isCinFormat(data.cin)) {
+    throw new HttpError(400, 'CIN looks incorrect (21 letters and digits, for example U74999DL2019PTC123456)');
+  }
+  if (!partial) {
+    const entityType = data.entityType as string | undefined;
+    if (entityTypeRequiresCin(entityType) && blank(data.cin)) {
+      throw new HttpError(400, 'CIN is required for this entity type');
+    }
   }
   if (!blank(data.gst) && (typeof data.gst !== 'string' || !GST_PATTERN.test(data.gst.trim()))) {
     throw new HttpError(400, 'GSTIN looks incorrect (for example 07ABCDE1234F1Z5)');

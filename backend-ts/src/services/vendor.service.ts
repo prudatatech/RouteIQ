@@ -27,7 +27,8 @@ function cleanVendorGstin(raw: unknown): string {
   if (problem) throw new HttpError(400, problem);
   return gstin;
 }
-import { assertOwnDocumentPaths } from '../schemas/vendor';
+import { assertKycContent, assertOwnDocumentPaths, type KycSubmitInput } from '../schemas/vendor';
+import { invalidateRoleCache } from '../core/auth';
 
 /** Formats a KYC document may be uploaded in, and the extension each is stored under. */
 const KYC_UPLOAD_CONTENT_TYPES: Record<string, string> = {
@@ -189,6 +190,92 @@ export const vendorService = {
   },
 
   /**
+   * Staff resolves (or invites) the account an applicant's details should be entered under, before
+   * uploading any of their documents — document paths are scoped by this id, so it must exist first.
+   * Safe to call again with the same email once the account already exists (e.g. right before the
+   * final `createKycOnBehalf` call): it returns the same id without re-inviting.
+   */
+  async resolveApplicantForKyc(input: { email: string; fullName?: string; companyName?: string }) {
+    const email = input.email.trim().toLowerCase();
+    if (!email) throw new HttpError(400, 'An email is required to invite the applicant');
+
+    const { data: existingUser, error: lookupErr } = await supabase
+      .from('users').select('id, role').eq('email', email).maybeSingle();
+    if (lookupErr) throw new Error(lookupErr.message);
+    if (existingUser && ['admin', 'superadmin'].includes(existingUser.role)) {
+      throw new HttpError(409, 'That email belongs to a staff account; use a different email for the applicant');
+    }
+    if (existingUser) return { vendorUserId: existingUser.id as string, invited: false };
+
+    const { data: invited, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
+      data: { full_name: input.fullName ?? input.companyName ?? email },
+    });
+    if (inviteError || !invited?.user) {
+      throw new HttpError(502, `Could not invite the applicant: ${inviteError?.message ?? 'unknown error'}`);
+    }
+    const vendorUserId = invited.user.id;
+    await supabase.from('users').upsert({
+      id: vendorUserId, email, full_name: input.fullName ?? input.companyName ?? email, role: 'vendor', is_active: true,
+    }, { onConflict: 'id' });
+    await supabase.auth.admin.updateUserById(vendorUserId, { app_metadata: { role: 'vendor' } });
+    invalidateRoleCache(vendorUserId);
+    return { vendorUserId, invited: true };
+  },
+
+  /**
+   * A signed upload URL for one of the applicant's KYC documents, scoped under their own (already
+   * resolved) account id rather than the caller's — the one part of document upload that differs from
+   * the self-service `/vendor/kyc/upload-url` a vendor uses for themselves.
+   */
+  async createKycUploadUrlFor(vendorUserId: string, input: { key: unknown; contentType: unknown; size: unknown }) {
+    const { data: user, error } = await supabase.from('users').select('role').eq('id', vendorUserId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!user || user.role !== 'vendor') throw new HttpError(404, 'Applicant not found - resolve them first');
+    return this.createKycUploadUrl(vendorUserId, input);
+  },
+
+  /**
+   * Staff enters a vendor's KYC on behalf of an applicant who gave their details over phone/WhatsApp
+   * instead of using the sign-up form themselves. Finds or invites the applicant's account by email,
+   * then submits through the same `submitKyc` path a self-service vendor would use, so the record goes
+   * through the normal review queue unchanged. The invite is sent immediately (not deferred to
+   * approval) because the vendor review flow expects the applicant to log in and fix any flagged
+   * document while kyc_status is still `info_requested`.
+   */
+  async createKycOnBehalf(actor: AuditActor, input: {
+    email: string;
+    fullName?: string;
+    companyName: string;
+    gstNumber: string;
+    city: string;
+    address: string;
+    lat: number;
+    lng: number;
+    companyLogo?: string | null;
+    kycData: unknown;
+  }) {
+    const { vendorUserId, invited } = await this.resolveApplicantForKyc(input);
+
+    assertKycContent(vendorUserId, input as KycSubmitInput);
+    const profile = await this.submitKyc(vendorUserId, {
+      companyName: input.companyName,
+      gstNumber: input.gstNumber,
+      city: input.city,
+      address: input.address,
+      lat: input.lat,
+      lng: input.lng,
+      companyLogo: input.companyLogo,
+      kycData: input.kycData,
+    });
+    const { error: tagError } = await supabase.from('vendor_profiles').update({ created_by: actor.user_id }).eq('id', vendorUserId);
+    if (tagError) console.error('[vendor] Failed to tag staff-created KYC:', tagError.message);
+    await auditService.record('staff-console', actor, 'vendor_kyc_created_by_staff', {
+      vendor_id: vendorUserId, company_name: input.companyName, invited,
+    });
+    return profile;
+  },
+
+  /**
    * Submit (or resubmit) the vendor's full KYC wizard: company, contact,
    * bank and document details, plus the wizard's own draft blob (`kycData`).
    * Always moves the profile to `kyc_status: 'submitted'` and notifies superadmins
@@ -227,6 +314,8 @@ export const vendorService = {
       company_logo: payload.companyLogo ?? null,
       kyc_data: payload.kycData,
       kyc_status: 'submitted',
+      kyc_document_issues: null,
+      kyc_rejection_reason: null,
       updated_at: new Date().toISOString(),
     };
 
@@ -572,6 +661,7 @@ export const vendorService = {
       .update({
         kyc_status: 'approved',
         kyc_rejection_reason: null,
+        kyc_document_issues: null,
         kyc_reviewed_at: new Date().toISOString(),
         kyc_reviewed_by: actor.user_id,
       })
@@ -626,11 +716,17 @@ export const vendorService = {
         ...(actor ? { kyc_reviewed_by: actor.user_id } : {}),
       })
       .eq('id', vendorId)
-      .eq('kyc_status', 'submitted')
+      .in('kyc_status', ['submitted', 'info_requested'])
       .select('id, company_name')
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) throw new HttpError(409, 'This KYC is no longer waiting for review');
+
+    try {
+      await supabase.from('kyc_info_requests').update({ status: 'withdrawn' }).eq('vendor_id', vendorId).eq('status', 'open');
+    } catch (e) {
+      console.error('[vendor] withdrawing open kyc_info_requests on rejection failed:', e);
+    }
 
     invalidateOrgContext(vendorId);
     await notificationService.sendNotification(
@@ -671,33 +767,58 @@ export const vendorService = {
   },
 
   /**
-   * Save the vendor's uploaded KYC documents on their profile before they
-   * submit the form. Changing the documents of an approved profile sends it
-   * back to review (as any change to its legal identity does) and tells staff.
+   * Save the vendor's uploaded KYC documents on their profile before they submit the form. The
+   * vendor doing this themselves (`asStaff: false`, the original behaviour) sends an approved
+   * profile back to review, as any change to its legal identity does, and tells staff. Staff
+   * doing it on the vendor's behalf (`asStaff: true`) - e.g. renewing an expired document for an
+   * already-approved vendor - skips that demotion, since staff is already the one who would have
+   * reviewed it, and tells the vendor instead of staff.
    */
   async saveKycDocuments(
     vendorId: string,
     input: { docUrls?: Record<string, string>; otherDocs?: { name: string; path: string }[] },
+    asStaff = false,
   ) {
     assertOwnDocumentPaths(vendorId, input.docUrls, input.otherDocs);
 
     const { data: profile, error: loadErr } = await supabase
       .from('vendor_profiles')
-      .select('company_name, kyc_status, kyc_data')
+      .select('company_name, kyc_status, kyc_data, kyc_document_issues')
       .eq('id', vendorId)
       .maybeSingle();
     if (loadErr) throw new Error(loadErr.message);
     if (!profile) throw new HttpError(404, 'Set up your company profile first');
 
     const current = (profile.kyc_data ?? {}) as { data?: Record<string, unknown>; otherDocs?: unknown[] } & Record<string, unknown>;
+    const previousUrls = (current.data?.docUrls ?? {}) as Record<string, string>;
     const kycData = {
       ...current,
       data: { ...(current.data ?? {}), ...(input.docUrls !== undefined ? { docUrls: input.docUrls } : {}) },
       otherDocs: input.otherDocs ?? current.otherDocs ?? [],
     };
     const changes: Record<string, unknown> = { kyc_data: kycData, updated_at: new Date().toISOString() };
-    const backToReview = profile.kyc_status === 'approved';
+    const backToReview = !asStaff && profile.kyc_status === 'approved';
     if (backToReview) Object.assign(changes, { kyc_status: 'submitted', kyc_reviewed_at: null, kyc_reviewed_by: null });
+
+    // Re-uploading a document clears its own flag, even without a full resubmit:
+    // the vendor should not have to redo every field just to fix one flagged document.
+    const existingIssues = (profile.kyc_document_issues ?? null) as Record<string, string> | null;
+    let allFlagsCleared = false;
+    if (existingIssues && input.docUrls) {
+      const changedKeys = Object.keys(input.docUrls).filter(k => input.docUrls![k] !== previousUrls[k]);
+      if (changedKeys.some(k => existingIssues[k])) {
+        const remaining = { ...existingIssues };
+        for (const k of changedKeys) delete remaining[k];
+        const stillOutstanding = Object.keys(remaining).length > 0;
+        changes.kyc_document_issues = stillOutstanding ? remaining : null;
+        allFlagsCleared = !stillOutstanding;
+      }
+    }
+    // Every flagged document is now fixed: back to the review queue, the same way answering
+    // the last open "more info" request does. Without this the KYC is stuck in info_requested
+    // forever - respond() only clears a kyc_info_requests row, which flagDocumentIssues never makes.
+    const returnsToReview = allFlagsCleared && profile.kyc_status === 'info_requested';
+    if (returnsToReview) Object.assign(changes, { kyc_status: 'submitted' });
 
     const { data, error } = await supabase
       .from('vendor_profiles')
@@ -707,7 +828,7 @@ export const vendorService = {
       .single();
     if (error) throw new Error(error.message);
 
-    if (backToReview) {
+    if (backToReview || returnsToReview) {
       try {
         await notificationService.notifySuperAdmins(
           'KYC submitted',
@@ -715,6 +836,12 @@ export const vendorService = {
           'kyc_submitted',
           { profile_id: vendorId },
         );
+      } catch (e) {
+        console.error('[vendor] KYC notification failed:', e);
+      }
+    } else if (asStaff) {
+      try {
+        await notificationService.sendNotification(vendorId, 'A document was updated', 'Staff updated one of your KYC documents.', 'kyc_update', { profile_id: vendorId });
       } catch (e) {
         console.error('[vendor] KYC notification failed:', e);
       }

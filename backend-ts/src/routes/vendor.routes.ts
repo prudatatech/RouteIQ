@@ -19,7 +19,7 @@ import {
 import { getBusinessProfile, saveBusinessProfile } from '../services/loads/business-profile.service';
 import { acceptQuote, listVendorQuotes } from '../services/loads/order-routing';
 import {
-  KycDocumentsSchema, KycRespondSchema, KycSubmitSchema, RegistryQuerySchema, RequestInfoSchema, ShipmentRequestSchema, VendorLocationSchema, VendorProfileSchema,
+  FlagKycDocumentsSchema, KycDocumentsSchema, KycRespondSchema, KycSubmitSchema, RegistryQuerySchema, RequestInfoSchema, ShipmentRequestSchema, VendorLocationSchema, VendorProfileSchema,
   assertKycContent, parseBody,
 } from '../schemas/vendor';
 
@@ -353,6 +353,17 @@ router.post('/kyc/:id/request-info', requireAuth, requireRole('superadmin'), asy
   }
 });
 
+// Flags one or more already-submitted documents as needing a fix, each with its own reason - the
+// vendor's other details are left alone. { issues: { <docKey>: reason } }
+router.put('/kyc/:id/flag-documents', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
+  try {
+    const input = parseBody(FlagKycDocumentsSchema, req.body);
+    res.json(await vendorReviewService.flagDocumentIssues(uuidParam(req.params.id, 'Vendor not found'), input.issues, req.user));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // The vendor's own open information requests
 router.get('/kyc/requests', requireAuth, requireRole('vendor'), async (req: any, res: any) => {
   try {
@@ -388,6 +399,57 @@ router.put('/kyc/:id/reject', requireAuth, requireRole('superadmin'), async (req
     const reason = parseRejectionReason(req.body?.reason);
     const data = await vendorService.rejectKyc(req.params.id, reason, req.user);
     res.json({ success: true, data });
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Resolve (or invite) the account to enter a phoned-in applicant's KYC under, before uploading their documents
+router.post('/admin/kyc/applicants', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
+  try {
+    const { email, full_name, company_name } = req.body ?? {};
+    const data = await vendorService.resolveApplicantForKyc({ email, fullName: full_name, companyName: company_name });
+    res.json(data);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Signed upload URL for a phoned-in applicant's KYC document, scoped under their (already resolved) account
+router.post('/admin/kyc/applicants/:vendorUserId/upload-url', requireAuth, requireRole('superadmin'), rateLimitByUser('vendor-admin-kyc-upload', 60, 60 * 60), async (req: any, res: any) => {
+  try {
+    const { key, content_type, size } = req.body ?? {};
+    const data = await vendorService.createKycUploadUrlFor(req.params.vendorUserId, { key, contentType: content_type, size });
+    res.json(data);
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Saves a document path staff uploaded on an applicant's behalf - whether its KYC is stuck mid-review
+// (e.g. submitted without every required document) or already approved (e.g. renewing an expired
+// one). Reuses the exact self-service saveKycDocuments, without the ownership check self-service's
+// PUT /vendor/kyc/documents applies, and without sending an approved profile back to review.
+router.put('/admin/kyc/applicants/:vendorUserId/documents', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
+  try {
+    const input = parseBody(KycDocumentsSchema, req.body);
+    res.json(await vendorService.saveKycDocuments(req.params.vendorUserId, input, true));
+  } catch (error: any) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// Staff enters a vendor's KYC on behalf of an applicant who phoned/WhatsApp'd their details in; goes through the same review queue
+router.post('/admin/kyc/applicants/create', requireAuth, requireRole('superadmin'), async (req: any, res: any) => {
+  try {
+    const input = parseBody(KycSubmitSchema, req.body);
+    const { email, full_name } = req.body ?? {};
+    if (typeof email !== 'string' || !email.trim()) throw new HttpError(400, 'An email is required to invite the applicant');
+    const { companyName, gstNumber, city, address, lat, lng, companyLogo, kycData } = input;
+    const profile = await vendorService.createKycOnBehalf(req.user, {
+      email, fullName: full_name, companyName, gstNumber, city, address, lat, lng, companyLogo, kycData,
+    });
+    res.json(profile);
   } catch (error: any) {
     sendError(req, res, error, 'error');
   }

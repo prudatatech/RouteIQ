@@ -317,8 +317,13 @@ async function deleteAuthUser(id: string): Promise<void> {
   }
 }
 
-/** Creates the sign-in account the OTP flow would create, or finds it when it exists. */
-async function ensureDriverAuthUser(phone: string, fullName: string, id?: string): Promise<string> {
+/**
+ * Creates the sign-in account the OTP flow would create, or finds it when it exists.
+ * `isNew` tells the caller whether this id was just created (always safe to claim: nobody
+ * else could already be using an account that did not exist a moment ago) or found through
+ * the e-mail lookup (an existing account, worth checking before claiming it).
+ */
+async function ensureDriverAuthUser(phone: string, fullName: string, id?: string): Promise<{ id: string; isNew: boolean }> {
   const email = driverEmailFor(phone);
   const { data, error } = await supabase.auth.admin.createUser({
     ...(id ? { id } : {}),
@@ -327,10 +332,10 @@ async function ensureDriverAuthUser(phone: string, fullName: string, id?: string
     app_metadata: { role: 'driver' },
     user_metadata: { full_name: fullName, role: 'driver', phone },
   });
-  if (!error && data.user) return data.user.id;
+  if (!error && data.user) return { id: data.user.id, isNew: true };
   if (error && (error.message.includes('already been registered') || (error as any).code === 'email_exists')) {
     const existing = await findAuthUserByEmail(email);
-    if (existing) return existing.id;
+    if (existing) return { id: existing.id, isNew: false };
   }
   console.error('[people] could not create the driver sign-in account:', error?.message);
   throw new HttpError(502, 'Could not create the sign-in account. Try again');
@@ -412,9 +417,15 @@ export async function createPerson(actor: Actor, body: Record<string, any>, opts
 
   let id: string;
   if (role === 'driver') {
-    id = await ensureDriverAuthUser(phone!, fullName);
-    const { data: taken } = await supabase.from('users').select('id, full_name, role, status').eq('id', id).maybeSingle();
-    if (taken && taken.role !== 'driver') throw new HttpError(409, 'That sign-in account belongs to someone else');
+    const driverAuth = await ensureDriverAuthUser(phone!, fullName);
+    id = driverAuth.id;
+    // A brand-new account cannot belong to anyone else; checking its role here would only ever catch
+    // the moment between creation and the role upsert below, when the sign-up trigger's default role
+    // has not been corrected yet. Only an existing account (found through the e-mail lookup) is checked.
+    if (!driverAuth.isNew) {
+      const { data: taken } = await supabase.from('users').select('id, full_name, role, status').eq('id', id).maybeSingle();
+      if (taken && taken.role !== 'driver') throw new HttpError(409, 'That sign-in account belongs to someone else');
+    }
   } else {
     const { data, error } = await supabase.auth.admin.inviteUserByEmail(email!, { data: { full_name: fullName, ...(phone ? { phone } : {}) } });
     if (error || !data?.user) {
@@ -672,12 +683,27 @@ export async function changeStatus(actor: Actor, id: string, body: Record<string
   if (subject.status === 'inactive' && status !== 'onboarding') throw new HttpError(409, 'Someone who left comes back through onboarding. Set the status to onboarding first');
   if (status === 'onboarding' && subject.status !== 'inactive') throw new HttpError(409, 'Only someone who left can go back to onboarding');
 
+  const today = todayKey();
+
+  // Required documents (driving licence, identity proof, PAN, photo for a driver) are shown on the
+  // Documents tab the whole time they are onboarding, but nothing stopped making them active with none
+  // on file. One deliberate override, the same shape as confirm_release below, so staff who genuinely
+  // need to activate first (a document is in the post) are never stuck, but never do it by accident.
+  if (status === 'active' && body.confirm_missing_documents !== true) {
+    const live = (await liveDocumentsByUser([id])).get(id) ?? [];
+    const missing = missingGroups(subject.role, live, today, { noPan: !!profileRow?.no_pan_reason });
+    if (missing.length > 0) {
+      throw new HttpError(409, `${subject.full_name ?? 'This person'} is missing ${missing.map(g => g.label).join(', ')}. Confirm to activate anyway`, {
+        code: 'confirm_missing_documents', requires_confirmation: true, missing: missing.map(g => ({ key: g.key, label: g.label })),
+      });
+    }
+  }
+
   const ends = status === 'suspended' || status === 'inactive';
   let reason: string | null = null;
   if (ends) reason = parseRejectionReason(body.reason);
   else if (body.reason !== undefined && body.reason !== null && body.reason !== '') reason = parseOptionalText(body.reason, 'Reason', 500) ?? null;
 
-  const today = todayKey();
   const profilePatch: Record<string, any> = { suspended_until: null, leave_from: null, leave_until: null };
   if (status === 'suspended' && body.suspended_until) {
     if (typeof body.suspended_until !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.suspended_until) || body.suspended_until <= today) {

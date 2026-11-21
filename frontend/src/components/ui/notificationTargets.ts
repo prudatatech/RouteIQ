@@ -155,6 +155,8 @@ const VENDOR: Record<string, Resolver> = {
   tpl_paused: partnerPage(''),
   tpl_resumed: partnerPage(''),
   tpl_rejected: partnerPage(''),
+  tpl_document_flagged: d => (str(d.partner_id) ? `/3pl-portal/${encodeURIComponent(str(d.partner_id)!)}/documents?highlight=flagged` : '/3pl/onboard/track?fix=documents'),
+  tpl_details_flagged: d => (str(d.partner_id) ? `/3pl-portal/${encodeURIComponent(str(d.partner_id)!)}/settings?highlight=flagged` : '/3pl/onboard/track?fix=details'),
 }
 
 /** The page a notification opens, or null when it has no page (it is then only marked read). */

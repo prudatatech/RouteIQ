@@ -4,9 +4,21 @@
  */
 export type PortalAccess = 'own' | 'other' | 'no-partner'
 
-export function portalAccess(ownPartnerId: string | null | undefined, routeId: string | undefined): PortalAccess {
-  if (!ownPartnerId) return 'no-partner'
-  return routeId && routeId.toLowerCase() === ownPartnerId.toLowerCase() ? 'own' : 'other'
+export function portalAccess(
+  ownPartner: string | { id?: string | null; custom_id?: string | null } | null | undefined,
+  routeId: string | undefined,
+  ownCustomId?: string | null
+): PortalAccess {
+  if (!ownPartner) return 'no-partner'
+  const ownId = typeof ownPartner === 'string' ? ownPartner : ownPartner.id
+  const customId = typeof ownPartner === 'object' && ownPartner !== null ? (ownPartner.custom_id ?? ownCustomId) : ownCustomId
+  if (!ownId && !customId) return 'no-partner'
+
+  if (!routeId) return 'other'
+  const rLower = routeId.toLowerCase()
+  if (ownId && rLower === ownId.toLowerCase()) return 'own'
+  if (customId && rLower === customId.toLowerCase()) return 'own'
+  return 'other'
 }
 
 /** Where the old `?tab=` links of the one-page dashboard go now (the portal has a page per section). */

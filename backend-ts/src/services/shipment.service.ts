@@ -442,6 +442,27 @@ export class ShipmentService {
   }
 
   /**
+   * Self-heal: recalculates every vehicle's capacity from its real active shipments and loads.
+   * A safety net for the class of bug where a direct, incremental write to available_capacity_kg
+   * (reserve on assignment, release on delivery) drifts from reality because one of the ways
+   * goods can leave a vehicle does not release it - staff can run this instead of waiting for
+   * the next assignment to happen to touch (and so correct) a stuck vehicle. Returns how many
+   * vehicles were checked.
+   */
+  static async recalculateAllVehicleCapacities(): Promise<number> {
+    const { data: vehicles, error } = await supabase.from('vehicles').select('id');
+    if (error) throw new Error(`Failed to list vehicles: ${error.message}`);
+    for (const v of vehicles ?? []) {
+      try {
+        await ShipmentService.recalculateVehicleCapacity(v.id);
+      } catch (e: any) {
+        console.error(`[fleet] Could not recalculate capacity for vehicle ${v.id}:`, e.message);
+      }
+    }
+    return (vehicles ?? []).length;
+  }
+
+  /**
    * The one check every way of putting a shipment on a vehicle goes through: the vehicle
    * must be in service, be the type the load asks for, and have room for it.
    */

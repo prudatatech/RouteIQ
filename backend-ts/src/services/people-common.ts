@@ -178,3 +178,28 @@ export const WARNING_TEXT: Record<string, string> = {
 export const withWarnings = <T extends object>(out: T, warnings: string[]) => ({
   ...out, warnings, warning_messages: warnings.map(w => WARNING_TEXT[w] ?? w),
 });
+
+/**
+ * The operator (logistic company or 3PL partner) each of these users is an active member of, by user id.
+ * Used outside a request (the scheduler has no `currentOrgContext()` to fall back on - see org-scope.ts's
+ * header comment) so a staff notification about one of them can be sent to that operator alone, not to
+ * every company's staff - `notifyStaff`'s explicit `orgId` notifies that org's own members plus the
+ * platform regardless of org kind, so a 3PL partner's own driver is scoped exactly like a company's.
+ * A user in no operator org (or in more than one, which should not happen) is left out of the map.
+ */
+export async function operatorOrgsOf(userIds: string[]): Promise<Map<string, string>> {
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return new Map();
+  const { data: members, error: mErr } = await supabase.from('org_members').select('user_id, org_id').in('user_id', ids).eq('status', 'active');
+  if (mErr) throw new Error(`Failed to read memberships: ${mErr.message}`);
+  const orgIds = [...new Set((members ?? []).map((m: { org_id: string }) => m.org_id))];
+  if (orgIds.length === 0) return new Map();
+  const { data: orgs, error: oErr } = await supabase.from('organizations').select('id').in('id', orgIds).in('kind', ['logistic_company', 'tpl_partner']);
+  if (oErr) throw new Error(`Failed to read organisations: ${oErr.message}`);
+  const operatorIds = new Set((orgs ?? []).map((o: { id: string }) => o.id));
+  const byUser = new Map<string, string>();
+  for (const m of (members ?? []) as { user_id: string; org_id: string }[]) {
+    if (operatorIds.has(m.org_id) && !byUser.has(m.user_id)) byUser.set(m.user_id, m.org_id);
+  }
+  return byUser;
+}

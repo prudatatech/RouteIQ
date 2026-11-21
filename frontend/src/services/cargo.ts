@@ -6,6 +6,7 @@
  */
 import { api } from '@/services/api'
 import { supabase } from '@/services/supabase'
+import { compressDocumentFile } from '@/utils/imageCompressor'
 import {
   listOf, mapClaim, mapCustodyEvent, mapException, mapExceptionDetail, mapHub, mapHubInventoryRow, mapLot, mapLots, mapMergeResult, mapOnBoard, mapRelief,
   mapSplitResult, mapTransfer, mapWhere,
@@ -683,8 +684,10 @@ export const custodyAPI = {
   uploadUrl: (ref: CargoRef | string, file: { kind: 'photo' | 'signature'; content_type: string; size: number }) =>
     api.post('/cargo/custody/upload-url', { ref, ...file }).then(r => r.data as SignedUpload),
   /** Uploads a custody photo of a consignment and gives back its path, for `photo_paths`. */
-  uploadPhoto: async (ref: CargoRef | string, file: File) =>
-    uploadToSigned(await custodyAPI.uploadUrl(ref, { kind: 'photo', content_type: file.type, size: file.size }), file),
+  uploadPhoto: async (ref: CargoRef | string, file: File) => {
+    const { file: uploadFile } = await compressDocumentFile(file)
+    return uploadToSigned(await custodyAPI.uploadUrl(ref, { kind: 'photo', content_type: uploadFile.type, size: uploadFile.size }), uploadFile)
+  },
   sendOtp: (ref: CargoRef) => post<{ expires_at: string; notified: { in_app: boolean; sms: boolean } }>('/cargo/otp/send', { ref }),
   /** The answer is `{ vehicle, totals, items }`. */
   onBoard: (vehicleId: string) => api.get(`/cargo/vehicles/${enc(vehicleId)}/on-board`).then(r => mapOnBoard(r.data, vehicleId)),
@@ -781,8 +784,10 @@ export const claimsAPI = {
    */
   documentUploadUrl: (id: string, file: { content_type: string; size: number }) =>
     api.post(`/cargo/claims/${enc(id)}/documents-upload-url`, file).then(r => r.data as SignedUpload),
-  uploadDocument: async (id: string, file: File) =>
-    uploadToSigned(await claimsAPI.documentUploadUrl(id, { content_type: file.type, size: file.size }), file),
+  uploadDocument: async (id: string, file: File) => {
+    const { file: uploadFile } = await compressDocumentFile(file)
+    return uploadToSigned(await claimsAPI.documentUploadUrl(id, { content_type: uploadFile.type, size: uploadFile.size }), uploadFile)
+  },
 }
 
 /** React Query keys, so every screen invalidates the same caches. */

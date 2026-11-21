@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Check, Plus, X } from 'lucide-react'
+import { Check, Plus, UserPlus, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { tplAPI, tplNetworkAPI } from '@/services/api'
@@ -10,24 +10,52 @@ import {
   parseSort, serializeSort, statusToLabel, useConfirm, useRowSelection, useTabParam, useUrlState,
 } from '@/components/ui'
 import MyNetwork from './MyNetwork'
+import { StaffCreateApplicationDrawer } from './StaffCreateApplicationDrawer'
 import { useEffectiveRole } from '@/store/effectiveRole'
 import type { Column } from '@/components/ui'
 import { errorMessage, formatDate, formatMinutes } from '@/utils/display'
+import { entityTypeRequiresCin } from '@/utils/entityType'
 
 interface TplPartner {
   id: string
   custom_id: string | null
   company_name: string
   gstin: string | null
+  pan_number?: string | null
+  bank_account_no?: string | null
+  bank_ifsc?: string | null
+  entity_type?: string | null
+  cin?: string | null
+  authorized_signatory_name?: string | null
   status: string
   created_at: string
   tpl_corridors?: { corridor_name: string }[]
+  tpl_documents?: unknown[]
+  document_issues?: Record<string, string> | null
+  pending_updates?: Record<string, unknown> | null
 }
 
 const TABS = ['pending', 'active', 'paused', 'rejected', 'all'] as const
 type StatusTab = typeof TABS[number]
 
 const isPending = (p: TplPartner) => p.status === 'pending'
+
+/**
+ * Mirrors tpl.service.ts's `approve()` compliance gate client-side, so staff see the same thing the
+ * backend will enforce before they open the detail page: flagged beats missing-compliance-data beats ready.
+ * Only meaningful for a pending application reviewed by a decider (superadmin) - a company admin's view of
+ * another partner has its PAN/bank/documents redacted by the server, so `canDecide` must be checked by the caller.
+ */
+function tplReadiness(p: TplPartner): { label: string; tone: 'warning' | 'success' | 'neutral' } | null {
+  if (p.status !== 'pending') return null
+  if (p.document_issues && Object.keys(p.document_issues).length > 0) return { label: 'Flagged', tone: 'warning' }
+  // A profile-update approval (pending_updates set) does not require PAN/GST/bank/documents again.
+  if (p.pending_updates) return { label: 'Ready', tone: 'success' }
+  const cinOk = !entityTypeRequiresCin(p.entity_type) || !!p.cin
+  const hasCompliance = !!p.pan_number && !!p.bank_account_no && !!p.bank_ifsc && !!p.tpl_documents?.length
+    && !!p.entity_type && !!p.authorized_signatory_name && cinOk
+  return hasCompliance ? { label: 'Ready', tone: 'success' } : { label: 'Incomplete', tone: 'neutral' }
+}
 
 /**
  * The 3PL partners tab of Return trips: every application and partner, grouped by status. Selecting a row opens
@@ -50,6 +78,7 @@ export default function PartnersTab() {
   const [sortParam, setSortParam] = useUrlState('sort')
   const sort = parseSort(sortParam)
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [creatingApplication, setCreatingApplication] = useState(false)
 
   const { data: partners = [], isLoading, error, refetch } = useQuery<TplPartner[]>({
     queryKey: ['tpl-queue', 'all'],
@@ -62,7 +91,7 @@ export default function PartnersTab() {
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['tpl-queue'] })
-    queryClient.invalidateQueries({ queryKey: ['tpl-partners-pending-count'] })
+    queryClient.invalidateQueries({ queryKey: ['tpl-pending-partners'] })
   }
 
   const approve = useMutation({
@@ -191,6 +220,14 @@ export default function PartnersTab() {
     },
     { key: 'status', header: 'Status', cell: p => <StatusPill status={p.status} /> },
     {
+      key: 'kyc', header: 'KYC', hideBelow: 'lg',
+      cell: p => {
+        if (!canDecide) return '—'
+        const r = tplReadiness(p)
+        return r ? <StatusPill tone={r.tone} dot={false}>{r.label}</StatusPill> : '—'
+      },
+    },
+    {
       key: 'actions', header: 'Actions', align: 'right', cell: p => (
         canDecide && isPending(p) ? (
           <span className="inline-flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -242,6 +279,11 @@ export default function PartnersTab() {
             ]}
           />
           <Button variant="secondary" icon={<Plus size={16} />} onClick={() => navigate('/3pl/onboard')}>Invite a partner</Button>
+          {canDecide && (
+            <Button variant="secondary" icon={<UserPlus size={16} />} onClick={() => setCreatingApplication(true)}>
+              Enter application for someone
+            </Button>
+          )}
         </div>
       </div>
 
@@ -271,6 +313,14 @@ export default function PartnersTab() {
         <BulkActionBar count={selection.count} onClear={selection.clear}>
           <Button size="sm" disabled={bulkBusy} loading={bulkBusy} onClick={bulkApprove}>Approve selected</Button>
         </BulkActionBar>
+      )}
+
+      {canDecide && (
+        <StaffCreateApplicationDrawer
+          open={creatingApplication}
+          onClose={() => setCreatingApplication(false)}
+          onCreated={refresh}
+        />
       )}
     </div>
   )

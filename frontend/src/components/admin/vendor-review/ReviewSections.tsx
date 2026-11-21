@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
 import { FileText } from 'lucide-react'
-import { Alert, Button, Card, DetailList, IfscVerifiedHint, StatusPill, Timeline, type TimelineEvent } from '@/components/ui'
+import { Alert, Button, Card, DetailList, FileButton, IfscVerifiedHint, StatusPill, Timeline, type TimelineEvent } from '@/components/ui'
+import { DocUploadField } from '@/components/kyc/DocUploadField'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { formatDateTime } from '@/utils/display'
 import { auditActionLabel } from '@/utils/auditLabels'
 import type { InfoRequest, KycFormView, VendorReview } from './types'
-import type { useDocumentViewer } from './useDocumentViewer'
+import type { useDocumentViewer } from '@/components/admin/useDocumentViewer'
 
 const given = (v: string | null | undefined) => (v && v.trim() ? v : 'Not given')
 const mono = (v: string | null | undefined) => (v && v.trim() ? <span className="font-mono break-all">{v}</span> : 'Not given')
@@ -94,7 +95,10 @@ export function KycFormSection({ form, ifscVerifiedAt }: { form: KycFormView; if
           { label: 'Registered name', value: given(f.name) },
           { label: 'Vendor number', value: mono(f.number) },
           { label: 'Vendor type', value: given(f.vendorType) },
+          { label: 'Entity type', value: given(f.entityType) },
           { label: 'Address', value: given(address) },
+          { label: 'Pickup location', value: f.latitude && f.longitude ? <span className="font-mono">{f.latitude}, {f.longitude}</span> : given(undefined) },
+          { label: 'Declaration', value: f.declaration ? 'Accepted' : given(undefined) },
         ])}
         {group('Contact', [
           { label: 'Contact person', value: given(f.contactPerson) },
@@ -115,6 +119,8 @@ export function KycFormSection({ form, ifscVerifiedAt }: { form: KycFormView; if
           { label: 'TAN', value: mono(f.tanNumber) },
           { label: 'GST number', value: f.gstNumber ? <div>{mono(f.gstNumber)}<GstinStatus gstin={f.gstNumber} pan={f.panNumber} /></div> : given(f.reasonNoGst ? `None: ${f.reasonNoGst}` : undefined) },
           { label: 'MSME', value: given([f.msmeStatus, f.msmeRegNumber].filter(Boolean).join(', ')) },
+          { label: 'CIN', value: mono(f.cin) },
+          { label: 'Authorized signatory', value: given(f.authorizedSignatoryName) },
         ])}
         {extra.length > 0 && group('Extra details the vendor sent', extra.map(([label, value]) => ({ label, value })))}
       </div>
@@ -132,23 +138,81 @@ function DocButton({ viewer, label, path, id }: { viewer: Viewer; label: string;
   )
 }
 
-export function DocumentsSection({ documents, viewer }: { documents: VendorReview['kyc']['documents']; viewer: Viewer }) {
+export function DocumentsSection({ documents, issues, viewer, missingNamed, uploadingKey, onUpload }: {
+  documents: VendorReview['kyc']['documents']
+  issues: Record<string, string> | null
+  viewer: Viewer
+  /**
+   * Named documents the vendor never uploaded, that staff can add directly instead of leaving the
+   * KYC permanently stuck (approval fails document validation with no way back in to fix it, since
+   * self-service document upload requires the vendor's own session). Omit (or leave empty) once the
+   * KYC is approved - this is only for getting a stalled application unstuck.
+   */
+  missingNamed?: { key: string; label: string }[]
+  uploadingKey?: string | null
+  /** Replaces one already-uploaded document (e.g. renewing an expired one) - works at any KYC status. */
+  onUpload?: (key: string, file: File) => void
+}) {
   return (
     <Section title="Documents">
       {documents.length === 0 ? (
         <p className="text-sm text-muted">No documents uploaded.</p>
       ) : (
         <ul className="divide-y divide-border rounded-control border border-border">
-          {documents.map(d => (
-            <li key={d.key} className="flex items-center justify-between gap-3 px-3 py-2">
-              <span className="flex min-w-0 items-center gap-2 text-sm text-text">
-                <FileText size={16} aria-hidden="true" className="shrink-0 text-muted" />
-                <span className="truncate">{d.label}</span>
-              </span>
-              <DocButton viewer={viewer} label={d.label} path={d.path} id={d.key} />
-            </li>
-          ))}
+          {documents.map(d => {
+            const issue = issues?.[d.key]
+            const canReplace = onUpload && !d.key.startsWith('other_')
+            return (
+              <li key={d.key} className={`px-3 py-2 ${issue ? 'bg-warning/5' : ''}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="flex min-w-0 items-center gap-2 text-sm text-text">
+                    <FileText size={16} aria-hidden="true" className="shrink-0 text-muted" />
+                    <span className="truncate">{d.label}</span>
+                    {issue && <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <DocButton viewer={viewer} label={d.label} path={d.path} id={d.key} />
+                    {canReplace && (
+                      <FileButton
+                        variant="link"
+                        size="sm"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        disabled={uploadingKey === d.key}
+                        onFile={file => onUpload!(d.key, file)}
+                      >
+                        {uploadingKey === d.key ? 'Updating…' : 'Replace'}
+                      </FileButton>
+                    )}
+                  </span>
+                </div>
+                {issue && <p className="mt-1 text-sm text-warning">{issue}</p>}
+              </li>
+            )
+          })}
         </ul>
+      )}
+      {!!missingNamed?.length && onUpload && (
+        <div className="space-y-3 border-t border-border pt-4">
+          <div>
+            <p className="text-sm font-medium text-text">Add a missing document</p>
+            <p className="text-xs text-muted">
+              Upload it on the vendor&rsquo;s behalf if they could not finish uploading it themselves - e.g. an
+              application entered for them that was submitted before every document was attached.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {missingNamed.map(m => (
+              <DocUploadField
+                key={m.key}
+                label={m.label}
+                busy={uploadingKey === m.key}
+                onUpload={file => onUpload(m.key, file)}
+                onRemove={() => {}}
+                onView={() => {}}
+              />
+            ))}
+          </div>
+        </div>
       )}
     </Section>
   )

@@ -113,7 +113,11 @@ export default function PlaceBidModal({ window: w, onClose, onPlaced, guest = fa
   const submit = async () => {
     setDropoffTouched(true)
     setAttempted(true)
-    if (!valid || !dropoff) return
+    if (!valid || !dropoff) {
+      const firstError = Object.values(errors).find(Boolean)
+      if (firstError) toast.error(firstError)
+      return
+    }
     if (guest) {
       onGuestContinue?.({ bidAmount, weightKg, dropoff, ewayBill, loadConfiguration })
       return

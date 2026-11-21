@@ -84,6 +84,16 @@ describe('3PL partner notifications', () => {
     expect(at(type, { partner_id: 'p1' }, 'vendor')).toBe('/3pl-portal/p1')
   })
 
+  it('opens flagged documents for tpl_document_flagged', () => {
+    expect(at('tpl_document_flagged', { partner_id: 'p1' }, 'vendor')).toBe('/3pl-portal/p1/documents?highlight=flagged')
+    expect(at('tpl_document_flagged', {}, 'vendor')).toBe('/3pl/onboard/track?fix=documents')
+  })
+
+  it('opens settings for tpl_details_flagged', () => {
+    expect(at('tpl_details_flagged', { partner_id: 'p1' }, 'vendor')).toBe('/3pl-portal/p1/settings?highlight=flagged')
+    expect(at('tpl_details_flagged', {}, 'vendor')).toBe('/3pl/onboard/track?fix=details')
+  })
+
   it('has nowhere to go without the partner id', () => {
     expect(at('tpl_offer', { offer_id: 'o1' }, 'vendor')).toBeNull()
   })

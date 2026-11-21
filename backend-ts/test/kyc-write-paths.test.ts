@@ -148,6 +148,116 @@ describe('PUT /vendor/kyc/documents', () => {
     expect((await request(app).put('/api/v1/vendor/kyc/documents').send({ docUrls: {} })).status).toBe(401);
     expect((await save({ docUrls: {} }, bearer('driver-1'))).status).toBe(403);
   });
+
+  it('clears a document flag the moment that document is re-uploaded, without touching other flags', async () => {
+    supabaseMock.reset({
+      users: [{ id: VENDOR, role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
+      vendor_profiles: [{
+        id: VENDOR,
+        company_name: 'Acme Logistics',
+        kyc_status: 'info_requested',
+        kyc_data: { data: { name: 'Acme', docUrls: { panCard: `${VENDOR}/panCard_old.pdf`, gstRegistration: `${VENDOR}/gst_old.pdf` } }, otherDocs: [] },
+        kyc_document_issues: { panCard: 'Blurry scan', gstRegistration: 'Expired certificate' },
+      }],
+      notifications: [],
+      ai_agent_logs: [],
+    });
+    const res = await save({ docUrls: { panCard: `${VENDOR}/panCard_new.pdf`, gstRegistration: `${VENDOR}/gst_old.pdf` } });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_document_issues).toEqual({ gstRegistration: 'Expired certificate' });
+  });
+
+  it('clears kyc_document_issues entirely once every flagged document has been replaced, and returns to review', async () => {
+    // Regression: info_requested had no way back once every flag was fixed through a per-document
+    // save rather than the full wizard - respond() needs an open kyc_info_requests row (flagDocumentIssues
+    // never makes one) and submitKyc needs the whole form resubmitted. The vendor and staff were both
+    // stuck: no decision button worked for staff, and the vendor had no "this is done" signal either.
+    supabaseMock.reset({
+      users: [{ id: VENDOR, role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
+      vendor_profiles: [{
+        id: VENDOR,
+        company_name: 'Acme Logistics',
+        kyc_status: 'info_requested',
+        kyc_data: { data: { name: 'Acme', docUrls: { panCard: `${VENDOR}/panCard_old.pdf` } }, otherDocs: [] },
+        kyc_document_issues: { panCard: 'Blurry scan' },
+      }],
+      notifications: [],
+      ai_agent_logs: [],
+    });
+    const res = await save({ docUrls: { panCard: `${VENDOR}/panCard_new.pdf` } });
+    expect(res.status).toBe(200);
+    const row = supabaseMock.rows('vendor_profiles')[0];
+    expect(row.kyc_document_issues).toBeNull();
+    expect(row.kyc_status).toBe('submitted');
+    const notes = supabaseMock.writes('notifications', 'POST').map(w => w.body.user_id);
+    expect(notes).toEqual(['super-1']);
+  });
+
+  it('does not touch kyc_status when a flag is cleared but others remain outstanding', async () => {
+    supabaseMock.reset({
+      users: [{ id: VENDOR, role: 'vendor', is_active: true }, { id: 'super-1', role: 'superadmin', is_active: true }],
+      vendor_profiles: [{
+        id: VENDOR,
+        company_name: 'Acme Logistics',
+        kyc_status: 'info_requested',
+        kyc_data: { data: { name: 'Acme', docUrls: { panCard: `${VENDOR}/panCard_old.pdf`, gstRegistration: `${VENDOR}/gst_old.pdf` } }, otherDocs: [] },
+        kyc_document_issues: { panCard: 'Blurry scan', gstRegistration: 'Expired certificate' },
+      }],
+      notifications: [],
+      ai_agent_logs: [],
+    });
+    const res = await save({ docUrls: { panCard: `${VENDOR}/panCard_new.pdf`, gstRegistration: `${VENDOR}/gst_old.pdf` } });
+    expect(res.status).toBe(200);
+    const row = supabaseMock.rows('vendor_profiles')[0];
+    expect(row.kyc_status).toBe('info_requested');
+    expect(row.kyc_document_issues).toEqual({ gstRegistration: 'Expired certificate' });
+    expect(supabaseMock.writes('notifications', 'POST')).toHaveLength(0);
+  });
+});
+
+describe('PUT /vendor/admin/kyc/applicants/:vendorUserId/documents', () => {
+  // The gap this closes: a KYC entered on an applicant's behalf (POST /vendor/admin/kyc/applicants/create)
+  // can be submitted without every document attached. Approval then fails document validation, and there
+  // is no way back in through self-service upload (it needs the vendor's own session) - this route lets
+  // staff add the missing document directly, reusing the same saveKycDocuments the vendor's own
+  // PUT /vendor/kyc/documents calls, just without the ownership check that scopes that route to the caller.
+  const save = (body: Record<string, unknown>, token = bearer('super-1')) =>
+    request(app).put(`/api/v1/vendor/admin/kyc/applicants/${VENDOR}/documents`).set(token).send(body);
+
+  it('saves a document path for a vendor that is not the caller', async () => {
+    const res = await save({ docUrls: { panCard: `${VENDOR}/panCard_1.pdf` } });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_data).toMatchObject({
+      data: { name: 'Acme', docUrls: { panCard: `${VENDOR}/panCard_1.pdf` } },
+    });
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_status).toBe('submitted');
+  });
+
+  it('still refuses a path outside that vendor folder', async () => {
+    const res = await save({ docUrls: { panCard: 'vendor-2/panCard_1.pdf' } });
+    expect(res.status).toBe(400);
+    expect(supabaseMock.rows('vendor_profiles')[0].kyc_data).toMatchObject({ data: { name: 'Acme' } });
+  });
+
+  it('reports an unknown vendor as not found', async () => {
+    const res = await request(app).put('/api/v1/vendor/admin/kyc/applicants/nobody/documents').set(bearer('super-1')).send({ docUrls: {} });
+    expect(res.status).toBe(404);
+  });
+
+  it('is superadmin only', async () => {
+    expect((await request(app).put(`/api/v1/vendor/admin/kyc/applicants/${VENDOR}/documents`).send({ docUrls: {} })).status).toBe(401);
+    expect((await save({ docUrls: {} }, bearer('admin-1'))).status).toBe(403);
+    expect((await save({ docUrls: {} }, bearer(VENDOR))).status).toBe(403);
+  });
+
+  it('lets staff renew an already-approved vendor\'s document without sending it back to review', async () => {
+    reset('approved');
+    const res = await save({ docUrls: { panCard: `${VENDOR}/panCard_new.pdf` } });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('vendor_profiles')[0]).toMatchObject({ kyc_status: 'approved' });
+    const recipients = supabaseMock.writes('notifications', 'POST').map(w => w.body.user_id);
+    expect(recipients).toEqual([VENDOR]);
+  });
 });
 
 describe('vendor form validation', () => {
@@ -173,7 +283,7 @@ describe('vendor form validation', () => {
     expect((await submit({ data: { panNumber: 'nope' }, otherDocs: [] })).status).toBe(400);
     expect((await submit({ data: {}, otherDocs: [] }, 'vendor-2/logo.png')).status).toBe(400);
     expect((await submit('not an object')).status).toBe(400);
-    expect((await submit({ data: { panNumber: 'ABCDE1234F', docUrls: { panCard: `${VENDOR}/p.pdf` } }, otherDocs: [] })).status).toBe(200);
+    expect((await submit({ data: { panNumber: 'ABCDE1234F', entityType: 'Proprietorship', authorizedSignatoryName: 'Owner Name', docUrls: { panCard: `${VENDOR}/p.pdf` } }, otherDocs: [] })).status).toBe(200);
   });
 
   it('will not take a shipment request before KYC is approved, or with a nonsense body', async () => {

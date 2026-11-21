@@ -131,16 +131,24 @@ router.get('/nearby-vendors', requireAuth, requireRole(...STAFF_ROLES), async (r
 
     const { supabase } = await import('../core/supabase');
 
-    // For simplicity, we just fetch all vendors and filter them in memory
-    // In production, you'd use PostGIS or the calculate_distance RPC we have
+    const toRad = (value: number) => (value * Math.PI) / 180;
+
+    // A bounding box first (cheap index-friendly range filters) keeps this from pulling every approved
+    // vendor nationwide into memory on every call; the box is generous (not a true circle) so the exact
+    // haversine filter below still does the final trim. 1 degree of latitude is ~111 km; longitude
+    // shrinks with cos(latitude), so widen it near the poles rather than risk missing real matches.
+    const latDelta = radiusKm / 111;
+    const lngDelta = radiusKm / (111 * Math.max(Math.cos(toRad(lat)), 0.1));
     // Only approved vendors: an unapproved one cannot actually bid, and this also stops every company's
     // staff from browsing the name and city of every vendor on the platform, approved or not.
     const { data: vendors, error } = await supabase.from('vendor_profiles')
-      .select('id, company_name, city, latitude, longitude').eq('kyc_status', 'approved');
+      .select('id, company_name, city, latitude, longitude')
+      .eq('kyc_status', 'approved')
+      .gte('latitude', lat - latDelta).lte('latitude', lat + latDelta)
+      .gte('longitude', lng - lngDelta).lte('longitude', lng + lngDelta);
 
     if (error) throw error;
-    
-    const toRad = (value: number) => (value * Math.PI) / 180;
+
     const calcDist = (lat1: number, lon1: number, lat2: number, lon2: number) => {
       const R = 6371; // km
       const dLat = toRad(lat2 - lat1);

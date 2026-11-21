@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import toast from 'react-hot-toast'
 import { Button, Input, Modal } from '@/components/ui'
 import type { CustomerBooking } from '@/services/api'
 import { PriceSuggestion } from '@/components/pricing/PriceSuggestion'
@@ -24,7 +25,12 @@ export function AcceptBookingModal({ booking, loading, onClose, onAccept }: {
 
   const submit = () => {
     const text = price.trim()
-    if (text && !(Number(text) >= 0)) { setError('Enter a price of 0 or more, or leave it empty.'); return }
+    if (text && !(Number(text) >= 0)) {
+      const msg = 'Enter a price of 0 or more, or leave it empty.'
+      setError(msg)
+      toast.error(msg)
+      return
+    }
     setError(null)
     onAccept(booking, text ? Number(text) : null)
   }
@@ -106,8 +112,10 @@ export function AcceptLoadModal({ load, loading, onClose, onAccept }: {
 
   const submit = () => {
     setTouched(true)
-    if (flatP.error || perKmP.error || perKmNeedsFlat) return
-    if (!hasPrice && !existing) return
+    if (flatP.error) { toast.error(flatP.error); return }
+    if (perKmP.error) { toast.error(perKmP.error); return }
+    if (perKmNeedsFlat) { toast.error('Enter a flat price or ensure coordinates are available.'); return }
+    if (!hasPrice && !existing) { toast.error('Enter an agreed price to accept this load.'); return }
     onAccept(load, {
       ...(flatP.value !== undefined ? { cost: flatP.value } : {}),
       ...(perKmP.value !== undefined ? { cost_per_km: perKmP.value } : {}),

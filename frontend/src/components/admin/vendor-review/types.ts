@@ -30,6 +30,9 @@ export interface KycFormView {
   city?: string
   state?: string
   postalCode?: string
+  latitude?: string
+  longitude?: string
+  declaration?: boolean
   contactPerson?: string
   telephone?: string
   mobileNumber?: string
@@ -48,6 +51,9 @@ export interface KycFormView {
   reasonNoGst?: string
   msmeStatus?: string
   msmeRegNumber?: string
+  entityType?: string
+  cin?: string
+  authorizedSignatoryName?: string
   /** Answers to questions the review team asked, by label. */
   extra?: Record<string, string>
 }
@@ -80,6 +86,8 @@ export interface VendorReview {
     status: KycStatus
     reviewed_at: string | null
     rejection_reason: string | null
+    /** { <docKey>: reason }, set while specific documents are flagged - the status is 'info_requested', not 'rejected'. */
+    document_issues: Record<string, string> | null
     updated_at: string | null
     form: KycFormView
     documents: { key: string; label: string; path: string }[]

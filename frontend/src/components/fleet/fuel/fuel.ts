@@ -1,5 +1,6 @@
 import { api } from '@/services/api'
 import { supabase } from '@/services/supabase'
+import { compressDocumentFile } from '@/utils/imageCompressor'
 import type { Tone } from '@/components/ui'
 
 export type FuelFlag = 'no_bill' | 'low_mileage' | 'over_tank_capacity' | 'odometer_backwards' | 'odometer_jump' | 'duplicate' | 'far_from_gps'
@@ -78,8 +79,9 @@ export const fuelAPI = {
 
 /** Uploads a bill through a signed URL from the backend and returns its storage path. */
 export async function uploadBill(vehicleId: string, file: File): Promise<string> {
-  const upload = await fuelAPI.billUpload(vehicleId, { content_type: file.type, size: file.size })
-  const { error } = await supabase.storage.from(upload.bucket).uploadToSignedUrl(upload.path, upload.token, file, { contentType: file.type })
+  const { file: uploadFile } = await compressDocumentFile(file)
+  const upload = await fuelAPI.billUpload(vehicleId, { content_type: uploadFile.type, size: uploadFile.size })
+  const { error } = await supabase.storage.from(upload.bucket).uploadToSignedUrl(upload.path, upload.token, uploadFile, { contentType: uploadFile.type })
   if (error) throw new Error('We could not upload the bill. Try again.')
   return upload.path
 }

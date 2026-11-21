@@ -27,6 +27,7 @@ const LABELS: Record<string, string> = {
   kyc_submitted: 'KYC submitted',
   tpl_approved: '3PL partner approved',
   tpl_deleted: '3PL partner deleted',
+  tpl_document_flagged: '3PL partner documents flagged',
   tpl_document_replaced: '3PL partner document replaced',
   tpl_paused: '3PL partner paused',
   tpl_rejected: '3PL partner rejected',

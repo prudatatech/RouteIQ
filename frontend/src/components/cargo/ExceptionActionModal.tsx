@@ -81,7 +81,10 @@ export default function ExceptionActionModal({ kase, action, preset = {}, relief
   const submit = () => {
     const next = validateAction(action, values, { maxPieces, needsRef })
     setErrors(next)
-    if (Object.keys(next).length > 0) return
+    if (Object.keys(next).length > 0) {
+      toast.error(Object.values(next)[0])
+      return
+    }
     setServerError('')
     send.mutate()
   }

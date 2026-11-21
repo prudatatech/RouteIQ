@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { Check, FileText, Trash2, Upload } from 'lucide-react'
+import { FileText, Trash2, Upload } from 'lucide-react'
 import { supabase, openChannel } from '@/services/supabase'
 import { vendorAPI } from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
@@ -11,12 +11,14 @@ import { getKycDocumentUrl, uploadKycDocument } from '@/services/kycDocuments'
 import AddressPicker from '@/components/map/AddressPicker'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import type { IfscDetails } from '@/services/api'
-import { Alert, Button, Card, Checkbox, ErrorState, FileButton, IfscField, BankBranchFields, Input, Page, PageHeader, Select, Spinner, useConfirm } from '@/components/ui'
+import { Alert, Button, Card, Checkbox, ErrorState, FileButton, IfscField, BankBranchFields, Input, Page, PageHeader, Select, Spinner, Stepper, useConfirm } from '@/components/ui'
+import { DocUploadField } from '@/components/kyc/DocUploadField'
 import type { ResolvedPlace } from '@/services/geocoding'
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import { gstinError } from '@/utils/gstin'
 import { KycInfoRequests } from '@/components/vendor/KycInfoRequests'
 import { useKycRequests } from '@/components/vendor/kycRequests'
+import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
 
 type KycStatus = 'pending' | 'submitted' | 'info_requested' | 'approved' | 'rejected'
 
@@ -47,6 +49,9 @@ interface KycFormData {
   vendorType: string
   msmeStatus: string
   msmeRegNumber: string
+  entityType: string
+  cin: string
+  authorizedSignatoryName: string
   declaration: boolean
   docUrls: Record<string, string>
 }
@@ -58,6 +63,7 @@ const EMPTY_FORM: KycFormData = {
   beneficiaryAccountName: '', bankAccountNumber: '', bankName: '', bankBranchName: '', bankIfscCode: '', accountType: 'Current',
   panNumber: '', gstNumber: '', vendorType: 'Service provider',
   msmeStatus: 'Not applicable', msmeRegNumber: '',
+  entityType: '', cin: '', authorizedSignatoryName: '',
   declaration: false,
   docUrls: {},
 }
@@ -115,6 +121,7 @@ export default function VendorDocumentsPage() {
   const [saving, setSaving] = useState(false)
   const [kycStatus, setKycStatus] = useState<KycStatus>('pending')
   const [kycRejectionReason, setKycRejectionReason] = useState<string | null>(null)
+  const [kycDocumentIssues, setKycDocumentIssues] = useState<Record<string, string>>({})
   const [hasProfile, setHasProfile] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const isEditingRef = useRef(false)
@@ -147,6 +154,7 @@ export default function VendorDocumentsPage() {
       const status = String(profile.kyc_status ?? 'pending').toLowerCase() as KycStatus
       setKycStatus(['pending', 'submitted', 'info_requested', 'approved', 'rejected'].includes(status) ? status : 'pending')
       setKycRejectionReason(profile.kyc_rejection_reason ?? null)
+      setKycDocumentIssues((profile.kyc_document_issues as Record<string, string> | null) ?? {})
 
       if (!isEditingRef.current) {
         const kycData = profile.kyc_data as { data?: Partial<KycFormData>; otherDocs?: DocRef[] } | null
@@ -226,6 +234,14 @@ export default function VendorDocumentsPage() {
       const gstProblem = gstinError(form.gstNumber, form.panNumber)
       if (gstProblem) errors[0].gstNumber = gstProblem
     }
+    if (!form.entityType.trim()) errors[0].entityType = 'Choose the entity type'
+    if (!form.authorizedSignatoryName.trim()) errors[0].authorizedSignatoryName = 'Enter the authorized signatory name'
+    if (entityTypeRequiresCin(form.entityType)) {
+      if (!form.cin.trim()) errors[0].cin = 'CIN is required for this entity type'
+      else if (!isCinFormat(form.cin)) errors[0].cin = 'CIN looks incorrect (21 letters and digits, e.g. U74999DL2019PTC123456)'
+    } else if (form.cin.trim() && !isCinFormat(form.cin)) {
+      errors[0].cin = 'CIN looks incorrect (21 letters and digits, e.g. U74999DL2019PTC123456)'
+    }
 
     if (!form.contactPerson.trim()) errors[1].contactPerson = 'Enter a contact person'
     if (!form.emailAddress.trim()) errors[1].emailAddress = 'Enter a contact email'
@@ -276,7 +292,14 @@ export default function VendorDocumentsPage() {
       // The backend applies the review rules (an approved profile goes back to review).
       if (hasProfile) {
         try {
-          await vendorAPI.saveKycDocuments({ docUrls: updatedUrls })
+          const res = await vendorAPI.saveKycDocuments({ docUrls: updatedUrls }) as { kyc_document_issues?: Record<string, string> | null; kyc_status?: KycStatus } | undefined
+          if (res?.kyc_document_issues !== undefined) {
+            setKycDocumentIssues(res.kyc_document_issues ?? {})
+          }
+          if (res?.kyc_status) {
+            setKycStatus(res.kyc_status)
+          }
+          refreshProfile()
         } catch (e) {
           console.error('Failed to persist document reference', e)
         }
@@ -389,6 +412,8 @@ export default function VendorDocumentsPage() {
       window.dispatchEvent(new Event('vendor-profile-updated'))
       refreshProfile()
       setKycStatus('submitted')
+      setKycRejectionReason(null)
+      setKycDocumentIssues({})
       setHasProfile(true)
       setIsEditingKyc(false)
       toast.success(mode === 'onboarding' ? 'Company profile created' : 'KYC submitted for review')
@@ -484,6 +509,17 @@ export default function VendorDocumentsPage() {
         </Alert>
       )}
       {hasProfile && (kycStatus === 'info_requested' || openRequests.length > 0) && <KycInfoRequests requests={openRequests} />}
+      {hasProfile && Object.keys(kycDocumentIssues).length > 0 && (
+        <Alert tone="warning" title="Fix these documents" action={!isEditing ? <Button variant="secondary" size="sm" onClick={() => { setIsEditingKyc(true); setStep(2) }}>Fix documents</Button> : undefined}>
+          <ul className="list-disc space-y-0.5 pl-4">
+            {Object.entries(kycDocumentIssues).map(([key, reason]) => (
+              <li key={key}>
+                <span className="font-medium">{DOC_FIELDS.find(f => f.key === key)?.label ?? key}</span>: {reason}
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      )}
       {hasProfile && kycStatus === 'rejected' && (
         <Alert tone="danger" title="KYC rejected">
           {kycRejectionReason || 'Please review and correct your details below, then resubmit.'}
@@ -500,10 +536,10 @@ export default function VendorDocumentsPage() {
       )}
 
       {readOnly ? (
-        <ReadOnlySummary form={form} otherDocs={otherDocs} onView={openViewer} onAdd={() => setIsEditingKyc(true)} />
+        <ReadOnlySummary form={form} otherDocs={otherDocs} issues={kycDocumentIssues} onView={openViewer} onAdd={() => setIsEditingKyc(true)} />
       ) : (
         <Card padded className="space-y-6">
-          <Stepper current={step} onSelect={i => { if (i <= step) setStep(i); else if (i === step + 1) goNext() }} />
+          <Stepper steps={STEPS} current={step} variant="inline" onSelect={i => { if (i <= step) setStep(i); else if (i === step + 1) goNext() }} />
 
           {step === 0 && (
             <div className="space-y-4">
@@ -519,6 +555,11 @@ export default function VendorDocumentsPage() {
                 {form.msmeStatus !== 'Not applicable' && (
                   <Input label="MSME registration number" value={form.msmeRegNumber} onChange={e => setField('msmeRegNumber', e.target.value)} />
                 )}
+                <Select label="Entity type" required options={ENTITY_TYPE_OPTIONS} value={form.entityType} onChange={e => setField('entityType', e.target.value)} error={err(0, 'entityType')} placeholder="Choose the entity type" />
+                {entityTypeRequiresCin(form.entityType) && (
+                  <Input label="CIN" required value={form.cin} onChange={e => setField('cin', e.target.value.toUpperCase())} error={err(0, 'cin')} inputClassName="uppercase" hint="21-character Corporate Identity Number" />
+                )}
+                <Input label="Authorized signatory name" required value={form.authorizedSignatoryName} onChange={e => setField('authorizedSignatoryName', e.target.value)} error={err(0, 'authorizedSignatoryName')} />
               </div>
             </div>
           )}
@@ -596,6 +637,7 @@ export default function VendorDocumentsPage() {
                       label={f.label}
                       hint={f.hint}
                       path={form.docUrls[f.key]}
+                      issue={kycDocumentIssues[f.key]}
                       busy={uploadingKey === f.key}
                       onUpload={file => uploadDoc(f.key, file)}
                       onRemove={() => removeDoc(f.key)}
@@ -683,67 +725,10 @@ export default function VendorDocumentsPage() {
   )
 }
 
-function Stepper({ current, onSelect }: { current: number; onSelect: (i: number) => void }) {
-  return (
-    <ol className="flex flex-wrap items-center gap-y-2">
-      {STEPS.map((label, i) => (
-        <li key={label} className="flex items-center">
-          <button
-            type="button"
-            onClick={() => onSelect(i)}
-            aria-current={i === current ? 'step' : undefined}
-            className="flex items-center gap-2 rounded-control px-1 py-1 text-left"
-          >
-            <span className={
-              i < current
-                ? 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-fill text-xs font-medium text-text'
-                : i === current
-                  ? 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-brand text-xs font-medium text-brand'
-                  : 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border text-xs font-medium text-muted'
-            }>
-              {i < current ? <Check size={14} /> : i + 1}
-            </span>
-            <span className={i === current ? 'text-sm font-medium text-text' : 'text-sm text-muted'}>{label}</span>
-          </button>
-          {i < STEPS.length - 1 && <span className="mx-2 h-px w-6 bg-border sm:w-10" aria-hidden="true" />}
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-function DocUploadField({ label, hint, path, busy, onUpload, onRemove, onView }: {
-  label: string
-  hint?: string
-  path?: string
-  busy?: boolean
-  onUpload: (file: File) => void
-  onRemove: () => void
-  onView: () => void
-}) {
-  return (
-    <div className="rounded-card border border-border p-4">
-      <p className="text-sm font-medium text-text">{label}</p>
-      {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
-      <div className="mt-3 flex items-center gap-2">
-        {path ? (
-          <>
-            <Button type="button" variant="secondary" size="sm" onClick={onView}>View</Button>
-            <Button type="button" variant="ghost" size="sm" onClick={onRemove}>Remove</Button>
-          </>
-        ) : (
-          <FileButton variant="link" icon={<Upload size={14} />} accept=".pdf,.jpg,.jpeg,.png" disabled={busy} onFile={onUpload}>
-            {busy ? 'Uploading…' : 'Upload'}
-          </FileButton>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ReadOnlySummary({ form, otherDocs, onView, onAdd, compact }: {
+function ReadOnlySummary({ form, otherDocs, issues, onView, onAdd, compact }: {
   form: KycFormData
   otherDocs: DocRef[]
+  issues?: Record<string, string>
   onView: (path: string, name: string) => void
   /** Opens the form so an empty field can be filled in. */
   onAdd?: () => void
@@ -752,8 +737,11 @@ function ReadOnlySummary({ form, otherDocs, onView, onAdd, compact }: {
   const rows: [string, string | null][] = [
     ['Company name', form.name || null],
     ['Vendor type', form.vendorType || null],
+    ['Entity type', form.entityType || null],
     ['PAN', form.panNumber || null],
     ['GST number', form.gstNumber || null],
+    ['CIN', form.cin || null],
+    ['Authorized signatory', form.authorizedSignatoryName || null],
     ['Contact', [form.contactPerson, form.mobileNumber, form.emailAddress].filter(Boolean).join(' · ') || null],
     ['Registered address', [form.addressLine1, form.city, form.state, form.postalCode].filter(Boolean).join(', ') || null],
     ['Bank account', form.bankAccountNumber ? `${form.bankName || ''} · ${form.bankAccountNumber}` : null],
@@ -786,13 +774,21 @@ function ReadOnlySummary({ form, otherDocs, onView, onAdd, compact }: {
           </p>
         ) : (
           <ul className="mt-1 flex flex-wrap gap-2">
-            {DOC_FIELDS.filter(f => form.docUrls[f.key]).map(f => (
-              <li key={f.key}>
-                <button type="button" onClick={() => onView(form.docUrls[f.key], f.label)} className="rounded-full bg-surface-subtle px-3 py-1 text-xs font-medium text-brand hover:underline">
-                  {f.label}
-                </button>
-              </li>
-            ))}
+            {DOC_FIELDS.filter(f => form.docUrls[f.key]).map(f => {
+              const issue = issues?.[f.key]
+              return (
+                <li key={f.key} className={issue ? 'flex flex-col gap-0.5' : undefined}>
+                  <button
+                    type="button"
+                    onClick={() => onView(form.docUrls[f.key], f.label)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium hover:underline ${issue ? 'bg-warning/5 text-warning' : 'bg-surface-subtle text-brand'}`}
+                  >
+                    {f.label}{issue && ' · Fix requested'}
+                  </button>
+                  {issue && <span className="text-xs text-muted">{issue}</span>}
+                </li>
+              )
+            })}
             {otherDocs.map((doc, i) => (
               <li key={i}>
                 <button type="button" onClick={() => onView(doc.path, doc.name)} className="rounded-full bg-surface-subtle px-3 py-1 text-xs font-medium text-brand hover:underline">

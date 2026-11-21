@@ -122,6 +122,21 @@ describe('GET /public/companies', () => {
     expect(res.status).toBe(200);
     expect(res.body.truncated).toBe(true);
   });
+
+  it('still finds a city match whose name sorts alphabetically after the first 200 active companies', async () => {
+    // 205 companies named so they all sort (alphabetically, by `name`) ahead of "Zenith Carriers" -
+    // the one company that actually serves Nashik. The old code filtered by city only *after* the
+    // `.order('name').limit(200)` scan, so "Zenith Carriers" was dropped before the city filter ever
+    // ran: a Nashik search returned nothing even though a company exists for it.
+    const extra = Array.from({ length: 205 }, (_, i) => ({ id: `extra-${i}`, kind: 'logistic_company', status: 'active', name: `Carrier ${String(i).padStart(3, '0')}`, city: 'Nagpur' }));
+    supabaseMock.rows('organizations').push(...extra, { id: 'zenith', kind: 'logistic_company', status: 'active', name: 'Zenith Carriers', city: 'Nashik' });
+
+    const res = await request(app).get(`${base}/companies?city=Nashik`);
+    expect(res.status).toBe(200);
+    expect(res.body.items.map((c: any) => c.id)).toEqual(['zenith']);
+    // There's exactly one active company for Nashik, so the city-scoped result is complete.
+    expect(res.body.truncated).toBe(false);
+  });
 });
 
 describe('GET /public/cities', () => {

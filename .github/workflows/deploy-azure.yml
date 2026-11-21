@@ -58,19 +58,49 @@ jobs:
     concurrency:
       group: db-migrate-${{ github.ref_name == 'main' && 'live' || 'test' }}
       cancel-in-progress: false
+    outputs:
+      applied: ${{ steps.apply.outputs.applied }}
     steps:
       - uses: actions/checkout@v4
       - name: Apply pending migrations to the ${{ github.ref_name == 'main' && 'live' || 'test' }} database
+        id: apply
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           if [[ -z "$DATABASE_URL" ]]; then
             echo "::notice::No DATABASE_URL secret in the ${{ github.ref_name == 'main' && 'production' || 'test' }} environment yet; no migrations applied."
+            echo "applied=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           command -v psql >/dev/null || sudo apt-get install -y -qq postgresql-client >/dev/null 2>&1 || true
           bash scripts/db-migrate.sh --dry-run
-          bash scripts/db-migrate.sh
+          bash scripts/db-migrate.sh | tee /tmp/migrate.log
+          if grep -q '^applied ' /tmp/migrate.log; then echo "applied=true" >> "$GITHUB_OUTPUT"; else echo "applied=false" >> "$GITHUB_OUTPUT"; fi
+
+  # PostgREST (margix-rest / margix-test-rest) caches the schema at startup and never notices a
+  # migration's new table or column on its own - a stale cache fails every request that touches the
+  # new column with "Could not find the '<column>' column ... in the schema cache" (hit live on
+  # 17 Oct 2026: both REST containers had been running since Oct 1-2, so roughly two weeks of
+  # migrations were invisible to them until fixed by hand). A plain `revision restart` does not
+  # recreate the running replica here; deactivating then reactivating the revision does.
+  reload-rest-schema:
+    needs: migrate
+    if: ${{ needs.migrate.outputs.applied == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Recreate the ${{ env.STAGE }} REST container's replica so it re-reads the schema
+        run: |
+          APP="${{ github.ref_name == 'main' && 'margix-rest' || 'margix-test-rest' }}"
+          RG="margix-rg"
+          REV="$(az containerapp revision list -g "$RG" -n "$APP" --query "[?properties.active].name" -o tsv | head -1)"
+          az containerapp revision deactivate -g "$RG" --revision "$REV"
+          sleep 3
+          az containerapp revision activate -g "$RG" --revision "$REV"
 
   changes:
     if: ${{ vars.AZURE_CLIENT_ID != '' }}

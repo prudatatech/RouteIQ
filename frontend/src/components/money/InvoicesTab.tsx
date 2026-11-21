@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Download, MessageSquareWarning } from 'lucide-react'
 import { financeAPI } from '@/services/api'
 import { Button, Checkbox, DataTable, SearchInput, Select, Stat, StatusPill, type Column, type DateRangeValue } from '@/components/ui'
 import { downloadCsv, toCsv } from '@/utils/csv'
 import { formatDate, formatRupees, pluralize } from '@/utils/display'
-import { INVOICE_CSV_COLUMNS, invoiceCsvRows, invoiceListParams, type Invoice, type InvoiceSummary } from '@/utils/finance'
+import { pageRange } from '@/utils/pagination'
+import { FINANCE_PAGE_SIZE, INVOICE_CSV_COLUMNS, invoiceCsvRows, invoiceListParams, type Invoice, type InvoiceSummary } from '@/utils/finance'
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -27,30 +28,38 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
   const [requester, setRequester] = useState('')
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(0)
   // /money?tab=invoices&reports=open opens on the invoices a customer has reported on
   const [params, setParams] = useSearchParams()
   const reportsOnly = params.get('reports') === 'open'
-  const setReportsOnly = (on: boolean) => setParams(prev => {
+  const setReportsOnly = (on: boolean) => { setParams(prev => {
     const next = new URLSearchParams(prev)
     if (on) next.set('reports', 'open'); else next.delete('reports')
     return next
-  }, { replace: true })
+  }, { replace: true }); setPage(0) }
 
-  const invoices = useQuery<Invoice[]>({
-    queryKey: ['finance', 'invoices', reportsOnly ? 'reports' : range.from, reportsOnly ? '' : range.to, status, requester, overdueOnly],
+  const invoices = useQuery({
+    queryKey: ['finance', 'invoices', reportsOnly ? 'reports' : range.from, reportsOnly ? '' : range.to, status, requester, overdueOnly, page],
     queryFn: () => financeAPI.invoices(invoiceListParams({
-      from: range.from, to: range.to, status, requester, overdue: overdueOnly, reportsOnly,
-    })) as Promise<Invoice[]>,
+      from: range.from, to: range.to, status, requester, overdue: overdueOnly, reportsOnly, page,
+    })),
+    placeholderData: keepPreviousData,
   })
   const summary = useQuery<InvoiceSummary>({ queryKey: ['finance', 'invoice-summary'], queryFn: () => financeAPI.invoiceSummary() })
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return (invoices.data ?? []).filter(i => !q || [i.invoice_number, i.reference, i.requester_name, i.billed_to_name].some(v => (v ?? '').toLowerCase().includes(q)))
+    return (invoices.data?.items ?? []).filter(i => !q || [i.invoice_number, i.reference, i.requester_name, i.billed_to_name].some(v => (v ?? '').toLowerCase().includes(q)))
   }, [invoices.data, search])
+  const pageRangeInfo = pageRange(invoices.data?.total ?? 0, invoices.data?.limit ?? FINANCE_PAGE_SIZE, invoices.data?.offset ?? 0)
   const filtered = !!(status || requester || overdueOnly || search || reportsOnly)
-  const clear = () => { setStatus(''); setRequester(''); setOverdueOnly(false); setSearch(''); setReportsOnly(false) }
+  const clear = () => { setStatus(''); setRequester(''); setOverdueOnly(false); setSearch(''); setReportsOnly(false); setPage(0) }
   const s = summary.data
+  const changeStatus = (v: string) => { setStatus(v); setPage(0) }
+  const changeRequester = (v: string) => { setRequester(v); setPage(0) }
+  const changeOverdue = (v: boolean) => { setOverdueOnly(v); setPage(0) }
+  // A new date range (chosen above this tab) starts back at page one
+  useEffect(() => { setPage(0) }, [range.from, range.to])
 
   const columns: Column<Invoice>[] = [
     {
@@ -105,8 +114,8 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <SearchInput value={search} onChange={setSearch} label="Search invoices" placeholder="Search number, delivery or name" className="sm:w-72" />
-        <Select label="Status" hideLabel className="sm:w-44" value={status} onChange={e => setStatus(e.target.value)} options={STATUS_OPTIONS} />
-        <Select label="Requester" hideLabel className="sm:w-44" value={requester} onChange={e => setRequester(e.target.value)} options={REQUESTER_OPTIONS} />
+        <Select label="Status" hideLabel className="sm:w-44" value={status} onChange={e => changeStatus(e.target.value)} options={STATUS_OPTIONS} />
+        <Select label="Requester" hideLabel className="sm:w-44" value={requester} onChange={e => changeRequester(e.target.value)} options={REQUESTER_OPTIONS} />
         <Button
           variant={reportsOnly ? 'primary' : 'secondary'}
           aria-pressed={reportsOnly}
@@ -115,7 +124,7 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
         >
           Customer reports{summary.data?.open_reports != null ? ` (${summary.data.open_reports})` : ''}
         </Button>
-        <Checkbox label="Overdue only" checked={overdueOnly} onChange={e => setOverdueOnly(e.target.checked)} />
+        <Checkbox label="Overdue only" checked={overdueOnly} onChange={e => changeOverdue(e.target.checked)} />
         {filtered && <Button variant="ghost" onClick={clear}>Clear filters</Button>}
         <Button className="sm:ml-auto" variant="secondary" icon={<Download size={16} />} onClick={exportCsv} disabled={rows.length === 0}>Export CSV</Button>
       </div>
@@ -132,10 +141,20 @@ export default function InvoicesTab({ range }: { range: DateRangeValue }) {
         onRetry={() => invoices.refetch()}
         onRowClick={i => navigate(`/money/invoices/${i.id}`)}
         initialSort={{ key: 'issued', direction: 'desc' }}
+        pageSize={FINANCE_PAGE_SIZE}
         empty={filtered
           ? { title: 'No invoices match these filters', action: <Button variant="secondary" onClick={clear}>Clear filters</Button> }
           : { title: 'No invoices in this range', description: 'An invoice is issued when a delivery with a price is completed, or when you set a price under To price.' }}
       />
+      {pageRangeInfo.to > 0 && (
+        <div className="flex items-center justify-between text-sm text-muted">
+          <span>Showing {pageRangeInfo.from}-{pageRangeInfo.to} of {invoices.data?.total}</span>
+          <span className="flex gap-2">
+            <Button size="sm" variant="secondary" disabled={!pageRangeInfo.hasPrev} onClick={() => setPage(p => Math.max(0, p - 1))}>Previous</Button>
+            <Button size="sm" variant="secondary" disabled={!pageRangeInfo.hasNext} onClick={() => setPage(p => p + 1)}>Next</Button>
+          </span>
+        </div>
+      )}
     </div>
   )
 }

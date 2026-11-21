@@ -16,6 +16,11 @@ function partner(status: string, extra: Record<string, unknown> = {}) {
     status,
     email: 'ops@acme.in',
     pan_number: 'ABCDE1234F',
+    gstin: '27ABCDE1234F1Z5',
+    entity_type: 'Proprietorship',
+    authorized_signatory_name: 'Priya Rao',
+    bank_account_no: '123456789012',
+    bank_ifsc: 'HDFC0001234',
     user_id: 'partner-user',
     pending_updates: null,
     tpl_corridors: [],
@@ -93,6 +98,25 @@ describe('partner document replacement', () => {
     expect((await replace(`${PID}/x.pdf`)).status).toBe(409);
     expect(supabaseMock.rows('tpl_partners')[0].status).toBe('rejected');
   });
+
+  it('lets staff update an active partner\'s document without sending it back to review', async () => {
+    const res = await replace(`${PID}/pan_new.pdf`, bearer('super-1'));
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('active');
+    expect(supabaseMock.rows('tpl_documents')[0].file_url).toBe(`${PID}/pan_new.pdf`);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('active');
+    // The partner is told; staff is not told to re-review its own action
+    const recipients = supabaseMock.writes('notifications', 'POST').map(w => w.body.user_id);
+    expect(recipients).toEqual(['partner-user']);
+  });
+
+  it('lets staff update a paused partner\'s document too, unlike the partner itself', async () => {
+    reset('paused');
+    expect((await replace(`${PID}/x.pdf`)).status).toBe(409); // the partner itself still cannot
+    const res = await replace(`${PID}/pan_new.pdf`, bearer('super-1'));
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('paused');
+  });
 });
 
 describe('partner settings request', () => {
@@ -154,6 +178,84 @@ describe('staff decisions on partners', () => {
   const act = (verb: string, token = bearer('super-1'), body?: Record<string, unknown>) =>
     request(app).post(`/api/v1/tpl/${verb}`).set(token).send(body ?? {});
 
+  it.each([
+    ['PAN', { pan_number: null }, 'PAN'],
+    ['bank account', { bank_account_no: null }, 'bank details'],
+    ['IFSC', { bank_ifsc: null }, 'bank details'],
+    ['entity type', { entity_type: null }, 'entity type'],
+    ['authorized signatory name', { authorized_signatory_name: null }, 'authorized signatory name'],
+  ])('refuses to approve a quick-onboarded application missing its %s', async (_name, extra, expectedWord) => {
+    reset('pending', extra);
+    const res = await act(`approve/${PID}`);
+    expect(res.status).toBe(409);
+    expect(res.body.detail ?? res.body.error).toContain(expectedWord);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('pending');
+  });
+
+  it('refuses to approve a quick-onboarded application whose entity type needs a CIN but has none', async () => {
+    reset('pending', { entity_type: 'Private Limited', cin: null });
+    const res = await act(`approve/${PID}`);
+    expect(res.status).toBe(409);
+    expect(res.body.detail ?? res.body.error).toContain('CIN');
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('pending');
+  });
+
+  it('approves a partner whose entity type needs a CIN once one is on file', async () => {
+    reset('pending', { entity_type: 'Private Limited', cin: 'U74999DL2019PTC123456' });
+    expect((await act(`approve/${PID}`)).status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('active');
+  });
+
+  it('approves a partner who has no GSTIN on file (GSTIN is optional)', async () => {
+    reset('pending', { gstin: null });
+    expect((await act(`approve/${PID}`)).status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('active');
+  });
+
+  it('never retroactively blocks an already-active partner that predates this field (no backfill gate)', async () => {
+    reset('active', { entity_type: null, authorized_signatory_name: null, cin: null });
+    expect((await act(`${PID}/pause`)).status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('paused');
+  });
+
+  it('refuses to approve a quick-onboarded application with no documents', async () => {
+    reset('pending');
+    supabaseMock.rows('tpl_documents').length = 0;
+    const res = await act(`approve/${PID}`);
+    expect(res.status).toBe(409);
+    expect(res.body.detail ?? res.body.error).toContain('documents');
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('pending');
+  });
+
+  it('approves a quick-onboarded application (fleet_size set) so staff can connect and complete details', async () => {
+    reset('pending', { fleet_size: 'single', pan_number: null, gstin: null, bank_account_no: null, bank_ifsc: null, entity_type: null, authorized_signatory_name: null });
+    const res = await act(`approve/${PID}`);
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('active');
+  });
+
+  it('still approves a profile-update request even if PAN/GST/bank are missing', async () => {
+    // The compliance gate only applies to a first-time approval; a profile-update request (settings
+    // changes, which move status back to 'pending' while open) was already activated once and is not
+    // re-vetted here.
+    reset('pending', { pan_number: null, gstin: null, bank_account_no: null, bank_ifsc: null, pending_updates: { sla_commitment: '6 Hours' } });
+    const res = await act(`approve/${PID}`);
+    expect(res.status).toBe(200);
+  });
+
+  it('refuses to approve an application with an unresolved flagged document', async () => {
+    reset('pending', { document_issues: { 'PAN Card': 'Blurry scan' } });
+    const res = await act(`approve/${PID}`);
+    expect(res.status).toBe(409);
+    expect(supabaseMock.rows('tpl_partners')[0].status).toBe('pending');
+  });
+
+  it('clears document_issues on approval, even if somehow left over', async () => {
+    reset('pending', { document_issues: null });
+    expect((await act(`approve/${PID}`)).status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].document_issues).toBeNull();
+  });
+
   it('approves only a pending partner, tells them and audits it', async () => {
     reset('pending');
     const res = await act(`approve/${PID}`);
@@ -178,10 +280,15 @@ describe('staff decisions on partners', () => {
       expect(html).toContain('Acme 3PL');
     });
 
-    it('does not email quick-onboarded partners who already have credentials', async () => {
+    it('tells a partner with a linked (Google) account to sign in, rather than a setup link', async () => {
       reset('pending');  // default fixture has user_id: 'partner-user'
       expect((await act(`approve/${PID}`)).status).toBe(200);
-      expect(send).not.toHaveBeenCalled();
+      expect(send).toHaveBeenCalledTimes(1);
+      const [to, subject, html] = send.mock.calls[0];
+      expect(to).toBe('ops@acme.in');
+      expect(subject).toMatch(/approved/);
+      expect(html).toContain('/login');
+      expect(html).not.toContain('/3pl/onboard/setup');
     });
 
     it('sends nothing for approved profile changes, or when the partner cannot be approved', async () => {
@@ -253,9 +360,125 @@ describe('staff decisions on partners', () => {
   });
 });
 
+describe('PUT /tpl/:id/flag-documents', () => {
+  const flag = (issues: Record<string, string>, token = bearer('super-1')) =>
+    request(app).put(`/api/v1/tpl/${PID}/flag-documents`).set(token).send({ issues });
+
+  it('flags a document, notifies the applicant and audits it', async () => {
+    reset('pending');
+    const res = await flag({ 'PAN Card': 'Blurry scan' });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].document_issues).toEqual({ 'PAN Card': 'Blurry scan' });
+    expect(supabaseMock.writes('notifications', 'POST')[0].body).toMatchObject({ user_id: 'partner-user', type: 'tpl_document_flagged' });
+    expect(supabaseMock.writes('ai_agent_logs', 'POST')[0].body).toMatchObject({ action: 'tpl_document_flagged' });
+  });
+
+  it('is additive across calls', async () => {
+    reset('pending', { document_issues: { 'PAN Card': 'Blurry scan' } });
+    expect((await flag({ 'GST Certificate': 'Expired' })).status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].document_issues).toEqual({ 'PAN Card': 'Blurry scan', 'GST Certificate': 'Expired' });
+  });
+
+  it('refuses an application that is not pending', async () => {
+    reset('active');
+    expect((await flag({ 'PAN Card': 'Blurry scan' })).status).toBe(409);
+  });
+
+  it('refuses an unknown document type or a reason that is too short', async () => {
+    reset('pending');
+    expect((await flag({ 'Not A Real Doc': 'bad document' })).status).toBe(400);
+    expect((await flag({ 'PAN Card': 'x' })).status).toBe(400);
+  });
+
+  it('is superadmin only', async () => {
+    reset('pending');
+    expect((await request(app).put(`/api/v1/tpl/${PID}/flag-documents`).send({ issues: { 'PAN Card': 'Blurry scan' } })).status).toBe(401);
+    expect((await flag({ 'PAN Card': 'Blurry scan' }, bearer('admin-1'))).status).toBe(403);
+  });
+});
+
+describe('PUT /tpl/:id/flag-details', () => {
+  const flagDetails = (issues: Record<string, string>, token = bearer('super-1')) =>
+    request(app).put(`/api/v1/tpl/${PID}/flag-details`).set(token).send({ issues });
+
+  it('flags application details, notifies the applicant and audits it', async () => {
+    reset('pending');
+    const res = await flagDetails({ pan_number: 'PAN name mismatch with MCA', bank_ifsc: 'Invalid IFSC for branch' });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].field_issues).toEqual({
+      pan_number: 'PAN name mismatch with MCA',
+      bank_ifsc: 'Invalid IFSC for branch',
+    });
+    expect(supabaseMock.writes('notifications', 'POST')[0].body).toMatchObject({ user_id: 'partner-user', type: 'tpl_details_flagged' });
+    expect(supabaseMock.writes('ai_agent_logs', 'POST')[0].body).toMatchObject({ action: 'tpl_details_flagged' });
+  });
+
+  it('normalizes camelCase field keys and is additive across calls', async () => {
+    reset('pending', { field_issues: { pan_number: 'PAN mismatch' } });
+    const res = await flagDetails({ bankAccount: 'Account number too short' });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].field_issues).toEqual({
+      pan_number: 'PAN mismatch',
+      bank_account_no: 'Account number too short',
+    });
+  });
+
+  it('refuses an application that is not pending', async () => {
+    reset('active');
+    expect((await flagDetails({ pan_number: 'Mismatch' })).status).toBe(409);
+  });
+
+  it('refuses an unknown field or a reason that is too short', async () => {
+    reset('pending');
+    expect((await flagDetails({ favorite_color: 'Must be blue' })).status).toBe(400);
+    expect((await flagDetails({ pan_number: 'x' })).status).toBe(400);
+  });
+
+  it('refuses to approve an application with flagged details until fixed', async () => {
+    reset('pending', { field_issues: { pan_number: 'Fix name' } });
+    const res = await request(app).post(`/api/v1/tpl/approve/${PID}`).set(bearer('super-1')).send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('flagged details');
+  });
+
+  it('clears matching field_issues when application fields are updated', async () => {
+    reset('pending', { field_issues: { pan_number: 'Fix name', bank_account_no: 'Wrong account' } });
+    const res = await request(app).patch(`/api/v1/tpl/${PID}`).send({
+      verify_pan: 'ABCDE1234F',
+      pan: 'ABCDE1234F',
+    });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].field_issues).toEqual({
+      bank_account_no: 'Wrong account',
+    });
+  });
+});
+
+describe('auto-generation of 3PL custom_id', () => {
+  it('automatically generates a valid unique 3PL custom_id when omitted', async () => {
+    const res = await request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Acme Logistics India',
+      contactName: 'Priya Rao',
+      email: 'unique_auto_id@northline.example',
+      pan: 'ABCDE1234F',
+      entityType: 'Proprietorship',
+      authorizedSignatoryName: 'Priya Rao',
+    });
+    expect(res.status).toBe(200);
+    const partner = res.body.data;
+    expect(partner.custom_id).toBeDefined();
+    expect(partner.custom_id).toMatch(/^[a-z0-9_]{5,20}$/);
+    expect(partner.custom_id.length).toBeGreaterThanOrEqual(5);
+    expect(partner.custom_id.length).toBeLessThanOrEqual(20);
+  });
+});
+
 describe('application field checks', () => {
   const onboard = (change: Record<string, unknown>) =>
-    request(app).post('/api/v1/tpl/onboard').send({ companyName: 'Northline', email: 'ops@northline.example', pan: 'ABCDE1234F', ...change });
+    request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Northline', contactName: 'Priya Rao', email: 'ops@northline.example', pan: 'ABCDE1234F',
+      entityType: 'Proprietorship', authorizedSignatoryName: 'Priya Rao', ...change,
+    });
 
   it.each([
     ['a bad PAN', { pan: 'nope' }],
@@ -263,10 +486,107 @@ describe('application field checks', () => {
     ['a bad IFSC', { bankIfsc: 'XYZ' }],
     ['a bad account number', { bankAccount: '12ab' }],
     ['a negative corridor rate', { corridors: [{ name: 'DEL-BOM', rate: '-1' }] }],
+    ['no contact person', { contactName: undefined }],
+    ['no company name', { companyName: undefined }],
+    ['no entity type', { entityType: undefined }],
+    ['an unknown entity type', { entityType: 'Sole Trader' }],
+    ['no authorized signatory name', { authorizedSignatoryName: undefined }],
+    ['a Private Limited entity with no CIN', { entityType: 'Private Limited' }],
+    ['a bad CIN', { entityType: 'Private Limited', cin: 'not-a-cin' }],
   ])('refuses %s', async (_name, change) => {
     reset('pending');
     const res = await onboard(change);
     expect(res.status).toBe(400);
     expect(supabaseMock.writes('tpl_partners', 'POST')).toHaveLength(0);
+  });
+
+  it('accepts a full (non-quick) application with entity type, CIN and the authorized signatory', async () => {
+    reset('pending');
+    const res = await onboard({ email: 'full@northline.example', gst: '27ABCDE1234F1Z0', entityType: 'Private Limited', cin: 'U74999DL2019PTC123456' });
+    expect(res.status).toBe(200);
+    const written = supabaseMock.writes('tpl_partners', 'POST')[0].body;
+    expect(written).toMatchObject({ entity_type: 'Private Limited', cin: 'U74999DL2019PTC123456', authorized_signatory_name: 'Priya Rao' });
+  });
+
+  it('stores the company name and the contact person under their own columns', async () => {
+    reset('pending');
+    const res = await request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Acme Logistics Pvt Ltd', contactName: 'Priya Rao', email: 'new@northline.example', fleetSize: 'single', truckType: '32ft_sxl', user_id: 'new-user',
+    });
+    expect(res.status).toBe(200);
+    const written = supabaseMock.writes('tpl_partners', 'POST')[0].body;
+    expect(written).toMatchObject({ company_name: 'Acme Logistics Pvt Ltd', contact_name: 'Priya Rao' });
+  });
+
+  it('does not require entity type, CIN or the authorized signatory for a quick (fleet-size) application', async () => {
+    reset('pending');
+    const res = await request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Acme Logistics Pvt Ltd', contactName: 'Priya Rao', email: 'quick2@northline.example', fleetSize: 'single', truckType: '32ft_sxl',
+    });
+    expect(res.status).toBe(200);
+    const written = supabaseMock.writes('tpl_partners', 'POST')[0].body;
+    expect(written).toMatchObject({ entity_type: null, cin: null, authorized_signatory_name: null });
+  });
+
+  it('refuses a quick application missing the contact person even with no PAN yet', async () => {
+    reset('pending');
+    const res = await request(app).post('/api/v1/tpl/onboard').send({
+      companyName: 'Acme Logistics Pvt Ltd', email: 'new2@northline.example', fleetSize: 'single', truckType: '32ft_sxl',
+    });
+    expect(res.status).toBe(400);
+    expect(supabaseMock.writes('tpl_partners', 'POST')).toHaveLength(0);
+  });
+
+  it('updateApplication accepts and stores entity type, CIN and the authorized signatory', async () => {
+    reset('pending');
+    const res = await request(app).patch(`/api/v1/tpl/${PID}`).send({
+      verify_pan: 'ABCDE1234F', entityType: 'LLP', cin: 'U74999DL2019PTC654321', authorizedSignatoryName: 'New Signatory',
+    });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0]).toMatchObject({
+      entity_type: 'LLP', cin: 'U74999DL2019PTC654321', authorized_signatory_name: 'New Signatory',
+    });
+  });
+
+  it('updateApplication accepts empty string gst: "" without failing or demanding GSTIN', async () => {
+    reset('pending');
+    const res = await request(app).patch(`/api/v1/tpl/${PID}`).send({
+      verify_pan: 'ABCDE1234F', gst: '',
+    });
+    expect(res.status).toBe(200);
+    expect(supabaseMock.rows('tpl_partners')[0].gstin).toBeNull();
+  });
+});
+
+describe('GET /tpl/:id/history', () => {
+  const history = (id = PID, token = bearer('super-1')) => request(app).get(`/api/v1/tpl/${id}/history`).set(token);
+
+  it('lists this partner\'s audited decisions, newest first, with the actor\'s name', async () => {
+    // Name resolution looks the actor up by a real (uuid-shaped) id, unlike this file's other
+    // shorthand bearer ids - add one just for this test.
+    const SUE = '22222222-2222-2222-2222-222222222222';
+    supabaseMock.rows('users').push({ id: SUE, role: 'superadmin', is_active: true, full_name: 'Sue Super' });
+    supabaseMock.rows('ai_agent_logs').push(
+      { created_at: '2026-10-01T05:00:00Z', action: 'tpl_approved', input_data: { actor_id: SUE, partner_id: PID } },
+      { created_at: '2026-10-05T05:00:00Z', action: 'tpl_paused', input_data: { actor_id: SUE, partner_id: PID } },
+      // Belongs to a different partner - must not show up here
+      { created_at: '2026-10-06T05:00:00Z', action: 'tpl_approved', input_data: { actor_id: SUE, partner_id: 'p2' } },
+    );
+    const res = await history();
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([
+      { at: '2026-10-05T05:00:00Z', actor: 'Sue Super', action: 'tpl_paused', detail: null },
+      { at: '2026-10-01T05:00:00Z', actor: 'Sue Super', action: 'tpl_approved', detail: null },
+    ]);
+  });
+
+  it('is empty for a partner with no audited history yet', async () => {
+    expect((await history()).body).toEqual([]);
+  });
+
+  it('is for superadmins only', async () => {
+    expect((await request(app).get(`/api/v1/tpl/${PID}/history`)).status).toBe(401);
+    expect((await history(PID, bearer('admin-1'))).status).toBe(403);
+    expect((await history(PID, bearer('partner-user'))).status).toBe(403);
   });
 });

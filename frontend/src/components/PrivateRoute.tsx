@@ -81,9 +81,15 @@ export default function PrivateRoute({ children, allowedRoles, kinds }: { childr
     return <BlockedRedirect to={home} from={location.pathname} />
   }
 
-  // If this route is restricted to certain roles
-  if (!roleCanOpen(role, allowedRoles)) {
-    const home = homeForRole(role)
+  // If this route is restricted to certain roles. A route that also restricts by `kinds` (the vendor
+  // and 3PL areas) checks the account's own role, not the org-context role staff routes use: a vendor
+  // or 3PL partner's role must never depend on which organisation happens to be active, so a stray org
+  // membership elsewhere (e.g. a driver seat in an unrelated company) can't override it and bounce them
+  // to /driver. Staff routes (no `kinds`) keep using the org-context role, since the same person can be
+  // a different role in each organisation they belong to.
+  const roleForAllowedRoles = kinds ? accountRole : role
+  if (!roleCanOpen(roleForAllowedRoles, allowedRoles)) {
+    const home = homeForRole(roleForAllowedRoles)
     // Accounts with no area in the web app (no role, customers) would
     // otherwise bounce between redirects forever.
     if (!home || home === location.pathname) return <NoAccess />

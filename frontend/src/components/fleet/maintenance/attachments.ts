@@ -1,6 +1,7 @@
 import { fleetAPI } from '@/services/api'
 import { supabase } from '@/services/supabase'
 import { errorMessage } from '@/utils/display'
+import { compressDocumentFile } from '@/utils/imageCompressor'
 import type { AttachmentInput, AttachmentKind } from './types'
 
 /** Same file types and storage pattern as expense receipts. */
@@ -13,17 +14,18 @@ export const guessKind = (file: { type: string }): AttachmentKind => (file.type 
 
 /** Uploads one file straight to storage through a signed URL and returns what to send with the record. */
 export async function uploadServiceFile(vehicleId: string, file: File): Promise<AttachmentInput> {
-  if (!ATTACHMENT_TYPES.includes(file.type)) throw new Error('Upload a PDF, JPG or PNG file.')
-  if (file.size > MAX_ATTACHMENT_MB * 1024 * 1024) throw new Error(`A file must be at most ${MAX_ATTACHMENT_MB} MB.`)
+  const { file: uploadFile } = await compressDocumentFile(file)
+  if (!ATTACHMENT_TYPES.includes(uploadFile.type)) throw new Error('Upload a PDF, JPG or PNG file.')
+  if (uploadFile.size > MAX_ATTACHMENT_MB * 1024 * 1024) throw new Error(`A file must be at most ${MAX_ATTACHMENT_MB} MB.`)
   let upload
   try {
-    upload = await fleetAPI.attachmentUpload(vehicleId, { content_type: file.type, size: file.size })
+    upload = await fleetAPI.attachmentUpload(vehicleId, { content_type: uploadFile.type, size: uploadFile.size })
   } catch (err) {
     throw new Error(errorMessage(err, 'We could not start the upload. Try again.'))
   }
-  const { error } = await supabase.storage.from(upload.bucket).uploadToSignedUrl(upload.path, upload.token, file, { contentType: file.type })
+  const { error } = await supabase.storage.from(upload.bucket).uploadToSignedUrl(upload.path, upload.token, uploadFile, { contentType: uploadFile.type })
   if (error) throw new Error('We could not upload the file. Try again.')
-  return { path: upload.path, kind: guessKind(file), file_name: file.name, content_type: file.type, size_bytes: file.size }
+  return { path: upload.path, kind: guessKind(uploadFile), file_name: uploadFile.name, content_type: uploadFile.type, size_bytes: uploadFile.size }
 }
 
 /**

@@ -54,6 +54,8 @@ function publicView(partner: any) {
     status: partner.status,
     created_at: partner.created_at,
     rejection_reason: partner.status === 'rejected' ? partner.rejection_reason ?? null : null,
+    document_issues: ['pending', 'rejected'].includes(partner.status) ? partner.document_issues ?? null : null,
+    field_issues: ['pending', 'rejected'].includes(partner.status) ? partner.field_issues ?? null : null,
     email_masked: maskEmail(partner.email),
     corridor_count: partner.tpl_corridors?.length ?? 0,
     document_count: partner.tpl_documents?.length ?? 0,
@@ -142,6 +144,18 @@ router.post('/check-partner', rateLimitByIp('tpl-check', 30, 60), optionalAuth, 
   }
 });
 
+// POST /api/v1/tpl/check-availability — the onboarding form asks as the applicant types, to catch
+// a duplicate email or phone right there instead of only after they finish and submit the whole form.
+router.post('/check-availability', rateLimitByIp('tpl-check-availability', 30, 60), async (req, res) => {
+  try {
+    const field = req.body?.field;
+    if (field !== 'email' && field !== 'phone') throw new HttpError(400, 'field must be "email" or "phone"');
+    res.json(await tplService.checkAvailability(field, req.body?.value));
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // POST /api/v1/tpl/onboard
 router.post('/onboard', rateLimitByIp('tpl-onboard', 20, 60 * 60), async (req, res) => {
   try {
@@ -152,10 +166,24 @@ router.post('/onboard', rateLimitByIp('tpl-onboard', 20, 60 * 60), async (req, r
   }
 });
 
+// Staff enters a 3PL application on behalf of someone who phoned/WhatsApp'd their details in, instead
+// of using the public wizard themselves. Same onboard() the public form uses (so it goes through the
+// normal review queue unchanged, no account required yet) - just tags who on staff entered it.
+// Uploading documents beforehand uses the public /applications/upload-url route with `custom_id`, same
+// as the public wizard; it needs no application_id yet since the partner record doesn't exist until now.
+router.post('/admin/create', requireAuth, requireRole('superadmin'), rateLimitByUser('tpl-admin-onboard', 60, 60 * 60), async (req, res) => {
+  try {
+    const { partner, warnings } = await tplService.onboard({ ...req.body, created_by: req.user!.user_id });
+    res.json({ success: true, data: { id: partner.id, custom_id: partner.custom_id, status: partner.status }, ...withWarnings({}, warnings) });
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // POST /api/v1/tpl/applications/upload-url — signed URL to upload one document.
 // New application: { custom_id, doc_type, content_type, size }.
 // Existing one: { application_id, doc_type, content_type, size } as staff or the
-// partner, or with verify_pan while the application is pending.
+// partner, or with verify_pan while the application is pending or rejected (fixing a flagged document resubmits it).
 router.post('/applications/upload-url', rateLimitByIp('tpl-upload-url', settings.TPL_UPLOAD_URLS_PER_HOUR, 60 * 60), ...optionalOrgAuth, async (req, res) => {
   try {
     const { application_id, custom_id, doc_type, content_type, size, verify_pan } = req.body ?? {};
@@ -166,7 +194,7 @@ router.post('/applications/upload-url', rateLimitByIp('tpl-upload-url', settings
       const owner = (await actsAsPlatform(req)) || (!!req.user && partner.user_id === req.user.user_id);
       if (!owner) {
         if (!(await panMatches(req, partner, verify_pan))) throw new HttpError(403, 'PAN does not match this application');
-        if (partner.status !== 'pending') throw new HttpError(409, 'Only pending applications can be edited');
+        if (!['pending', 'rejected'].includes(partner.status)) throw new HttpError(409, 'Only a pending or rejected application can be edited');
       }
       partnerId = partner.id;
     }
@@ -225,6 +253,15 @@ router.get('/:id', rateLimitByIp('tpl-lookup', 60, 60), ...optionalOrgAuth, asyn
   }
 });
 
+// GET /api/v1/tpl/:id/history — the partner's audited timeline, for the superadmin review page
+router.get('/:id/history', requireAuth, requireRole('superadmin'), async (req, res) => {
+  try {
+    res.json(await tplService.getPartnerHistory(uuidParam(req.params.id, 'Application not found')));
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
 // POST /api/v1/tpl/approve/:id
 router.post('/approve/:id', requireAuth, requireRole('superadmin'), async (req, res) => {
   try {
@@ -247,28 +284,52 @@ router.post('/reject/:id', requireAuth, requireRole('superadmin'), async (req: R
   }
 });
 
-// PATCH /api/v1/tpl/:id  — staff, or the applicant proving ownership with the PAN
+// PUT /api/v1/tpl/:id/flag-documents  { issues: { "<doc type>": reason } }
+router.put('/:id/flag-documents', requireAuth, requireRole('superadmin'), async (req, res) => {
+  try {
+    const data = await tplService.flagDocuments(uuidParam(req.params.id, 'Application not found'), req.body?.issues, req.user!);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// PUT /api/v1/tpl/:id/flag-details  { issues: { "<field>": reason } }
+router.put('/:id/flag-details', requireAuth, requireRole('superadmin'), async (req, res) => {
+  try {
+    const data = await tplService.flagDetails(uuidParam(req.params.id, 'Application not found'), req.body?.issues, req.user!);
+    res.json({ success: true, data });
+  } catch (error) {
+    sendError(req, res, error, 'error');
+  }
+});
+
+// PATCH /api/v1/tpl/:id  — staff, or the applicant proving ownership with the PAN or user session
 router.patch('/:id', ...optionalOrgAuth, async (req, res) => {
   try {
     uuidParam(req.params.id, 'Application not found');
-    if (!(await actsAsPlatform(req))) {
+    const asStaff = await actsAsPlatform(req);
+    if (!asStaff) {
       const partner = await tplService.getPartner(req.params.id);
-      if (!(await panMatches(req, partner, req.body.verify_pan))) {
+      const isOwner = !!(req.user && partner.user_id && partner.user_id === req.user.user_id);
+      if (!isOwner && !(await panMatches(req, partner, req.body.verify_pan))) {
         throw new HttpError(403, 'PAN does not match this application');
       }
     }
-    const { warnings } = await tplService.updateApplication(req.params.id, req.body);
+    const { warnings } = await tplService.updateApplication(req.params.id, req.body, asStaff);
     res.json({ success: true, data: true, ...withWarnings({}, warnings) });
   } catch (error) {
     sendError(req, res, error, 'error');
   }
 });
 
-// POST /api/v1/tpl/:id/documents/:docId/replace — the partner swaps one of its documents.
-// The new file was uploaded through /applications/upload-url; the partner goes back to review.
+// POST /api/v1/tpl/:id/documents/:docId/replace — the partner swaps one of its documents (goes back to
+// review), or staff updates one on the partner's behalf at any status, including active - the gap that
+// otherwise left a platform owner with no way to update an active partner's documents at all.
 router.post('/:id/documents/:docId/replace', requireAuth, rateLimitByUser('tpl-doc-replace', 30, 60 * 60), async (req, res) => {
   try {
-    const data = await tplService.replaceDocument(req.params.id, req.params.docId, req.body?.path, req.user!);
+    const asStaff = await actsAsPlatform(req);
+    const data = await tplService.replaceDocument(req.params.id, req.params.docId, req.body?.path, req.user!, asStaff);
     res.json({ success: true, data });
   } catch (error) {
     sendError(req, res, error, 'error');

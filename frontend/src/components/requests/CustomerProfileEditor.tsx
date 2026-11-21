@@ -49,7 +49,10 @@ export function CustomerProfileEditor({ customerId, open, onClose, onSaved }: {
   const submit = () => {
     const found = validateProfile(form)
     setErrors(found)
-    if (Object.keys(found).length > 0) return
+    if (Object.keys(found).length > 0) {
+      toast.error(Object.values(found)[0] || 'Please fix the errors before saving.')
+      return
+    }
     const changes = profileChanges(form, profile.data)
     if (Object.keys(changes).length === 0) { onClose(); return }
     setServerError(undefined)

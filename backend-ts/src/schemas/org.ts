@@ -3,6 +3,7 @@
  */
 import { z } from 'zod';
 import { ORG_ROLES } from '../core/org-context';
+import { ENTITY_TYPES, isCinFormat } from '../utils/entity-type';
 
 const text = (max: number) => z.string().trim().max(max);
 const optionalText = (max: number) => text(max).transform(v => (v === '' ? null : v)).nullable().optional();
@@ -20,6 +21,9 @@ const details = {
   pincode: z.string().trim().regex(/^[1-9][0-9]{5}$/, 'Pincode must be 6 digits').nullable().optional(),
   phone: optionalText(30),
   email: z.string().trim().toLowerCase().email('Email is not valid').max(255).nullable().optional(),
+  entity_type: z.enum(ENTITY_TYPES).nullable().optional(),
+  cin: z.string().trim().toUpperCase().refine(v => v === '' || isCinFormat(v), 'CIN is not valid (21 letters and digits, for example U74999DL2019PTC123456)').transform(v => (v === '' ? null : v)).nullable().optional(),
+  authorized_signatory_name: optionalText(200),
 };
 
 /** PATCH /org: the details an owner or admin may change. Type and approval are never here. */
@@ -65,3 +69,56 @@ export const AdminOrgDecisionSchema = z.object({
 export const AffiliationRequestSchema = z.object({
   company_id: z.string().uuid('company_id is not valid'),
 }).strict();
+
+// ── Logistic-company KYC documents (mirrors vendor KYC, schemas/vendor.ts) ──
+
+/** How the documents a logistic company uploads are named in the review. */
+export const ORG_DOC_LABELS: Record<string, string> = {
+  gstRegistration: 'GST registration',
+  panScan: 'PAN card',
+  companyRegistration: 'Company registration / incorporation certificate',
+  cancelledCheque: 'Cancelled cheque',
+  addressProof: 'Registered address proof',
+};
+export const REQUIRED_ORG_DOC_KEYS = Object.keys(ORG_DOC_LABELS);
+
+const ORG_DOC_KEY = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+export const MAX_OTHER_ORG_DOCS = 10;
+
+const OtherOrgDocSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  path: z.string().min(1).max(300),
+});
+
+/** Storage paths of KYC files: <org id>/<file>, no folder tricks. */
+export function isOwnOrgDocPath(orgId: string, path: unknown): path is string {
+  return typeof path === 'string'
+    && path.length <= 300
+    && path.startsWith(`${orgId}/`)
+    && !path.includes('..')
+    && !path.slice(orgId.length + 1).includes('/');
+}
+
+export const OrgDocumentsSchema = z.object({
+  docUrls: z.record(z.string(), z.string().min(1).max(300)).optional(),
+  otherDocs: z.array(OtherOrgDocSchema).max(MAX_OTHER_ORG_DOCS, `Attach at most ${MAX_OTHER_ORG_DOCS} other documents`).optional(),
+}).refine(v => v.docUrls !== undefined || v.otherDocs !== undefined, 'Nothing to save');
+export type OrgDocumentsInput = z.infer<typeof OrgDocumentsSchema>;
+
+/** Checks every document path lives in the company's own folder. Throws a 400 via the caller. */
+export function assertOwnOrgDocumentPaths(orgId: string, docUrls?: Record<string, string>, otherDocs?: { name: string; path: string }[]): string | null {
+  for (const [key, path] of Object.entries(docUrls ?? {})) {
+    if (!ORG_DOC_KEY.test(key)) return `Invalid document name: ${key}`;
+    if (!isOwnOrgDocPath(orgId, path)) return 'Documents must be your own uploads';
+  }
+  for (const doc of otherDocs ?? []) {
+    if (!isOwnOrgDocPath(orgId, doc.path)) return 'Documents must be your own uploads';
+  }
+  return null;
+}
+
+export const FlagOrgDocumentsSchema = z.object({
+  issues: z.record(z.string(), z.string().trim().min(3, 'Say what is wrong with each document (at least 3 characters)').max(300, 'Reason is too long (at most 300 characters)'))
+    .refine(issues => Object.keys(issues).length > 0, 'Flag at least one document'),
+});
+export type FlagOrgDocumentsInput = z.infer<typeof FlagOrgDocumentsSchema>;

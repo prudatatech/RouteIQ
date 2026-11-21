@@ -79,7 +79,7 @@ describe('GSTIN is checked where it is saved', () => {
   it('3PL onboarding refuses a GSTIN with a wrong check character', async () => {
     supabaseMock.reset({ users: [], tpl_partners: [], tpl_corridors: [], tpl_documents: [], notifications: [] });
     const res = await request(app).post('/api/v1/tpl/onboard').send({
-      companyName: 'Acme', email: 'a@acme.in', pan: 'AAPFU0939F', gst: '27AAPFU0939F1Z5',
+      companyName: 'Acme', contactName: 'Priya Rao', email: 'a@acme.in', pan: 'AAPFU0939F', gst: '27AAPFU0939F1Z5',
     });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/does not match/);
@@ -88,7 +88,7 @@ describe('GSTIN is checked where it is saved', () => {
 
   it('3PL onboarding refuses a GSTIN that belongs to another PAN, and needs one', async () => {
     supabaseMock.reset({ users: [], tpl_partners: [], tpl_corridors: [], tpl_documents: [], notifications: [] });
-    const send = (gst?: string) => request(app).post('/api/v1/tpl/onboard').send({ companyName: 'Acme', email: 'a@acme.in', pan: 'ABCDE1234F', gst });
+    const send = (gst?: string) => request(app).post('/api/v1/tpl/onboard').send({ companyName: 'Acme', contactName: 'Priya Rao', email: 'a@acme.in', pan: 'ABCDE1234F', gst });
     expect((await send(VALID)).body.error).toMatch(/different PAN/);
     expect((await send()).status).toBe(400);
   });
@@ -97,7 +97,7 @@ describe('GSTIN is checked where it is saved', () => {
     supabaseMock.reset({ users: [{ id: 'vendor-1', role: 'vendor', is_active: true }, { id: 'admin-1', role: 'admin', is_active: true }], vendor_profiles: [], notifications: [] });
     const submit = (gstNumber: string) => request(app).post('/api/v1/vendor/kyc/submit')
       .set('Authorization', `Bearer ${supabaseMock.signUserToken('vendor-1')}`)
-      .send({ companyName: 'Acme', gstNumber, city: 'Pune', address: '1 MG Road', lat: 18.5, lng: 73.8, kycData: {} });
+      .send({ companyName: 'Acme', gstNumber, city: 'Pune', address: '1 MG Road', lat: 18.5, lng: 73.8, kycData: { data: { entityType: 'Proprietorship', authorizedSignatoryName: 'Owner Name' } } });
     const bad = await submit('27AAPFU0939F1Z5');
     expect(bad.status).toBe(400);
     expect(supabaseMock.rows('vendor_profiles')).toEqual([]);

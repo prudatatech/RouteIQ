@@ -291,7 +291,7 @@ if (run('lifecycle')) {
   await db('PATCH', 'invoices', { query: `id=eq.${i4.id}`, body: { issued_at: new Date(Date.now() - 30 * 86400000).toISOString(), due_date: new Date(Date.now() - 10 * 86400000).toISOString() } })
   const det = (await api(adm.token, 'GET', `/invoices/${i4.id}`)).body
   check('3.24 overdue computed: 10 days after the due date', det?.overdue === true && det.days_overdue === 10, J({ o: det?.overdue, d: det?.days_overdue }))
-  const lst = (await api(adm.token, 'GET', `/finance/invoices?overdue=1&from=${addDays(today(), -40)}&to=${today()}`)).body
+  const lst = (await api(adm.token, 'GET', `/finance/invoices?overdue=1&from=${addDays(today(), -40)}&to=${today()}`)).body.items
   check('3.25 the overdue filter lists it', Array.isArray(lst) && lst.some(x => x.id === i4.id && x.days_overdue === 10), J(lst).slice(0, 150))
   const sm = (await api(adm.token, 'GET', '/finance/invoices/summary')).body
   check('3.26 summary counts it as overdue', sm?.overdue_count >= 1, J(sm))
@@ -561,13 +561,13 @@ if (run('expenses')) {
 
   // list, filters, sums
   const range = `from=${addDays(T, -10)}&to=${T}`
-  const all = (await api(adm.token, 'GET', `/finance/expenses?${range}`)).body
+  const all = (await api(adm.token, 'GET', `/finance/expenses?${range}`)).body.items
   const mine = [fuel.body.id, toll.body.id, maint.body.id, other.body.id, withReceipt.body.id]
   check('6.19 list returns exactly this company\'s 5 expenses with plates', all.length === 5 && mine.every(id => all.some(e => e.id === id)) && all.find(e => e.id === fuel.body.id)?.plate_number === veh.plate_number, `${all.length}`)
-  check('6.20 company B lists none of them', (await api(admX.token, 'GET', `/finance/expenses?${range}`)).body.length === 0)
-  const oneCat = (await api(adm.token, 'GET', `/finance/expenses?${range}&category=fuel`)).body
-  const oneVeh = (await api(adm.token, 'GET', `/finance/expenses?${range}&vehicle_id=${veh.id}`)).body
-  const today1 = (await api(adm.token, 'GET', `/finance/expenses?from=${T}&to=${T}`)).body
+  check('6.20 company B lists none of them', (await api(admX.token, 'GET', `/finance/expenses?${range}`)).body.items.length === 0)
+  const oneCat = (await api(adm.token, 'GET', `/finance/expenses?${range}&category=fuel`)).body.items
+  const oneVeh = (await api(adm.token, 'GET', `/finance/expenses?${range}&vehicle_id=${veh.id}`)).body.items
+  const today1 = (await api(adm.token, 'GET', `/finance/expenses?from=${T}&to=${T}`)).body.items
   check('6.21 filters: category fuel = 2, vehicle = 4, today only = 3', oneCat.length === 2 && oneVeh.length === 4 && today1.length === 3, `${oneCat.length} ${oneVeh.length} ${today1.length}`)
   const sum = await api(adm.token, 'GET', `/finance/summary?${range}`)
   const cat = c => sum.body.costs.by_category.find(x => x.category === c)?.amount
@@ -584,7 +584,7 @@ if (run('expenses')) {
   check('6.26 summary drops the deleted expense (6455.69 - 700 = 5755.69)', after.costs.recorded === 5755.69, `${after.costs.recorded}`)
   // India date: the day boundary
   const edge = await post({ category: 'other', amount: 1, expense_date: addDays(T, -1) })
-  const listToday = (await api(adm.token, 'GET', `/finance/expenses?from=${T}&to=${T}`)).body
+  const listToday = (await api(adm.token, 'GET', `/finance/expenses?from=${T}&to=${T}`)).body.items
   check('6.27 an expense dated yesterday (India) is not in today\'s range', edge.status === 201 && !listToday.some(e => e.id === edge.body.id))
   EX = { co, adm }
 }
@@ -670,16 +670,16 @@ if (run('settle')) {
   check('7.22 summary GST collected and outstanding equal the invoices', sum.gst_collected === gst && sum.outstanding === outst, `${sum.gst_collected}/${gst} ${sum.outstanding}/${outst}`)
   const isum = (await api(adm.token, 'GET', '/finance/invoices/summary')).body
   check('7.23 invoice summary: outstanding and collected-this-month equal the invoices (paid 1000.10 is rcm: total = amount)', isum.outstanding === outst && isum.collected_this_month === coll && isum.outstanding_count === live.filter(r => r.status === 'issued').length, J(isum))
-  const lst = (await api(adm.token, 'GET', `/finance/invoices?from=${T}&to=${T}`)).body
+  const lst = (await api(adm.token, 'GET', `/finance/invoices?from=${T}&to=${T}`)).body.items
   check('7.24 invoice list = every invoice of the company incl. void; none of another company\'s', lst.length === rowsDb.length && lst.every(r => rowsDb.some(d => d.id === r.id)), `${lst.length} vs ${rowsDb.length}`)
-  check('7.25 the other company sees none of it in lists or summary', (await api(admX.token, 'GET', `/finance/invoices?from=${T}&to=${T}`)).body.length === 0 && (await api(admX.token, 'GET', `/finance/summary?from=${T}&to=${T}`)).body.revenue === 0)
-  const pl = (await api(adm.token, 'GET', `/finance/invoices?status=paid&from=${T}&to=${T}`)).body
+  check('7.25 the other company sees none of it in lists or summary', (await api(admX.token, 'GET', `/finance/invoices?from=${T}&to=${T}`)).body.items.length === 0 && (await api(admX.token, 'GET', `/finance/summary?from=${T}&to=${T}`)).body.revenue === 0)
+  const pl = (await api(adm.token, 'GET', `/finance/invoices?status=paid&from=${T}&to=${T}`)).body.items
   check('7.26 status filter paid = 1', pl.length === 1 && pl[0].id === inv[0].id, `${pl.length}`)
   // India time: an invoice issued at 00:30 IST today is in today (UTC says yesterday); 23:30 IST yesterday is not
   const istStart = new Date(`${T}T00:00:00+05:30`).getTime()
   await db('PATCH', 'invoices', { query: `id=eq.${inv[2].id}`, body: { issued_at: new Date(istStart + 30 * 60e3).toISOString() } })
   await db('PATCH', 'invoices', { query: `id=eq.${inv[3].id}`, body: { issued_at: new Date(istStart - 30 * 60e3).toISOString() } })
-  const lt = (await api(adm.token, 'GET', `/finance/invoices?from=${T}&to=${T}`)).body.map(r => r.id)
+  const lt = (await api(adm.token, 'GET', `/finance/invoices?from=${T}&to=${T}`)).body.items.map(r => r.id)
   const sumT = (await api(adm.token, 'GET', `/finance/summary?from=${T}&to=${T}`)).body
   check('7.27 date filters are India days: 00:30 IST today is in, 23:30 IST yesterday is out', lt.includes(inv[2].id) && !lt.includes(inv[3].id), J({ in: lt.includes(inv[2].id), out: lt.includes(inv[3].id) }))
   check('7.28 the summary range uses the same India day', sumT.invoice_count === live.length - 1, `${sumT.invoice_count} vs ${live.length - 1}`)
@@ -704,7 +704,7 @@ if (run('isolation')) {
   check('8.5 company B cannot invoice or price company A\'s delivery (404)', (await api(admX.token, 'POST', '/finance/invoices', { manifest_id: man.id })).status === 404 && (await api(admX.token, 'POST', '/finance/unpriced/price', { kind: 'manifest', id: man.id, amount: 1 })).status === 404)
   check('8.6 the invoice is untouched', (await invoiceOf(man.id)).status === 'issued')
   const pl = await api(plat.token, 'GET', `/finance/invoices?from=${addDays(today(), -1)}&to=${today()}`)
-  check('8.7 platform admin acting as the platform sees invoices across companies', pl.status === 200 && pl.body.some(r => r.id === inv.id), `${pl.status} ${pl.body?.length}`)
+  check('8.7 platform admin acting as the platform sees invoices across companies', pl.status === 200 && pl.body.items.some(r => r.id === inv.id), `${pl.status} ${pl.body?.items?.length}`)
   const plRead = await api(plat.token, 'GET', `/invoices/${inv.id}`)
   check('8.8 and can read one invoice', plRead.status === 200, `${plRead.status}`)
   const plPdf = await api(plat.token, 'GET', `/invoices/${inv.id}/pdf`, undefined, { raw: true })

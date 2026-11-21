@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { invoiceListParams, recordedMethodFor, reportMethodLabel, sortReports, type InvoiceReport } from './finance'
+import { FINANCE_PAGE_SIZE, invoiceListParams, recordedMethodFor, reportMethodLabel, sortReports, type InvoiceReport } from './finance'
 
 const report = (over: Partial<InvoiceReport>): InvoiceReport => ({
   id: 'r', invoice_id: 'i1', customer_id: 'c1', kind: 'payment', amount: 100, paid_on: '2026-09-30', method: 'upi', reference: 'UTR1', message: null,
@@ -33,7 +33,9 @@ describe('invoice reports', () => {
   })
 
   it('leaves the date range out when listing invoices with open reports', () => {
-    expect(invoiceListParams({ from: '2026-09-01', to: '2026-09-30', reportsOnly: true })).toEqual({ reports: 'open', status: undefined, requester: undefined, overdue: undefined })
-    expect(invoiceListParams({ from: '2026-09-01', to: '2026-09-30', status: 'issued', overdue: true })).toEqual({ from: '2026-09-01', to: '2026-09-30', status: 'issued', requester: undefined, overdue: '1' })
+    expect(invoiceListParams({ from: '2026-09-01', to: '2026-09-30', reportsOnly: true, page: 0 }))
+      .toEqual({ reports: 'open', status: undefined, requester: undefined, overdue: undefined, limit: FINANCE_PAGE_SIZE, offset: 0 })
+    expect(invoiceListParams({ from: '2026-09-01', to: '2026-09-30', status: 'issued', overdue: true, page: 0 }))
+      .toEqual({ from: '2026-09-01', to: '2026-09-30', status: 'issued', requester: undefined, overdue: '1', limit: FINANCE_PAGE_SIZE, offset: 0 })
   })
 })

@@ -4,38 +4,54 @@ import { activeNav, menuFor, navBadgeCounts, navSections } from './navigation'
 const labels = (role: string) => menuFor(role).map(s => s.label)
 
 describe('the staff menu', () => {
-  it('has the eleven sections in the order the work happens', () => {
+  it('has the nine sections in the order the work happens', () => {
     expect(labels('superadmin')).toEqual([
-      'Today', 'Requests', 'Shipments', 'Dispatch', 'On the road', 'Fleet', 'People', 'Return trips', 'Money', 'Reports', 'Settings',
+      'Today', 'Requests', 'Dispatch', 'On the road', 'Fleet', 'People', 'Return trips', 'Money', 'Settings',
     ])
   })
 
   it('gives a manager the operations sections only', () => {
-    expect(labels('manager')).toEqual(['Today', 'Requests', 'Shipments', 'Dispatch', 'On the road', 'Fleet', 'People'])
+    expect(labels('manager')).toEqual(['Today', 'Requests', 'Dispatch', 'On the road', 'Fleet', 'People'])
     const links = menuFor('manager').flatMap(s => [s.to, ...s.children.map(c => c.to)])
-    for (const forbidden of ['/money', '/admin/settings', '/admin/audit', '/admin/kyc', '/return-trips', '/3pl-partners']) {
+    for (const forbidden of ['/money', '/admin/settings', '/admin/audit', '/admin/kyc', '/return-trips', '/3pl-partners', '/analytics', '/insights']) {
       expect(links).not.toContain(forbidden)
     }
   })
 
-  it('gives the finance role Money and Reports only, no operations', () => {
-    expect(labels('finance')).toEqual(['Money', 'Reports'])
+  it('gives the finance role Money only (with Analytics and Insights under it), no operations', () => {
+    expect(labels('finance')).toEqual(['Money'])
     const links = menuFor('finance').flatMap(s => [s.to, ...s.children.map(c => c.to)])
+    expect(links).toEqual(expect.arrayContaining(['/analytics', '/insights']))
     for (const forbidden of ['/today', '/dispatch', '/fleet', '/admin/users', '/admin/settings', '/return-trips', '/3pl-partners']) {
       expect(links).not.toContain(forbidden)
     }
   })
 
-  it('shows a company admin the return trips and its own 3PL partners, but not KYC review (the platform decides that), nor the audit log', () => {
+  it('folds Shipments into Dispatch and Reports into Money, without losing either page', () => {
+    const links = menuFor('superadmin').flatMap(s => [s.to, ...(s.also ?? []), ...s.children.map(c => c.to)])
+    expect(links).toEqual(expect.arrayContaining(['/shipments', '/analytics', '/insights']))
+    expect(labels('superadmin')).not.toContain('Shipments')
+    expect(labels('superadmin')).not.toContain('Reports')
+  })
+
+  it('shows a company admin return trips but not 3PL partners (the platform reviews those), KYC review, or the audit log', () => {
     const links = menuFor('admin').flatMap(s => s.children.map(c => c.to))
     expect(links).not.toContain('/admin/kyc')
-    expect(links).toEqual(expect.arrayContaining(['/return-trips', '/return-trips?tab=bids', '/return-trips?tab=pool', '/return-trips?tab=partners']))
+    expect(links).toEqual(expect.arrayContaining(['/return-trips', '/return-trips?tab=bids', '/return-trips?tab=pool']))
+    // ReturnTripsPage only renders the partners tab for a superadmin; a company admin must not see
+    // the link (or its badge) with nothing behind it.
+    expect(links).not.toContain('/return-trips?tab=partners')
     expect(links).not.toContain('/admin/audit')
     expect(menuFor('superadmin').flatMap(s => s.children.map(c => c.to))).toEqual(expect.arrayContaining(['/return-trips?tab=partners', '/admin/audit']))
   })
 
-  it('puts KYC review in the platform section', () => {
+  it('puts KYC review and 3PL partners in the platform section - there is otherwise no menu path to either while acting as the platform', () => {
     const platform = menuFor('superadmin', 'platform').find(s => s.label === 'Platform')!
+    expect(platform.children.map(c => c.to)).toEqual(['/platform/organisations', '/admin/kyc', '/return-trips?tab=partners'])
+  })
+
+  it('does not offer 3PL partners to a platform admin who is not a superadmin - the page only lets a superadmin decide', () => {
+    const platform = menuFor('admin', 'platform').find(s => s.label === 'Platform')!
     expect(platform.children.map(c => c.to)).toEqual(['/platform/organisations', '/admin/kyc'])
   })
 
@@ -98,6 +114,16 @@ describe('finding the open section', () => {
     expect(at('/3pl-partners/p1')).toEqual(['Return trips', null])
   })
 
+  it('keeps 3PL partner review in the Platform section while acting as the platform', () => {
+    const platformSections = menuFor('superadmin', 'platform')
+    const atPlatform = (pathname: string, search = '') => {
+      const { section, child } = activeNav(platformSections, pathname, search)
+      return [section?.label ?? null, child?.label ?? null]
+    }
+    expect(atPlatform('/return-trips', '?tab=partners')).toEqual(['Platform', '3PL partners'])
+    expect(atPlatform('/3pl-partners/p1')).toEqual(['Platform', null])
+  })
+
   it('matches nothing for an unknown page', () => {
     expect(at('/nowhere')).toEqual([null, null])
   })
@@ -108,7 +134,7 @@ describe('menu badge counts', () => {
     sos: { count: 2 },
     problems: { count: 3, overdue: 1 },
     requests: { count: 5, bookings: 4, vendor_loads: 1 },
-    needs_vehicle: { count: 6 },
+    needs_vehicle: { count: 6, shipments: 4, vendor_loads: 2 },
     trips_to_send: { count: 2 },
     vehicle_requests: { count: 1 },
     documents: { count: 7 },
@@ -119,9 +145,11 @@ describe('menu badge counts', () => {
   }
 
   it('turns the Today queues into counts for sections and links', () => {
+    // needs_vehicle splits 6 as 4 shipments (Dispatch's own tab) + 2 vendor loads (shown on Requests
+    // instead, so they count toward vendorLoads there, not toward Dispatch's needsVehicle/dispatch).
     expect(navBadgeCounts(queues, 4)).toEqual({
-      today: 3, requests: 5, bookings: 4, vendorLoads: 1,
-      dispatch: 8, needsVehicle: 6, tripsToSend: 2,
+      today: 3, requests: 5, bookings: 4, vendorLoads: 3,
+      dispatch: 6, needsVehicle: 4, tripsToSend: 2,
       onTheRoad: 5, problems: 3, sos: 2,
       fleet: 1, vehicleRequests: 1,
       people: 10, documents: 7, kyc: 3,

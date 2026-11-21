@@ -14,9 +14,9 @@ import LandingPage from '@/pages/LandingPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
-  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminAudit, money, invoicePage, adminSettings, adminRateApi, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, vendorInvoices,
+  returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminEnterVendorKyc, adminAudit, money, invoicePage, adminSettings, adminRateApi, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, companyKyc, vendorInvoices,
   vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
-  driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
+  driver, customerTracking, legal, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
 import { OrgSync } from '@/components/OrgSync'
 import { OrgGuard } from '@/components/OrgGuard'
@@ -40,6 +40,7 @@ const UsersPage = adminUsers.Component
 const PersonPage = adminPerson.Component
 const KycReviewPage = adminKyc.Component
 const VendorReviewPage = adminVendorReview.Component
+const EnterVendorKycPage = adminEnterVendorKyc.Component
 const AuditLogPage = adminAudit.Component
 const MoneyPage = money.Component
 const InvoicePage = invoicePage.Component
@@ -49,6 +50,7 @@ const OrganisationPage = adminOrganisation.Component
 const PlatformOrganisationsPage = platformOrganisations.Component
 const RegisterCompanyPage = registerCompany.Component
 const WaitingForApprovalPage = waitingForApproval.Component
+const CompanyKycPage = companyKyc.Component
 const VendorInvoicesPage = vendorInvoices.Component
 const ReturnTripsPage = returnTrips.Component
 const ShipmentsPage = shipments.Component
@@ -61,6 +63,7 @@ const ExceptionCasePage = cargoException.Component
 const TransferPage = cargoTransfer.Component
 const DriverPage = driver.Component
 const CustomerTrackingPage = customerTracking.Component
+const LegalPage = legal.Component
 const TplPartnerDetailPage = tplPartnerDetail.Component
 const TplOnboardingPage = tplOnboarding.Component
 const TplTrackApplicationPage = tplTrackApplication.Component
@@ -212,7 +215,10 @@ export default function App() {
           {/* A logistics company registers (after signing up or in) and waits for the platform to approve it */}
           <Route path="/register-company" element={<LazyRoute><PrivateRoute><RegisterCompanyPage /></PrivateRoute></LazyRoute>} />
           <Route path="/waiting-for-approval" element={<LazyRoute><PrivateRoute><WaitingForApprovalPage /></PrivateRoute></LazyRoute>} />
+          <Route path="/company/kyc" element={<LazyRoute><PrivateRoute><CompanyKycPage /></PrivateRoute></LazyRoute>} />
           <Route path="/track" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
+          <Route path="/privacy" element={<LazyRoute><LegalPage doc="privacy" /></LazyRoute>} />
+          <Route path="/terms" element={<LazyRoute><LegalPage doc="terms" /></LazyRoute>} />
           <Route path="/track/:trackingId" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
           {/* Public mobile GPS tracking page — no auth needed */}
           <Route path="/m/:token" element={<LazyRoute><MobileTrackPage /></LazyRoute>} />
@@ -444,6 +450,13 @@ export default function App() {
             <Route path="admin/kyc" element={
               <PrivateRoute allowedRoles={ADMINS}>
                 <KycReviewPage />
+              </PrivateRoute>
+            } />
+            {/* Enters a vendor's KYC for an applicant who phoned or WhatsApp'd it in; the backend routes
+                it calls are superadmin-only, so gate the page the same way. */}
+            <Route path="admin/kyc/enter-on-behalf" element={
+              <PrivateRoute allowedRoles={SUPERADMIN}>
+                <EnterVendorKycPage />
               </PrivateRoute>
             } />
             <Route path="admin/kyc/:vendorId" element={

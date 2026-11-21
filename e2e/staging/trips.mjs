@@ -394,7 +394,7 @@ await guard('extras', async () => {
   const fuel2 = await api(d2.token, 'POST', `/fleet/vehicles/${V2.id}/fuel-logs`, { litres: 40, price_per_litre: 92.5, bill_path: billPath, station_name: 'HP Vashi', payment_mode: 'cash', idempotency_key: fk })
   check('4.17 resend with same key: not a second fill', fuel2.status === 201 && fuel2.body.id === fuel.body.id, J(fuel2.body))
   const exp = await api(staff.token, 'GET', '/finance/expenses')
-  check('4.18 the fill appears as a company expense for finance, with the receipt', exp.status === 200 && exp.body.some(e => e.receipt_path === billPath), `${exp.status} ${J(exp.body).slice(0, 200)}`)
+  check('4.18 the fill appears as a company expense for finance, with the receipt', exp.status === 200 && exp.body.items.some(e => e.receipt_path === billPath), `${exp.status} ${J(exp.body).slice(0, 200)}`)
   const otherFuel = await api(d1.token, 'POST', `/fleet/vehicles/${V2.id}/fuel-logs`, { litres: 10, price_per_litre: 90 })
   check('4.19 a driver cannot log fuel on another driver\'s vehicle (403)', otherFuel.status === 403, `${otherFuel.status}`)
   const otherCo = await api(staff2.token, 'GET', `/fleet/vehicles/${V2.id}/fuel-logs`)

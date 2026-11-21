@@ -50,7 +50,7 @@ function DispatchPhoneCard() {
   const unchanged = phone.replace(/[\s\-().]/g, '') === current
 
   return (
-    <Card>
+    <Card className="shadow-xs transition-all hover:border-brand/30 hover:shadow-raised">
       <CardHeader title="Dispatch phone" description="Drivers call this number from the driver app: from More actions, and when dispatch rings them." />
       <CardBody>
         {contact.isLoading ? <Skeleton className="h-16 w-full" /> : contact.isError ? (
@@ -139,7 +139,7 @@ export default function SettingsPage() {
         <ErrorState title="We could not load settings" description="Check your connection and try again." onRetry={() => settings.refetch()} />
       ) : (
         <div className="grid gap-6 lg:grid-cols-2">
-          <Card>
+          <Card className="shadow-xs transition-all hover:border-brand/30 hover:shadow-raised">
             <CardHeader title="Fuel price" description="Used to estimate fuel cost on completed trips that have no fuel expense recorded." />
             <CardBody>
               {settings.isLoading ? <Skeleton className="h-16 w-full" /> : (
@@ -171,7 +171,7 @@ export default function SettingsPage() {
 
           <PeopleSettingsCard />
 
-          <Card>
+          <Card className="shadow-xs transition-all hover:border-brand/30 hover:shadow-raised">
             <CardHeader title="Rate card" description="Read only here." />
             <CardBody>
               {settings.isLoading ? <Skeleton className="h-10 w-full" /> : (
@@ -183,7 +183,7 @@ export default function SettingsPage() {
             </CardBody>
           </Card>
 
-          <Card>
+          <Card className="shadow-xs transition-all hover:border-brand/30 hover:shadow-raised">
             <CardHeader
               title="Rate API (WheelsEye)"
               description="Live external market rate engine & token management."

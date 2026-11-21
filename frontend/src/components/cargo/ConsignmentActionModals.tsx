@@ -103,7 +103,10 @@ export function MoveToVehicleModal({ cargoRef, code, where, onClose }: Common) {
     if (pe) next.pieces = pe
     if (!meet.trim()) next.meet = 'Say where the vehicles meet.'
     setErrors(next)
-    if (Object.keys(next).length > 0) return
+    if (Object.keys(next).length > 0) {
+      toast.error(Object.values(next)[0])
+      return
+    }
     setServerError('')
     create.mutate()
   }
@@ -229,7 +232,10 @@ export function HubModal({ cargoRef, code, where, onClose, direction }: Common &
     if (pe) next.pieces = pe
     if (condition !== 'good' && !notes.trim()) next.notes = 'Describe the problem; a case opens for it.'
     setErrors(next)
-    if (Object.keys(next).length > 0) return
+    if (Object.keys(next).length > 0) {
+      toast.error(Object.values(next)[0])
+      return
+    }
     setServerError('')
     save.mutate()
   }
@@ -374,7 +380,10 @@ export function StartReturnModal({ cargoRef, code, where, onClose }: Common) {
     if (!caseId && !type) next.type = 'Choose why it goes back.'
     if (!caseId && !note.trim()) next.note = 'Say why the goods go back.'
     setErrors(next)
-    if (Object.keys(next).length > 0) return
+    if (Object.keys(next).length > 0) {
+      toast.error(Object.values(next)[0])
+      return
+    }
     setServerError('')
     save.mutate()
   }
@@ -456,7 +465,10 @@ export function PickupModal({ cargoRef, code, where, onClose }: Common) {
     if (pe) next.pieces = pe
     if (condition !== 'good' && !notes.trim()) next.notes = 'Describe the problem; a case opens for it.'
     setErrors(next)
-    if (Object.keys(next).length > 0) return
+    if (Object.keys(next).length > 0) {
+      toast.error(Object.values(next)[0])
+      return
+    }
     setServerError('')
     save.mutate()
   }
@@ -551,7 +563,10 @@ export function DeliveryModal({ cargoRef, code, where, onClose }: Common) {
       else if (n > onBoard) next.damaged = `Only ${onBoard.toLocaleString('en-IN')} pieces are delivered.`
     }
     setErrors(next)
-    if (Object.keys(next).length > 0) return
+    if (Object.keys(next).length > 0) {
+      toast.error(Object.values(next)[0])
+      return
+    }
     setServerError('')
     save.mutate()
   }

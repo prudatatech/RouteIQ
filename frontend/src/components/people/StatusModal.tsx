@@ -15,6 +15,23 @@ const CONSEQUENCE: Record<PersonStatus, string> = {
   inactive: 'They have left. They are signed out and cannot sign in. Their history is kept, and you can reactivate them if they return.',
 }
 
+/** A refusal the server lets staff push through on purpose, after seeing what it means. */
+interface ConfirmableRefusal {
+  detail: string
+  code: 'confirm_release' | 'confirm_missing_documents'
+  vehicles?: string[]
+  pending_routes?: number
+  missing?: { key: string; label: string }[]
+}
+
+function confirmableRefusal(err: unknown): ConfirmableRefusal | null {
+  if (!err || typeof err !== 'object') return null
+  const data = (err as { response?: { data?: Record<string, unknown> } }).response?.data
+  if (!data || data.requires_confirmation !== true) return null
+  if (data.code !== 'confirm_release' && data.code !== 'confirm_missing_documents') return null
+  return data as unknown as ConfirmableRefusal
+}
+
 /**
  * Change a person's status. Suspended and left need a reason, on leave needs dates, every change
  * is confirmed, and the server's refusals (for example "on route X") are shown in the dialog.
@@ -34,17 +51,33 @@ export function StatusModal({ person, open, onClose, preset }: {
   useEffect(() => { if (open) setStatus(preset ?? '') }, [open, preset])
   const close = () => { setStatus(''); setReason(''); setFrom(''); setUntil(''); setError(''); onClose() }
 
+  type ConfirmFlags = { confirm_release?: boolean; confirm_missing_documents?: boolean }
   const change = useMutation({
-    mutationFn: (s: PersonStatus) => peopleAPI.setStatus(person.id, s, reason.trim() || undefined, {
+    mutationFn: ({ s, confirmFlags }: { s: PersonStatus; confirmFlags?: ConfirmFlags }) => peopleAPI.setStatus(person.id, s, reason.trim() || undefined, {
       ...(s === 'on_leave' ? { leave_from: from, leave_until: until } : {}),
       ...(s === 'suspended' && until ? { suspended_until: until } : {}),
-    }),
-    onSuccess: (_d, s) => {
+    }, confirmFlags),
+    onSuccess: (_d, { s }) => {
       toast.success(`${personName(person)} is now ${statusLabel(s).toLowerCase()}`)
       queryClient.invalidateQueries({ queryKey: ['people'] })
       close()
     },
-    onError: err => setError(errorMessage(err, 'We could not change the status. Try again.')),
+    onError: async (err, { s }) => {
+      // The server refuses but offers a deliberate override (a vehicle to release, documents still
+      // missing): a second, specific confirmation, never a dead end with only a plain error message.
+      const refusal = confirmableRefusal(err)
+      if (refusal) {
+        const proceed = await confirm({
+          title: refusal.code === 'confirm_missing_documents' ? 'Activate without all documents?' : 'Release the vehicle first?',
+          message: refusal.detail,
+          confirmLabel: refusal.code === 'confirm_missing_documents' ? 'Activate anyway' : 'Release and continue',
+          tone: 'danger',
+        })
+        if (proceed) change.mutate({ s, confirmFlags: { [refusal.code]: true } })
+        return
+      }
+      setError(errorMessage(err, 'We could not change the status. Try again.'))
+    },
   })
 
   const submit = async () => {
@@ -59,7 +92,7 @@ export function StatusModal({ person, open, onClose, preset }: {
       confirmLabel: preset === 'onboarding' ? 'Reactivate person' : `Make ${statusLabel(status).toLowerCase()}`,
       tone: NEEDS_REASON.includes(status) ? 'danger' : 'primary',
     })
-    if (ok) change.mutate(status)
+    if (ok) change.mutate({ s: status })
   }
 
   const reactivating = preset === 'onboarding'

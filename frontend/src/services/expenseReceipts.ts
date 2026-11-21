@@ -1,20 +1,22 @@
 import { financeAPI } from '@/services/api'
 import { supabase } from '@/services/supabase'
 import { errorMessage } from '@/utils/display'
+import { compressDocumentFile } from '@/utils/imageCompressor'
 
 export const RECEIPT_TYPES = ['application/pdf', 'image/jpeg', 'image/png']
 
 /** Uploads a receipt through a signed URL from the backend and returns its storage path. */
 export async function uploadReceipt(file: File): Promise<string> {
+  const { file: uploadFile } = await compressDocumentFile(file)
   let upload
   try {
-    upload = await financeAPI.receiptUpload({ content_type: file.type, size: file.size })
+    upload = await financeAPI.receiptUpload({ content_type: uploadFile.type, size: uploadFile.size })
   } catch (err) {
     throw new Error(errorMessage(err, 'We could not start the upload. Try again.'))
   }
   const { error } = await supabase.storage
     .from(upload.bucket)
-    .uploadToSignedUrl(upload.path, upload.token, file, { contentType: file.type })
+    .uploadToSignedUrl(upload.path, upload.token, uploadFile, { contentType: uploadFile.type })
   if (error) throw new Error('We could not upload the receipt. Try again.')
   return upload.path
 }

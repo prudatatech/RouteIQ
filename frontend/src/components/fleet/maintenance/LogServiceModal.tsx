@@ -75,8 +75,11 @@ export function LogServiceModal({ vehicleId, plate, items, odometer, presetItem,
     if (!doneAt) next.doneAt = 'Choose the date of the service.'
     setErrors(next)
     const extra = detailsPayload(details)
-    if (!extra.ok) { setError(extra.error); return }
-    if (Object.keys(next).length > 0) return
+    if (!extra.ok) { setError(extra.error); toast.error(extra.error); return }
+    if (Object.keys(next).length > 0) {
+      toast.error(Object.values(next)[0])
+      return
+    }
     setError('')
     save.mutate({ item: item.trim(), done_at: doneAt, odometer_km: odo ?? null, ...extra.body })
   }

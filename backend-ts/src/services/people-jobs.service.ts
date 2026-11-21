@@ -18,7 +18,7 @@ import { selectIn } from './finance.service';
 import { notificationService } from './notification.service';
 import { DOC_LABELS, DocRow, DocType, EXPIRING_WITHIN_DAYS, daysBetween, todayKey, addDays } from './people-docs.service';
 import { getPeopleSettings } from './people-settings.service';
-import { PERSON_ROLES, logActivity, nowIso, removeStoredFiles } from './people-common';
+import { PERSON_ROLES, logActivity, nowIso, operatorOrgsOf, removeStoredFiles } from './people-common';
 import { setSignInBan } from './people.service';
 import { isPlaceholderPlate } from '../core/vehicles';
 
@@ -114,24 +114,37 @@ export async function runDocumentExpiryJob(now = new Date()): Promise<ExpiryJobR
     if (Object.keys(patch).length > 0) updates.push({ id: doc.id, patch, markers: markersChanged });
   }
 
-  // One digest for staff. If it can't be sent the reminders stay unmarked and are tried again next run.
-  let digestSent = false;
+  // One digest per operator, not one for the whole platform: outside a request there is no org context to
+  // scope it automatically (org-scope.ts), and these documents can belong to many different companies'
+  // (or 3PL partners') drivers in the same run.
+  let anyDigestSent = false;
+  const digestSentFor = new Map<string, boolean>();
   if (fired.length > 0) {
-    const count = (kind: Fired['kind']) => fired.filter(f => f.kind === kind).length;
-    const parts = [
-      count('expired') ? `${count('expired')} document${count('expired') === 1 ? '' : 's'} expired` : '',
-      count('week') ? `${count('week')} expire${count('week') === 1 ? 's' : ''} within 7 days` : '',
-      count('month') ? `${count('month')} expire${count('month') === 1 ? 's' : ''} within 30 days` : '',
-      count('review') ? `${count('review')} need${count('review') === 1 ? 's' : ''} review` : '',
-    ].filter(Boolean);
-    const single = fired.length === 1 ? { user_id: fired[0].user_id, doc_id: fired[0].doc_id } : {};
-    try {
-      await notificationService.notifyStaff('Documents need attention', `${parts.join(', ')}.`, 'document_expiring', {
-        ...single, items: fired.slice(0, 50).map(f => ({ user_id: f.user_id, doc_id: f.doc_id })), counts: { expired: count('expired'), week: count('week'), month: count('month'), review: count('review') },
-      });
-      digestSent = true;
-    } catch (e: any) {
-      console.error('[people-jobs] digest failed:', e.message);
+    const companyOf = await operatorOrgsOf(fired.map(f => f.user_id));
+    const byCompany = new Map<string, Fired[]>();
+    for (const f of fired) {
+      const company = companyOf.get(f.user_id);
+      if (!company) { console.error(`[people-jobs] user ${f.user_id} has no operator org; document reminder skipped`); continue; }
+      (byCompany.get(company) ?? byCompany.set(company, []).get(company)!).push(f);
+    }
+    for (const [company, items] of byCompany) {
+      const count = (kind: Fired['kind']) => items.filter(f => f.kind === kind).length;
+      const parts = [
+        count('expired') ? `${count('expired')} document${count('expired') === 1 ? '' : 's'} expired` : '',
+        count('week') ? `${count('week')} expire${count('week') === 1 ? 's' : ''} within 7 days` : '',
+        count('month') ? `${count('month')} expire${count('month') === 1 ? 's' : ''} within 30 days` : '',
+        count('review') ? `${count('review')} need${count('review') === 1 ? 's' : ''} review` : '',
+      ].filter(Boolean);
+      const single = items.length === 1 ? { user_id: items[0].user_id, doc_id: items[0].doc_id } : {};
+      try {
+        await notificationService.notifyStaff('Documents need attention', `${parts.join(', ')}.`, 'document_expiring', {
+          ...single, items: items.slice(0, 50).map(f => ({ user_id: f.user_id, doc_id: f.doc_id })), counts: { expired: count('expired'), week: count('week'), month: count('month'), review: count('review') },
+        }, company);
+        digestSentFor.set(company, true);
+        anyDigestSent = true;
+      } catch (e: any) {
+        console.error('[people-jobs] digest failed:', e.message);
+      }
     }
   }
   for (const m of driverMessages) {
@@ -142,13 +155,16 @@ export async function runDocumentExpiryJob(now = new Date()): Promise<ExpiryJobR
     }
   }
 
+  const companyOfUpdate = await operatorOrgsOf(updates.map(u => docs.get(u.id)!.user_id));
   for (const u of updates) {
     const patch: Record<string, unknown> = { ...u.patch, updated_at: nowIso() };
-    if (u.markers && fired.length > 0 && !digestSent) delete patch.metadata;
+    const company = companyOfUpdate.get(docs.get(u.id)!.user_id);
+    const thisDigestSent = company ? (digestSentFor.get(company) ?? false) : false;
+    if (u.markers && fired.length > 0 && !thisDigestSent) delete patch.metadata;
     const { error } = await supabase.from('user_documents').update(patch).eq('id', u.id);
     if (error) console.error('[people-jobs] could not update document:', error.message);
   }
-  return { expired, reminders: fired.length, digest_sent: digestSent };
+  return { expired, reminders: fired.length, digest_sent: anyDigestSent };
 }
 
 // ── Leave and suspensions that have ended ──────────────────
@@ -244,9 +260,15 @@ export async function promptDriversWithoutVehicle(now = new Date()): Promise<num
   const vehicles = await selectIn<{ driver_id: string; plate_number: string | null; status: string }>(
     'vehicles', 'driver_id', drivers.map(d => d.id), 'driver_id, plate_number, status', q => q.neq('status', 'archived'));
   const hasVehicle = new Set(vehicles.filter(v => !isPlaceholderPlate(v.plate_number)).map(v => v.driver_id));
+  const due = drivers.filter(x => !hasVehicle.has(x.id)).slice(0, VEHICLE_NOTICES_PER_RUN);
+  // Outside a request there is no org context to notify the right company alone (org-scope.ts) - resolve
+  // each driver's own company so this never reaches another company's staff.
+  const companyOf = await operatorOrgsOf(due.map(d => d.id));
 
   let sent = 0;
-  for (const d of drivers.filter(x => !hasVehicle.has(x.id)).slice(0, VEHICLE_NOTICES_PER_RUN)) {
+  for (const d of due) {
+    const company = companyOf.get(d.id);
+    if (!company) { console.error(`[people-jobs] driver ${d.id} has no operator org; vehicle prompt skipped`); continue; }
     try {
       // Once per driver: the notice is not repeated on later days
       await notificationService.notifyStaffOnce(
@@ -256,6 +278,7 @@ export async function promptDriversWithoutVehicle(now = new Date()): Promise<num
         { user_id: d.id },
         'user_id',
         VEHICLE_NOTICE_LOOKBACK_DAYS * 24,
+        company,
       );
       sent += 1;
     } catch (e: any) {

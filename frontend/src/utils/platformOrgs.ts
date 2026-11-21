@@ -22,6 +22,15 @@ export const ORG_STATUS_LABELS: Record<OrgStatus, string> = {
   pending: 'Waiting for approval', active: 'Active', suspended: 'Suspended', rejected: 'Rejected',
 }
 
+/** The documents a logistic company's KYC asks for (backend-ts/src/schemas/org.ts ORG_DOC_LABELS - keep in sync). */
+export const ORG_KYC_DOCUMENTS: { key: string; label: string; hint?: string }[] = [
+  { key: 'gstRegistration', label: 'GST registration' },
+  { key: 'panScan', label: 'PAN card' },
+  { key: 'companyRegistration', label: 'Company registration / incorporation certificate', hint: 'Or your MSME certificate' },
+  { key: 'cancelledCheque', label: 'Cancelled cheque', hint: 'For the bank account above' },
+  { key: 'addressProof', label: 'Registered address proof', hint: 'Utility bill or lease, less than 3 months old' },
+]
+
 export const PAGE_SIZE = 25
 
 export function listParams(kind: OrgKind, status: StatusFilter, page: number, limit = PAGE_SIZE) {
@@ -40,21 +49,43 @@ export function pendingFirst(rows: OrgRow[]): OrgRow[] {
 
 export type Decision = 'approve' | 'reject' | 'suspend'
 
-/** The decisions the API accepts for a status (reinstate is approve on a suspended organisation). */
-export function decisionsFor(status: OrgStatus, kind: OrgKind): { decision: Decision; label: string }[] {
-  if (kind === 'platform') return []
-  if (status === 'pending') return [{ decision: 'approve', label: 'Approve' }, { decision: 'reject', label: 'Reject' }]
+/**
+ * The decisions the API accepts for a status (reinstate is approve on a suspended organisation).
+ * A pending logistic company cannot be approved until it has submitted its KYC - pass `kycReady: false`
+ * to omit `approve` in that case (default true, so other kinds are unaffected).
+ */
+export function decisionsFor(status: OrgStatus, kind: OrgKind, kycReady = true): { decision: Decision; label: string }[] {
+  // A vendor's or 3PL partner's organisation row only mirrors its real record (vendor_profiles.kyc_status,
+  // tpl_partners.status) - deciding here would leave the two out of sync without ever checking documents.
+  // Approve/reject/suspend only make sense for the record that actually gates behaviour: a logistic company.
+  if (kind !== 'logistic_company') return []
+  if (status === 'pending') {
+    const notReady = kind === 'logistic_company' && !kycReady
+    return [...(notReady ? [] : [{ decision: 'approve' as Decision, label: 'Approve' }]), { decision: 'reject', label: 'Reject' }]
+  }
   if (status === 'active') return [{ decision: 'suspend', label: 'Suspend' }]
   if (status === 'suspended') return [{ decision: 'approve', label: 'Reinstate' }]
   return []
 }
 
-export function pageRange(total: number, limit: number, offset: number): { from: number; to: number; hasPrev: boolean; hasNext: boolean } {
-  if (total <= 0) return { from: 0, to: 0, hasPrev: false, hasNext: false }
-  const from = offset + 1
-  const to = Math.min(offset + limit, total)
-  return { from, to, hasPrev: offset > 0, hasNext: offset + limit < total }
+/**
+ * Where to actually decide a vendor's or 3PL partner's application - never here, since this
+ * organisation row is only a mirror. `legacy_user_id`/`legacy_tpl_partner_id` (set by the
+ * database trigger that keeps the mirror in sync) point back at the real record.
+ */
+export function reviewLinkFor(org: Pick<OrgRow, 'kind' | 'profile'>): string | null {
+  if (org.kind === 'vendor') {
+    const userId = org.profile?.legacy_user_id
+    return typeof userId === 'string' ? `/admin/kyc/${userId}` : null
+  }
+  if (org.kind === 'tpl_partner') {
+    const partnerId = org.profile?.legacy_tpl_partner_id
+    return typeof partnerId === 'string' ? `/3pl-partners/${partnerId}` : null
+  }
+  return null
 }
+
+export { pageRange } from './pagination'
 
 /** The reason an organisation was rejected or suspended, kept in its profile by the server. */
 export function decisionReason(org: Pick<OrgRow, 'status' | 'profile'>): string | null {

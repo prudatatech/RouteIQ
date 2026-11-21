@@ -13,7 +13,7 @@ import { OPEN_EXCEPTION_STATUSES } from './cargo/exception.service';
 import { countVehicleRequests } from './vehicle-approval.service';
 import { getUnpricedDeliveries } from './finance.service';
 import { vehicleIdsOnActiveTrip } from './vehicle-activity';
-import { OWNED, memberOrgId, scopeQuery } from '../core/org-scope';
+import { isScoped, OWNED, memberOrgId, scopeQuery } from '../core/org-scope';
 
 /** Notification types a driver's refused action or a flagged stop sends to staff. */
 export const DRIVER_ACTION_NOTIFICATION_TYPES = ['driver_action_rejected', 'stop_flagged'] as const;
@@ -74,6 +74,21 @@ function actsForPlatform(): boolean {
   return !ctx || !ctx.configured || ctx.org?.kind === 'platform';
 }
 
+/**
+ * Pending vendor loads a company can actually act on: an open load is a shared pool every company
+ * sees (app.can_see_load, 20261004010000_order_routing.sql), but one routed to chosen companies only
+ * must not inflate another company's badge with a load its own Requests list will never show it.
+ * A pending load has no carrier_org_id yet (set only once it is accepted), so OWNED.carrier cannot
+ * scope this one the way the other counts here are scoped.
+ */
+async function countVisiblePendingVendorLoads(): Promise<number> {
+  if (!isScoped(OWNED.carrier)) return countOf(head('vendor_shipment_requests').eq('status', 'pending'), 'new vendor loads');
+  const orgId = currentOrgContext()!.org!.id;
+  const { data, error } = await supabase.from('vendor_shipment_requests').select('routing, company_ids').eq('status', 'pending');
+  if (error) throw new Error(`Failed to count new vendor loads: ${error.message}`);
+  return (data ?? []).filter(r => r.routing !== 'chosen' || (Array.isArray(r.company_ids) && r.company_ids.includes(orgId))).length;
+}
+
 export async function getTodayQueues(userId: string, scope: TodayScope) {
   const nowISO = new Date().toISOString();
   const todayISO = startOfIndianDay(0).toISOString();
@@ -89,10 +104,11 @@ export async function getTodayQueues(userId: string, scope: TodayScope) {
     countOf(owned('cargo_exceptions').in('status', [...OPEN_EXCEPTION_STATUSES]), 'open problems'),
     countOf(owned('cargo_exceptions').in('status', [...OPEN_EXCEPTION_STATUSES]).lt('sla_due_at', nowISO), 'overdue problems'),
     countOf(head('customer_bookings').eq('status', 'requested'), 'new bookings'),
-    countOf(head('vendor_shipment_requests').eq('status', 'pending'), 'new vendor loads'),
+    countVisiblePendingVendorLoads(),
     // A split shipment is counted by its lots, never also as its master
     countOf(owned('shipments').eq('status', 'created').neq('is_master', true), 'shipments needing a vehicle'),
-    countOf(head('vendor_shipment_requests').in('status', VENDOR_LOAD_NEEDS_VEHICLE), 'vendor loads needing a vehicle'),
+    // Accepting a load sets carrier_org_id, so by 'approved'/'escalated' it is owned like any other queue
+    countOf(owned('vendor_shipment_requests').in('status', VENDOR_LOAD_NEEDS_VEHICLE), 'vendor loads needing a vehicle'),
     countOf(owned('routes').eq('status', 'pending'), 'trips to send'),
     countVehicleRequests(),
     countOf(owned('vehicles').in('profile_status', ['quick_added', 'pending_documents']), 'trucks needing document completion'),

@@ -42,11 +42,13 @@ export const adminUsers = page(() => import('@/pages/admin/UsersPage'))
 export const adminPerson = page(() => import('@/pages/admin/PersonPage'))
 export const adminKyc = page(() => import('@/pages/admin/KycReviewPage'))
 export const adminVendorReview = page(() => import('@/pages/admin/VendorReviewPage'))
+export const adminEnterVendorKyc = page(() => import('@/pages/admin/EnterVendorKycPage'))
 export const adminAudit = page(() => import('@/pages/admin/AuditLogPage'))
 export const adminOrganisation = page(() => import('@/pages/admin/OrganisationPage'))
 export const platformOrganisations = page(() => import('@/pages/platform/OrganisationsPage'))
 export const registerCompany = page(() => import('@/pages/RegisterCompanyPage'))
 export const waitingForApproval = page(() => import('@/pages/WaitingForApprovalPage'))
+export const companyKyc = page(() => import('@/pages/CompanyKycPage'))
 export const adminSettings = page(() => import('@/pages/admin/SettingsPage'))
 export const adminRateApi = page(() => import('@/pages/admin/RateApiPage'))
 
@@ -63,6 +65,7 @@ export const vendorShipmentRequest = page(() => import('@/pages/VendorShipmentRe
 // No shell (their own top-level route)
 export const driver = page(() => import('@/pages/DriverPage'))
 export const customerTracking = page(() => import('@/pages/CustomerTrackingPage'))
+export const legal = page(() => import('@/pages/LegalPage'))
 export const mobileTrack = page(() => import('@/pages/MobileTrackPage'))
 export const vehicleShare = page(() => import('@/pages/VehicleSharePage'))
 export const tplOnboarding = page(() => import('@/pages/TplOnboardingPage'))
@@ -94,6 +97,7 @@ export const routePrefetch: Record<string, PageImporter> = {
   '/insights': insights.preload,
   '/admin/users': adminUsers.preload,
   '/admin/kyc': adminKyc.preload,
+  '/admin/kyc/enter-on-behalf': adminEnterVendorKyc.preload,
   '/admin/audit': adminAudit.preload,
   '/admin/settings': adminSettings.preload,
   '/admin/settings/rate-api': adminRateApi.preload,

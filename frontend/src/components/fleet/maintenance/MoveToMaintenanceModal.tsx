@@ -125,7 +125,10 @@ export function MoveToMaintenanceModal({ vehicleId, plate, open, onClose, sos }:
     if (hasCargo && !plan) next.plan = 'Choose what happens to the goods on board.'
     if (hasCargo && plan === 'hub' && !depotId) next.depot = 'Choose the hub to send the goods to.'
     setErrors(next)
-    if (Object.keys(next).length > 0) return
+    if (Object.keys(next).length > 0) {
+      toast.error(Object.values(next)[0])
+      return
+    }
     setError('')
     save.mutate({
       reason_type: reason,

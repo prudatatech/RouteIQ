@@ -214,7 +214,7 @@ describe('every invoice stores who it is billed to (UAT-004 b, c)', () => {
     expect(supabaseMock.rows('invoices').every(i => i.bill_to === undefined)).toBe(true);
 
     const list = await request(app).get(api('/finance/invoices')).set(auth.admin());
-    const names = Object.fromEntries(list.body.map((r: any) => [r.id, r.billed_to_name]));
+    const names = Object.fromEntries(list.body.items.map((r: any) => [r.id, r.billed_to_name]));
     expect(names).toMatchObject({ '1d000000-0000-4000-8000-000000000001': 'Meera Customer', '1d000000-0000-4000-8000-000000000002': 'Old Consignee' });
   });
 });

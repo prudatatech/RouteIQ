@@ -90,7 +90,12 @@ export default function VehicleFormModal({ partnerId, vehicle, open, onClose, de
 
   const submit = () => {
     setSubmitted(true)
-    if (!hasError) save.mutate()
+    if (!hasError) {
+      save.mutate()
+    } else {
+      const first = Object.values(errors).find(Boolean)
+      if (first) toast.error(first)
+    }
   }
   const shown = <K extends keyof typeof errors>(key: K) => (submitted ? errors[key] : undefined)
 
