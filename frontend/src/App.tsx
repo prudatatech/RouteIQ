@@ -16,7 +16,7 @@ import {
   today, fleet, fleetVehicle, vehicleRequests, routes, routeDetails, analytics, insights, optimize, routePlanner, shipments, shipmentPage, dispatchWorkspace, shipmentManifest, emergency, cargo, cargoException, cargoTransfer,
   returnTrips, requests, liveMap, tplPartnerDetail, adminUsers, adminPerson, adminKyc, adminVendorReview, adminEnterVendorKyc, adminAudit, money, invoicePage, adminSettings, adminRateApi, adminOrganisation, platformOrganisations, registerCompany, waitingForApproval, companyKyc, vendorInvoices,
   vendorLoads, vendorLoad, vendorClaims, vendorCorridor, vendorOnboarding, vendorDocuments, vendorShipmentRequest,
-  driver, customerTracking, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
+  driver, customerTracking, legal, mobileTrack, vehicleShare, tplOnboarding, tplTrackApplication, tplSetupCredentials, tplDashboard,
 } from '@/config/lazyPages'
 import { OrgSync } from '@/components/OrgSync'
 import { OrgGuard } from '@/components/OrgGuard'
@@ -63,6 +63,7 @@ const ExceptionCasePage = cargoException.Component
 const TransferPage = cargoTransfer.Component
 const DriverPage = driver.Component
 const CustomerTrackingPage = customerTracking.Component
+const LegalPage = legal.Component
 const TplPartnerDetailPage = tplPartnerDetail.Component
 const TplOnboardingPage = tplOnboarding.Component
 const TplTrackApplicationPage = tplTrackApplication.Component
@@ -216,6 +217,8 @@ export default function App() {
           <Route path="/waiting-for-approval" element={<LazyRoute><PrivateRoute><WaitingForApprovalPage /></PrivateRoute></LazyRoute>} />
           <Route path="/company/kyc" element={<LazyRoute><PrivateRoute><CompanyKycPage /></PrivateRoute></LazyRoute>} />
           <Route path="/track" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
+          <Route path="/privacy" element={<LazyRoute><LegalPage doc="privacy" /></LazyRoute>} />
+          <Route path="/terms" element={<LazyRoute><LegalPage doc="terms" /></LazyRoute>} />
           <Route path="/track/:trackingId" element={<LazyRoute><CustomerTrackingPage /></LazyRoute>} />
           {/* Public mobile GPS tracking page — no auth needed */}
           <Route path="/m/:token" element={<LazyRoute><MobileTrackPage /></LazyRoute>} />

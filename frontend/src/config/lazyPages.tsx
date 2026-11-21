@@ -65,6 +65,7 @@ export const vendorShipmentRequest = page(() => import('@/pages/VendorShipmentRe
 // No shell (their own top-level route)
 export const driver = page(() => import('@/pages/DriverPage'))
 export const customerTracking = page(() => import('@/pages/CustomerTrackingPage'))
+export const legal = page(() => import('@/pages/LegalPage'))
 export const mobileTrack = page(() => import('@/pages/MobileTrackPage'))
 export const vehicleShare = page(() => import('@/pages/VehicleSharePage'))
 export const tplOnboarding = page(() => import('@/pages/TplOnboardingPage'))

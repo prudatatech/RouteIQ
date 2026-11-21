@@ -1160,6 +1160,8 @@ export default function LandingPage() {
                 {tplPartnerId ? '3PL partner portal' : 'Become a 3PL partner'}
               </Link>
               <Link to="/login" className="hover:text-text">Sign in</Link>
+              <Link to="/privacy" className="hover:text-text">Privacy</Link>
+              <Link to="/terms" className="hover:text-text">Terms</Link>
             </nav>
           </div>
         </div>
