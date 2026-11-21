@@ -64,9 +64,16 @@ param smtpSender string = ''
 
 var p = stage == 'live' ? prefix : '${prefix}-test'
 var gatewayHost = empty(dataDomain) ? '${p}-gateway.${env.properties.defaultDomain}' : dataDomain
-var minReplicas = stage == 'live' ? 1 : 0
-// Sign-in goes gateway > auth > rest (> api): keep those warm on test too, or the first sign-in after a quiet spell waits for four cold starts.
-var signInMinReplicas = 1
+// Sign-in goes gateway > auth > rest (> api). Live keeps those warm so the first sign-in after
+// a quiet spell does not wait for four cold starts. Test accepts that wait: a pinned replica
+// there costs ~INR 1,700/month to serve a handful of sign-ins a week.
+var signInMinReplicas = stage == 'live' ? 1 : 0
+// Realtime, storage and the S3 proxy are reached only once the product uses those features.
+// Measured 2026-10-28: zero ingress requests over seven days on live, while the three pinned
+// replicas cost ~INR 2,300/month in idle CPU and memory. They scale up from zero on the first
+// request; make this `stage == 'live' ? 1 : 0` once the features are in real use and the cold
+// start on first touch becomes noticeable.
+var idleServiceMinReplicas = 0
 // The test database (B1ms) accepts 50 connections, 10 reserved: PostgREST's 10 plus Realtime's ~14 left Realtime
 // "DatabaseLackOfConnections". Test traffic is light, so test keeps a small pool; live (B2s) keeps 10.
 var postgrestPool = stage == 'live' ? '10' : '4'
@@ -236,7 +243,7 @@ resource rt 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'RUN_JANITOR', value: 'true' }
         ]
       }]
-      scale: { minReplicas: minReplicas, maxReplicas: 1 }
+      scale: { minReplicas: idleServiceMinReplicas, maxReplicas: 1 }
     }
   }
 }
@@ -277,7 +284,7 @@ resource s3proxy 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'JCLOUDS_ENDPOINT', value: 'https://${blobSa.name}.blob.${environment().suffixes.storage}' }
         ]
       }]
-      scale: { minReplicas: minReplicas, maxReplicas: 1 }
+      scale: { minReplicas: idleServiceMinReplicas, maxReplicas: 1 }
     }
   }
   dependsOn: [objects]
@@ -327,7 +334,7 @@ resource storage 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'DB_INSTALL_ROLES', value: 'false' }
         ]
       }]
-      scale: { minReplicas: minReplicas, maxReplicas: 1 }
+      scale: { minReplicas: idleServiceMinReplicas, maxReplicas: 1 }
     }
   }
   dependsOn: [s3proxy]
