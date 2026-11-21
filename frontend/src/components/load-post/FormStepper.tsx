@@ -22,7 +22,7 @@ export default function FormStepper({ step, onGo }: { step: number; onGo: (s: nu
                 aria-label={`${i + 1}. ${label}`}
                 className={clsx(
                   'group flex w-full flex-col gap-1.5 text-left transition-all',
-                  isCurrent ? 'font-bold text-text' : isDone ? 'font-medium text-text hover:text-brand' : 'text-muted',
+                  isCurrent ? 'font-semibold text-text' : isDone ? 'font-medium text-text hover:text-brand' : 'text-muted',
                   i > step && 'cursor-default opacity-60'
                 )}
               >
@@ -33,7 +33,7 @@ export default function FormStepper({ step, onGo }: { step: number; onGo: (s: nu
                       isDone
                         ? 'bg-success text-white'
                         : isCurrent
-                        ? 'bg-brand-fill text-on-brand font-bold ring-2 ring-brand-fill/30'
+                        ? 'bg-brand-fill text-on-brand font-semibold ring-2 ring-brand-fill/30'
                         : 'bg-surface-subtle border border-border text-muted'
                     )}
                   >

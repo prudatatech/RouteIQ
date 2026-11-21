@@ -38,7 +38,7 @@ export function ForgotPasswordForm({
         leading={<Mail size={16} />}
       />
 
-      <Button type="submit" size="lg" fullWidth loading={submitting} className="font-bold justify-center shadow-xs">
+      <Button type="submit" size="lg" fullWidth loading={submitting} className="font-semibold justify-center shadow-xs">
         {submitting ? busyLabel : submitLabel}
       </Button>
     </form>

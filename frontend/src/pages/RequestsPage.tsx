@@ -435,20 +435,20 @@ export default function RequestsPage() {
       {/* Intake Queue Quick Pulse */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-warning uppercase tracking-wider">Awaiting Decision</span>
-          <p className="mt-1 text-2xl font-bold tabular text-warning">{loading ? '–' : (counts.accept ?? 0).toLocaleString('en-IN')}</p>
+          <span className="text-xs font-semibold text-warning uppercase ">Awaiting Decision</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-warning">{loading ? '–' : (counts.accept ?? 0).toLocaleString('en-IN')}</p>
         </div>
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-info uppercase tracking-wider">Accepted · Needs Truck</span>
-          <p className="mt-1 text-2xl font-bold tabular text-info">{loading ? '–' : (counts.accepted ?? 0).toLocaleString('en-IN')}</p>
+          <span className="text-xs font-semibold text-info uppercase ">Accepted · Needs Truck</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-info">{loading ? '–' : (counts.accepted ?? 0).toLocaleString('en-IN')}</p>
         </div>
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-brand uppercase tracking-wider">Active In Progress</span>
-          <p className="mt-1 text-2xl font-bold tabular text-brand">{loading ? '–' : (counts.progress ?? 0).toLocaleString('en-IN')}</p>
+          <span className="text-xs font-semibold text-brand uppercase ">Active In Progress</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-brand">{loading ? '–' : (counts.progress ?? 0).toLocaleString('en-IN')}</p>
         </div>
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-muted uppercase tracking-wider">Customer / Vendor Split</span>
-          <p className="mt-1 text-lg font-bold tabular text-text">
+          <span className="text-xs font-semibold text-muted uppercase ">Customer / Vendor Split</span>
+          <p className="mt-1 text-lg font-semibold tabular text-text">
             {allBookings.length} <span className="text-xs font-normal text-muted">cust</span> · {allLoads.length} <span className="text-xs font-normal text-muted">vendor</span>
           </p>
         </div>

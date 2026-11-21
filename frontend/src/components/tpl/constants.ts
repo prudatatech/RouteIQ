@@ -11,7 +11,7 @@ export const TPL_DOCUMENT_TYPES = [
   'Carriage by Road Registration',
   'MSME / Udyam Certificate',
   'Trade License / Shop & Establishment',
-  'Sample Consignment Note (LR)',
+  'Sample Consignment Note (LR)',  // vocab-ok: statutory GST document name, also the stored document type
 ] as const
 
 export type TplDocType = (typeof TPL_DOCUMENT_TYPES)[number]
@@ -167,14 +167,14 @@ export const TPL_DOCUMENT_SPECS: Record<TplDocType, TplDocSpec> = {
     },
   },
   'Sample Consignment Note (LR)': {
-    type: 'Sample Consignment Note (LR)',
-    label: 'Sample Lorry Receipt (LR) / Consignment Note',
+    type: 'Sample Consignment Note (LR)',  // vocab-ok: statutory GST document name, also the stored document type
+    label: 'Sample Lorry Receipt (LR) / Consignment Note',  // vocab-ok: statutory GST document name, also the stored document type
     category: 'transport',
-    hint: 'Transporter copy of serially numbered Consignment Note format',
+    hint: 'Transporter copy of serially numbered Consignment Note format',  // vocab-ok: statutory GST document name, also the stored document type
     evaluateRequirement: () => ({
       level: 'recommended',
       badgeText: 'GTA Standard (GST Act)',
-      reason: 'Consignment Note issuance legally defines Goods Transport Agency standing under GST Law',
+      reason: 'Consignment Note issuance legally defines Goods Transport Agency standing under GST Law',  // vocab-ok: statutory GST document name, also the stored document type
     }),
   },
 }

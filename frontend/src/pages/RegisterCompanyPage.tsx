@@ -55,7 +55,7 @@ export default function RegisterCompanyPage() {
         <div className="mx-auto flex h-16 w-full max-w-content items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2.5 rounded-control text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
             <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
-            <span className="text-lg font-bold tracking-tight">
+            <span className="text-lg font-semibold tracking-tight">
               Margix<span className="text-brand">India</span>
             </span>
           </Link>
@@ -68,10 +68,10 @@ export default function RegisterCompanyPage() {
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6 sm:py-12">
         {/* Page Header */}
         <div className="space-y-2 mb-8">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-soft text-brand text-xs font-bold uppercase tracking-wider">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-soft text-brand text-xs font-semibold uppercase ">
             <Building2 size={13} /> Enterprise Transport Onboarding
           </div>
-          <h1 className="text-2xl font-extrabold text-text sm:text-3xl tracking-tight">
+          <h1 className="text-2xl font-semibold text-text sm:text-3xl tracking-tight">
             Register your logistics company
           </h1>
           <p className="text-sm text-muted sm:text-base leading-relaxed max-w-2xl">
@@ -87,7 +87,7 @@ export default function RegisterCompanyPage() {
                 <span className="flex h-7 w-7 items-center justify-center rounded-control bg-brand-soft text-brand">
                   <Building2 size={16} />
                 </span>
-                <h2 className="text-sm font-bold text-text uppercase tracking-wider">1. Business Identity</h2>
+                <h2 className="text-sm font-semibold text-text uppercase ">1. Business Identity</h2>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Input
@@ -136,7 +136,7 @@ export default function RegisterCompanyPage() {
                 <span className="flex h-7 w-7 items-center justify-center rounded-control bg-brand-soft text-brand">
                   <FileCheck size={16} />
                 </span>
-                <h2 className="text-sm font-bold text-text uppercase tracking-wider">2. Tax &amp; Regulatory Identification</h2>
+                <h2 className="text-sm font-semibold text-text uppercase ">2. Tax &amp; Regulatory Identification</h2>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Input
@@ -168,7 +168,7 @@ export default function RegisterCompanyPage() {
                 <span className="flex h-7 w-7 items-center justify-center rounded-control bg-brand-soft text-brand">
                   <MapPin size={16} />
                 </span>
-                <h2 className="text-sm font-bold text-text uppercase tracking-wider">3. Registered Office &amp; Address</h2>
+                <h2 className="text-sm font-semibold text-text uppercase ">3. Registered Office &amp; Address</h2>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Textarea
@@ -221,7 +221,7 @@ export default function RegisterCompanyPage() {
                 <Link to="/waiting-for-approval" className="flex-1 sm:flex-initial text-center px-4 py-2 text-sm font-semibold text-muted hover:text-text">
                   Cancel
                 </Link>
-                <Button type="submit" size="lg" loading={submitting} className="flex-1 sm:flex-initial font-bold justify-center">
+                <Button type="submit" size="lg" loading={submitting} className="flex-1 sm:flex-initial font-semibold justify-center">
                   Send for approval <ArrowRight size={15} className="ml-1" />
                 </Button>
               </div>

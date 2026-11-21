@@ -72,7 +72,7 @@ export default function TplSetupCredentialsPage() {
         <div className="mx-auto flex h-16 w-full max-w-content items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2.5 rounded-control text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
             <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
-            <span className="text-lg font-bold tracking-tight">
+            <span className="text-lg font-semibold tracking-tight">
               Margix<span className="text-brand">India</span>
             </span>
           </Link>
@@ -88,7 +88,7 @@ export default function TplSetupCredentialsPage() {
             <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-soft text-brand shadow-xs">
               <ShieldCheck size={28} />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-text">Set up your partner login</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-text">Set up your partner login</h1>
             <p className="text-xs sm:text-sm text-muted max-w-sm mx-auto">
               For approved 3PL carriers. We verify your registered email before configuring your secure dashboard password.
             </p>
@@ -96,11 +96,11 @@ export default function TplSetupCredentialsPage() {
 
           {/* Stepper Indicator */}
           <div className="flex items-center justify-center gap-3 text-xs font-semibold">
-            <span className={step === 1 ? 'text-brand font-bold flex items-center gap-1' : 'text-success flex items-center gap-1'}>
+            <span className={step === 1 ? 'text-brand font-semibold flex items-center gap-1' : 'text-success flex items-center gap-1'}>
               {step > 1 ? <CheckCircle2 size={14} /> : '1.'} Verify Email
             </span>
             <span className="text-border">→</span>
-            <span className={step === 2 ? 'text-brand font-bold' : 'text-muted'}>
+            <span className={step === 2 ? 'text-brand font-semibold' : 'text-muted'}>
               2. Set Password
             </span>
           </div>
@@ -121,7 +121,7 @@ export default function TplSetupCredentialsPage() {
                   hint="The email address used when applying as a 3PL partner."
                   leading={<Mail size={16} />}
                 />
-                <Button type="submit" size="lg" fullWidth loading={loading} className="font-bold justify-center">
+                <Button type="submit" size="lg" fullWidth loading={loading} className="font-semibold justify-center">
                   Send verification code <ArrowRight size={15} className="ml-1" />
                 </Button>
               </form>
@@ -136,7 +136,7 @@ export default function TplSetupCredentialsPage() {
                 <div className="flex items-end justify-between gap-2">
                   <Input
                     className="flex-1"
-                    inputClassName="text-center font-mono text-xl tracking-widest font-extrabold"
+                    inputClassName="text-center font-mono text-lg  font-semibold"
                     label="6-digit verification code"
                     required
                     maxLength={6}
@@ -175,7 +175,7 @@ export default function TplSetupCredentialsPage() {
                   leading={<Lock size={16} />}
                 />
 
-                <Button type="submit" size="lg" fullWidth loading={loading} className="font-bold justify-center">
+                <Button type="submit" size="lg" fullWidth loading={loading} className="font-semibold justify-center">
                   Activate partner login <ArrowRight size={15} className="ml-1" />
                 </Button>
               </form>
@@ -184,7 +184,7 @@ export default function TplSetupCredentialsPage() {
 
           <p className="text-center text-xs text-muted">
             Already configured your credentials?{' '}
-            <Link to="/login" className="font-bold text-brand hover:underline">
+            <Link to="/login" className="font-semibold text-brand hover:underline">
               Sign in to dashboard
             </Link>
           </p>

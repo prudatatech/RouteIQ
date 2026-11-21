@@ -89,7 +89,7 @@ export function Stepper({ steps, current, onSelect, variant = 'panel' }: Stepper
 
             <div
               className={clsx(
-                'relative z-10 flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-all',
+                'relative z-10 flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-all',
                 completed
                   ? 'bg-success text-white shadow-xs'
                   : i === current
@@ -102,8 +102,8 @@ export function Stepper({ steps, current, onSelect, variant = 'panel' }: Stepper
 
             <span
               className={clsx(
-                'mt-2 text-[10px] sm:text-xs font-semibold text-center transition-colors truncate max-w-full px-0.5 sm:px-1',
-                i === current ? 'text-brand font-bold' : completed ? 'text-text' : 'text-muted'
+                'mt-2 text-xs sm:text-xs font-semibold text-center transition-colors truncate max-w-full px-0.5 sm:px-1',
+                i === current ? 'text-brand font-semibold' : completed ? 'text-text' : 'text-muted'
               )}
             >
               {label}

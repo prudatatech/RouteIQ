@@ -108,13 +108,13 @@ export default function MobileTrackPage() {
     <div className="flex min-h-screen flex-col items-center bg-bg px-4 py-8 text-text selection:bg-brand/20">
       <div className="w-full max-w-sm space-y-5">
         <div className="text-center">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-soft text-brand text-xs font-bold uppercase tracking-wider mb-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-soft text-brand text-xs font-semibold uppercase  mb-2">
             <Navigation size={13} className={isActive ? 'animate-spin-slow' : ''} /> MargixIndia Telemetry
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-text">Live Vehicle GPS</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-text">Live Vehicle GPS</h1>
           {session && (
             <p className="mt-1 text-sm text-muted">
-              Vehicle plate: <span className="font-mono font-bold text-text bg-surface-subtle px-2 py-0.5 rounded-control border border-border">{session.plate}</span>
+              Vehicle plate: <span className="font-mono font-semibold text-text bg-surface-subtle px-2 py-0.5 rounded-control border border-border">{session.plate}</span>
             </p>
           )}
         </div>
@@ -169,7 +169,7 @@ export default function MobileTrackPage() {
                     <MapPin size={30} aria-hidden="true" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-text">Ready to transmit</h3>
+                    <h3 className="text-base font-semibold text-text">Ready to transmit</h3>
                     <p className="mt-1 text-xs text-muted leading-relaxed">Tap start below to transmit real-time road telemetry directly to operations.</p>
                   </div>
                 </div>
@@ -178,14 +178,14 @@ export default function MobileTrackPage() {
               {coords && (
                 <dl className="grid grid-cols-2 gap-3 text-sm">
                   <div className="rounded-card border border-border bg-surface-subtle p-3.5 shadow-xs">
-                    <dt className="text-xs font-semibold uppercase tracking-wider text-muted">Speed</dt>
-                    <dd className="mt-1 font-mono text-xl font-extrabold text-text">
+                    <dt className="text-xs font-semibold uppercase  text-muted">Speed</dt>
+                    <dd className="mt-1 font-mono text-lg font-semibold text-text">
                       {Math.round(coords.speed * 3.6)} <span className="text-xs font-normal text-muted">km/h</span>
                     </dd>
                   </div>
                   <div className="rounded-card border border-border bg-surface-subtle p-3.5 shadow-xs">
-                    <dt className="text-xs font-semibold uppercase tracking-wider text-muted">Accuracy</dt>
-                    <dd className="mt-1 font-mono text-xl font-extrabold text-text">
+                    <dt className="text-xs font-semibold uppercase  text-muted">Accuracy</dt>
+                    <dd className="mt-1 font-mono text-lg font-semibold text-text">
                       ±{coords.accuracy.toFixed(0)} <span className="text-xs font-normal text-muted">meters</span>
                     </dd>
                   </div>
@@ -197,16 +197,16 @@ export default function MobileTrackPage() {
                   <span className="flex items-center gap-1.5 font-medium text-text">
                     <CheckCircle2 size={15} className="text-success shrink-0" aria-hidden="true" /> {pushCount} telemetry packets sent
                   </span>
-                  {lastPush && <span className="text-[11px] tabular">Last: {formatTime(lastPush, { seconds: true })}</span>}
+                  {lastPush && <span className="text-xs tabular">Last: {formatTime(lastPush, { seconds: true })}</span>}
                 </div>
               )}
 
               {!isActive ? (
-                <Button fullWidth size="lg" icon={<Navigation size={18} />} disabled={!session} onClick={startTracking} className="font-bold py-3">
+                <Button fullWidth size="lg" icon={<Navigation size={18} />} disabled={!session} onClick={startTracking} className="font-semibold py-3">
                   Start sharing location
                 </Button>
               ) : (
-                <Button fullWidth size="lg" variant="danger" icon={<WifiOff size={18} />} onClick={stopTracking} className="font-bold py-3">
+                <Button fullWidth size="lg" variant="danger" icon={<WifiOff size={18} />} onClick={stopTracking} className="font-semibold py-3">
                   Stop sharing
                 </Button>
               )}

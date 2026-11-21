@@ -1,7 +1,7 @@
 import { errorMessage, formatDateTime } from '@/utils/display'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, CheckCircle2, Upload, Building2, FileCheck, IndianRupee, Clock, ArrowLeft, ArrowRight, ShieldCheck, AlertCircle, Truck } from 'lucide-react'
+import { Search, CheckCircle2, Upload, Building2, FileCheck, Clock, ArrowLeft, ArrowRight, AlertCircle, } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import { tplAPI } from '@/services/api'
@@ -149,7 +149,7 @@ export function FixDetails({ applicationId, pan, full, onSaved }: { applicationI
       <div className="space-y-3">
         <div className="flex items-center gap-2 border-b border-border pb-2">
           <Building2 size={16} className="text-brand" />
-          <h4 className="text-xs font-bold text-text uppercase tracking-wider">Company &amp; Governance</h4>
+          <h4 className="text-xs font-semibold text-text uppercase ">Company &amp; Governance</h4>
         </div>
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
           <div>
@@ -220,7 +220,7 @@ export function FixDetails({ applicationId, pan, full, onSaved }: { applicationI
       <div className="space-y-3">
         <div className="flex items-center gap-2 border-b border-border pb-2">
           <FileCheck size={16} className="text-brand" />
-          <h4 className="text-xs font-bold text-text uppercase tracking-wider">Tax &amp; Settlement Account</h4>
+          <h4 className="text-xs font-semibold text-text uppercase ">Tax &amp; Settlement Account</h4>
         </div>
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
           <div>
@@ -266,7 +266,7 @@ export function FixDetails({ applicationId, pan, full, onSaved }: { applicationI
       <div className="space-y-3">
         <div className="flex items-center gap-2 border-b border-border pb-2">
           <Clock size={16} className="text-brand" />
-          <h4 className="text-xs font-bold text-text uppercase tracking-wider">Service Levels &amp; Fleet Operations</h4>
+          <h4 className="text-xs font-semibold text-text uppercase ">Service Levels &amp; Fleet Operations</h4>
         </div>
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
           <div>
@@ -307,7 +307,7 @@ export function FixDetails({ applicationId, pan, full, onSaved }: { applicationI
       </div>
 
       <div className="pt-2">
-        <Button fullWidth size="lg" loading={saving} onClick={save} className="font-bold justify-center">
+        <Button fullWidth size="lg" loading={saving} onClick={save} className="font-semibold justify-center">
           Save updated details
         </Button>
       </div>
@@ -385,20 +385,20 @@ function FixDocumentsList({ applicationId, pan, full, onReplaced }: { applicatio
     <div className="space-y-6">
       {uniqueDocs.length > 0 && (
         <div className="space-y-3">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-text">Uploaded Documents ({uniqueDocs.length})</h4>
+          <h4 className="text-xs font-semibold uppercase  text-text">Uploaded Documents ({uniqueDocs.length})</h4>
           {uniqueDocs.map(doc => {
             const issue = full.document_issues?.[doc.doc_type]
             return (
               <div key={doc.id} className={clsx('rounded-card border p-4 transition-all', issue ? 'border-warning bg-warning/5 shadow-xs' : 'border-border bg-surface')}>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-bold text-text flex items-center gap-2">
+                  <span className="text-sm font-semibold text-text flex items-center gap-2">
                     <FileCheck size={16} className="text-brand shrink-0" />
                     {doc.doc_type}
                   </span>
                   {issue ? (
                     <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>
                   ) : (
-                    <span className="text-[11px] font-semibold text-success flex items-center gap-1">
+                    <span className="text-xs font-semibold text-success flex items-center gap-1">
                       <CheckCircle2 size={13} /> Active on file
                     </span>
                   )}
@@ -424,10 +424,10 @@ function FixDocumentsList({ applicationId, pan, full, onReplaced }: { applicatio
       {sortedMissing.length > 0 && (
         <div className="space-y-3 pt-2">
           <div className="border-b border-border pb-1.5">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-text">
+            <h4 className="text-xs font-semibold uppercase  text-text">
               {uniqueDocs.length === 0 ? 'Upload Compliance Documents' : 'Upload Additional / Missing Documents'}
             </h4>
-            <p className="text-[11px] text-muted">Upload any requested or compliance documents to speed up your approval.</p>
+            <p className="text-xs text-muted">Upload any requested or compliance documents to speed up your approval.</p>
           </div>
           <div className="grid grid-cols-1 gap-3">
             {sortedMissing.map(docType => {
@@ -456,9 +456,9 @@ function FixDocumentsList({ applicationId, pan, full, onReplaced }: { applicatio
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-text truncate">{spec?.label || docType}</span>
+                        <span className="text-xs font-semibold text-text truncate">{spec?.label || docType}</span>
                         {req && (
-                          <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded border ${badgeColor}`}>
+                          <span className={`inline-block px-1.5 py-0.5 text-xs font-semibold rounded border ${badgeColor}`}>
                             {req.badgeText}
                           </span>
                         )}
@@ -466,7 +466,7 @@ function FixDocumentsList({ applicationId, pan, full, onReplaced }: { applicatio
                           <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>
                         )}
                       </div>
-                      <p className="text-[11px] text-muted mt-0.5">{issue ? `Compliance note: ${issue}` : req?.reason || spec?.hint}</p>
+                      <p className="text-xs text-muted mt-0.5">{issue ? `Compliance note: ${issue}` : req?.reason || spec?.hint}</p>
                     </div>
                     <div className="shrink-0 flex items-center justify-end">
                       <FileButton
@@ -524,7 +524,7 @@ function FixApplication({ applicationId, pan, mode, onDone }: { applicationId: s
         {mode === 'full' && (
           <div className="flex items-center gap-2 mb-3">
             <Upload size={16} className="text-brand" />
-            <h3 className="text-sm font-bold text-text uppercase tracking-wider">Uploaded Documents</h3>
+            <h3 className="text-sm font-semibold text-text uppercase ">Uploaded Documents</h3>
           </div>
         )}
         <FixDocumentsList applicationId={applicationId} pan={pan} full={full} onReplaced={refresh} />
@@ -596,7 +596,7 @@ export default function TplTrackApplicationPage() {
         <div className="mx-auto flex h-16 w-full max-w-content items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2.5 rounded-control text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
             <img src="/margix-logo.png" alt="" className="h-8 w-8 object-contain" />
-            <span className="text-lg font-bold tracking-tight">
+            <span className="text-lg font-semibold tracking-tight">
               Margix<span className="text-brand">India</span>
             </span>
           </Link>
@@ -626,7 +626,7 @@ export default function TplTrackApplicationPage() {
                 <Search size={22} />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-text tracking-tight">Check 3PL Partner Application</h1>
+                <h1 className="text-lg font-semibold text-text tracking-tight">Check 3PL Partner Application</h1>
                 <p className="text-xs sm:text-sm text-muted mt-0.5">
                   Track verification status, address flagged compliance documents, or update bank details.
                 </p>
@@ -648,7 +648,7 @@ export default function TplTrackApplicationPage() {
                   spellCheck={false}
                   inputClassName="font-mono text-base"
                 />
-                <Button type="submit" size="lg" fullWidth loading={loading} className="font-bold justify-center">
+                <Button type="submit" size="lg" fullWidth loading={loading} className="font-semibold justify-center">
                   Check application status <ArrowRight size={15} className="ml-1" />
                 </Button>
                 <div className="pt-2 text-center">
@@ -663,8 +663,8 @@ export default function TplTrackApplicationPage() {
                 <div className="rounded-card border border-border bg-surface-subtle p-5 space-y-4">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted block">Registered Carrier</span>
-                      <h3 className="text-base sm:text-lg font-bold text-text">{application.company_name}</h3>
+                      <span className="text-xs font-semibold uppercase  text-muted block">Registered Carrier</span>
+                      <h3 className="text-base sm:text-lg font-semibold text-text">{application.company_name}</h3>
                       <p className="mt-0.5 font-mono text-xs text-muted">ID: {application.id}</p>
                     </div>
                     <StatusPill status={application.status} />
@@ -672,11 +672,11 @@ export default function TplTrackApplicationPage() {
                   <dl className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-3 border-t border-border text-xs">
                     <div>
                       <dt className="text-muted font-medium">Corridors Requested</dt>
-                      <dd className="mt-0.5 text-text font-bold text-sm">{application.corridor_count ?? 0} routes</dd>
+                      <dd className="mt-0.5 text-text font-semibold text-sm">{application.corridor_count ?? 0} trips</dd>
                     </div>
                     <div>
                       <dt className="text-muted font-medium">Documents on File</dt>
-                      <dd className="mt-0.5 text-text font-bold text-sm">{application.document_count ?? 0} files</dd>
+                      <dd className="mt-0.5 text-text font-semibold text-sm">{application.document_count ?? 0} files</dd>
                     </div>
                     <div className="col-span-2 sm:col-span-1">
                       <dt className="text-muted font-medium">Application Date</dt>
@@ -687,7 +687,7 @@ export default function TplTrackApplicationPage() {
 
                 {application.status === 'pending' ? (
                   <div className="space-y-4">
-                    <div className="p-3.5 rounded-control bg-blue-500/10 border border-blue-500/20 text-xs text-blue-900 dark:text-blue-200 leading-relaxed">
+                    <div className="p-3.5 rounded-control bg-info/10 border border-info/20 text-xs text-info dark:text-info leading-relaxed">
                       Your application is actively under review by Margix compliance. You will receive an email once approved. You can fix or replace documents and details below.
                     </div>
 
@@ -721,7 +721,7 @@ export default function TplTrackApplicationPage() {
                       />
                     ) : (
                       <div className="p-4 rounded-card border border-border bg-surface space-y-3">
-                        <h4 className="text-xs font-bold text-text uppercase tracking-wider">
+                        <h4 className="text-xs font-semibold text-text uppercase ">
                           {(application.field_issues && Object.keys(application.field_issues).length > 0) || (application.document_issues && Object.keys(application.document_issues).length > 0)
                             ? 'Authorize Compliance Corrections'
                             : 'Authorize Document Updates'}
@@ -741,7 +741,7 @@ export default function TplTrackApplicationPage() {
                           size="lg"
                           disabled={!editPan.trim()}
                           onClick={() => setFixingDocs(true)}
-                          className="font-bold justify-center"
+                          className="font-semibold justify-center"
                         >
                           {application.field_issues && Object.keys(application.field_issues).length > 0
                             ? 'Fix flagged details & documents'
@@ -787,7 +787,7 @@ export default function TplTrackApplicationPage() {
                           <FixApplication applicationId={application.id} pan={editPan.trim()} mode="full" onDone={refreshAfterFix} />
                         ) : (
                           <div className="p-4 rounded-card border border-border bg-surface space-y-3">
-                            <h4 className="text-xs font-bold text-text uppercase tracking-wider">Resubmit with Corrections</h4>
+                            <h4 className="text-xs font-semibold text-text uppercase ">Resubmit with Corrections</h4>
                             <Input
                               label="Company PAN"
                               hint="Enter your PAN to unlock full editing and resubmit."
@@ -797,7 +797,7 @@ export default function TplTrackApplicationPage() {
                               maxLength={10}
                               inputClassName="font-mono uppercase text-base"
                             />
-                            <Button fullWidth size="lg" disabled={!editPan.trim()} onClick={() => setFixingDocs(true)} className="font-bold justify-center">
+                            <Button fullWidth size="lg" disabled={!editPan.trim()} onClick={() => setFixingDocs(true)} className="font-semibold justify-center">
                               Fix application details &amp; resubmit
                             </Button>
                           </div>
@@ -810,16 +810,16 @@ export default function TplTrackApplicationPage() {
                       </div>
                     ) : (
                       <div className="space-y-4 py-4">
-                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600">
+                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-success/10 text-success">
                           <CheckCircle2 size={32} />
                         </div>
                         <div className="space-y-1">
-                          <h3 className="text-lg font-bold text-text">Partner Application Approved!</h3>
+                          <h3 className="text-lg font-semibold text-text">Partner Application Approved!</h3>
                           <p className="text-xs text-muted max-w-sm mx-auto">
                             Your carrier credentials are confirmed. Set up your password now to access your 3PL partner dispatch dashboard.
                           </p>
                         </div>
-                        <Button size="lg" onClick={() => navigate('/3pl/onboard/setup')} className="font-bold">
+                        <Button size="lg" onClick={() => navigate('/3pl/onboard/setup')} className="font-semibold">
                           Set up partner login credentials <ArrowRight size={15} className="ml-1" />
                         </Button>
                       </div>

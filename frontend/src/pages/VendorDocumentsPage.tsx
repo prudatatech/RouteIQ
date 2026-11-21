@@ -292,7 +292,7 @@ export default function VendorDocumentsPage() {
       // The backend applies the review rules (an approved profile goes back to review).
       if (hasProfile) {
         try {
-          const res = await vendorAPI.saveKycDocuments({ docUrls: updatedUrls }) as any
+          const res = await vendorAPI.saveKycDocuments({ docUrls: updatedUrls }) as { kyc_document_issues?: Record<string, string> | null; kyc_status?: KycStatus } | undefined
           if (res?.kyc_document_issues !== undefined) {
             setKycDocumentIssues(res.kyc_document_issues ?? {})
           }

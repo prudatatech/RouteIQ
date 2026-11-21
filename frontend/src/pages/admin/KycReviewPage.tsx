@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, CheckCircle2, Clock, FileText, Users } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Clock, Users } from 'lucide-react'
 import { vendorAPI } from '@/services/api'
 import {
   Alert, Button, DataTable, Page, PageHeader, SearchInput, Stat, StatusPill, statusToLabel, Tabs, TabPanel,

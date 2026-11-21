@@ -65,7 +65,7 @@ function AttentionRow({ item }: { item: AttentionItem }) {
     <div className="flex items-start gap-3 px-4 py-3 hover:bg-surface-subtle/50 transition-colors">
       <span
         className={clsx(
-          'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl shadow-xs',
+          'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control shadow-xs',
           ['delay', 'idle', 'licence-expiring', 'documents'].includes(item.kind) ? 'bg-warning-soft text-warning' : 'bg-danger-soft text-danger',
         )}
         aria-hidden="true"
@@ -304,14 +304,14 @@ export default function TodayPage() {
       {pendingOrgs !== null && pendingOrgs > 0 && (
         <Card padded className="flex flex-wrap items-center justify-between gap-3 shadow-xs border-warning/40 bg-warning-soft/10">
           <div>
-            <h2 className="text-sm font-bold text-text flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-text flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-warning animate-pulse" />
               Companies waiting for approval
             </h2>
             <p className="mt-0.5 text-xs text-muted">New logistics companies cannot start until you approve them.</p>
           </div>
           <div className="flex items-center gap-4">
-            <p className="text-3xl font-extrabold leading-none text-warning tabular">{pendingOrgs.toLocaleString('en-IN')}</p>
+            <p className="text-3xl font-semibold leading-none text-warning tabular">{pendingOrgs.toLocaleString('en-IN')}</p>
             <Link to="/platform/organisations" className={buttonClasses({ variant: 'secondary' })}>Review companies</Link>
           </div>
         </Card>

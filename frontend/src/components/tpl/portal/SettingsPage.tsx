@@ -151,7 +151,7 @@ export default function SettingsPage() {
                   <dt className="shrink-0 text-muted flex items-center gap-2">
                     {item.label}
                     {issue && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-warning/20 text-warning">
+                      <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full bg-warning/20 text-warning">
                         Fix requested
                       </span>
                     )}

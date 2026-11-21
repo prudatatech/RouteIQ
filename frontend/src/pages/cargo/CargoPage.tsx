@@ -71,7 +71,7 @@ export default function CargoPage() {
     <Page>
       <PageHeader
         title="Cargo Control Tower"
-        description="Where goods are, who holds custody, and every exception case tracked to resolution."
+        description="Where goods are, who holds custody, and every problem case tracked to resolution."
         actions={<Button icon={<Plus size={16} />} onClick={() => setRaising(true)}>Raise a problem</Button>}
       >
         <Tabs tabs={tabs} value={tab} onChange={setTab} label="Problems sections" />
@@ -102,7 +102,7 @@ export default function CargoPage() {
             label="In-Flight Transfers"
             value={transfersQuery.isLoading ? '—' : activeTransfers.length.toLocaleString('en-IN')}
             tone={activeTransfers.length > 0 ? 'success' : 'default'}
-            hint={activeTransfers.length > 0 ? 'Transshipments in progress' : 'No active vehicle handovers'}
+            hint={activeTransfers.length > 0 ? 'Transfers in progress' : 'No active vehicle handovers'}
             icon={<ArrowRightLeft size={18} />}
             className="h-full border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
           />

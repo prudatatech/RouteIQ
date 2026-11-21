@@ -3,9 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart3, Building2, Gavel, IndianRupee, LayoutDashboard, MapPin, MapPinned, Package, PackageCheck, Route, Search,
-  ShieldAlert, Truck, Waypoints, ArrowRight, CheckCircle2, Sparkles, Clock, ShieldCheck, Menu, X, Zap,
-  Navigation, Activity, Phone, ChevronRight, ChevronDown, HelpCircle, Layers, Sliders, TrendingUp, Users,
-  Award, Shield, FileCheck, Check, Star, RefreshCw, type LucideIcon,
+  ShieldAlert, Truck, Waypoints, ArrowRight, CheckCircle2, Sparkles, Clock, Menu, X, Zap,
+  Navigation, Phone, ChevronRight, ChevronDown, Layers, TrendingUp, 
+  Star, RefreshCw, type LucideIcon,
 } from 'lucide-react'
 import { buttonClasses } from '@/components/ui'
 import { publicAPI, type PublicStats } from '@/services/api'
@@ -28,7 +28,7 @@ const audiences: Audience[] = [
     title: 'Operations teams',
     tag: 'Enterprise Control',
     description: 'Create shipments, assign vehicles, plan and optimize trips, follow the fleet on a live map and respond to driver SOS alerts.',
-    highlights: ['Multi-stop route optimizer', 'Live GPS fleet telemetry', 'Driver SOS incident response'],
+    highlights: ['Multi-stop trip optimizer', 'Live GPS fleet telemetry', 'Driver SOS response'],
     action: { to: '/login', label: 'Sign in' },
   },
   {
@@ -139,7 +139,7 @@ const liveTelemetryFeeds = [
     payload: '17.9 / 18.0 Tons',
     loadPct: '99% Full',
     telemetryBadge: 'Auto Component Linehaul',
-    highlightBadge: 'Direct Backhaul · Guaranteed Spot',
+    highlightBadge: 'Direct return trip · Guaranteed spot',
     tempStatus: null,
   },
 ]
@@ -180,8 +180,8 @@ const platformFaqs = [
     a: 'No specialized hardware is required. Drivers simply open our progressive mobile driver app on any smartphone, accept assigned trips, and enable location sharing. Real-time GPS pings feed directly into operations consoles and live customer tracking URLs.',
   },
   {
-    q: 'How are return trips and backhaul empty miles handled?',
-    a: 'Our smart backhaul matching engine pairs trucks completing deliveries with shippers who need cargo moved along the return route. Fleet owners earn additional revenue on trips that would have run empty, while shippers enjoy backhaul discounts of up to 25%.',
+    q: 'How are return trips and empty miles handled?',
+    a: 'Our smart return-trip matching engine pairs trucks completing deliveries with shippers who need cargo moved along the way back. Fleet owners earn additional revenue on trips that would have run empty, while shippers enjoy return-trip discounts of up to 25%.',
   },
   {
     q: 'What happens when a driver encounters an emergency or breakdown?',
@@ -189,20 +189,20 @@ const platformFaqs = [
   },
   {
     q: 'How does proof of delivery (ePOD) and vendor payment work?',
-    a: 'Upon delivery, the driver uploads a clear digital photo of the signed consignment note / delivery challan directly in the mobile app. The consignee confirms with an OTP or signature. Verified ePODs trigger automated invoice reconciliation and payment settlements.',
+    a: 'Upon delivery, the driver uploads a clear digital photo of the signed delivery note / delivery challan directly in the mobile app. The consignee confirms with an OTP or signature. Verified ePODs trigger automated invoice reconciliation and payment settlements.',
   },
 ]
 
 const clientVoices = [
   {
-    quote: 'MargixIndia cut our transit tracking dispute inquiries by 90%. Shippers click one link and watch their consignment live on the highway.',
+    quote: 'MargixIndia cut our transit tracking dispute inquiries by 90%. Shippers click one link and watch their shipment live on the highway.',
     author: 'Rajesh K. Mehta',
     role: 'Operations Director',
     company: 'Apex Multi-State Logistics, Mumbai',
     metric: '99.4% On-time SLA',
   },
   {
-    quote: 'Filling our empty return trucks out of Delhi NCR used to take 2 days of phone calls with brokers. With Margix backhaul matching, our deadhead mileage dropped to zero.',
+    quote: 'Filling our empty return trucks out of Delhi NCR used to take 2 days of phone calls with brokers. With Margix return-trip matching, our deadhead mileage dropped to zero.',
     author: 'Harpreet Singh',
     role: 'Managing Partner',
     company: 'Northern Freight Carriers, Ludhiana',
@@ -224,10 +224,10 @@ function LiveNumbers() {
   if (shown.length === 0) return null
   return (
     <section aria-label="Platform in numbers" className="mx-auto -mt-10 relative z-20 max-w-content px-4 pb-6 sm:px-6 sm:pb-8">
-      <dl className="grid grid-cols-2 gap-4 sm:gap-6 rounded-card border border-border bg-surface/95 backdrop-blur-md p-6 sm:p-8 shadow-dialog lg:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-4 sm:gap-6 rounded-card border border-border bg-surface/95  p-6 sm:p-8 shadow-dialog lg:grid-cols-4">
         {shown.map(({ key, label }) => (
           <div key={key} className="flex flex-col justify-center border-l-2 border-brand/60 pl-4 py-1">
-            <dd className="text-3xl sm:text-4xl font-extrabold tabular text-text tracking-tight">{data![key].toLocaleString('en-IN')}</dd>
+            <dd className="text-3xl sm:text-3xl font-semibold tabular text-text tracking-tight">{data![key].toLocaleString('en-IN')}</dd>
             <dt className="mt-1 text-xs sm:text-sm font-medium text-muted">{label}</dt>
           </div>
         ))}
@@ -296,16 +296,16 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-bg text-text selection:bg-brand/20">
       {/* Top Navbar */}
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0e0e11]/90 backdrop-blur-md transition-all">
+      <header className="sticky top-0 z-50 border-b border-white/10 bg-text/90 transition-all">
         <div className="mx-auto flex h-16 max-w-content items-center justify-between gap-4 px-4 sm:px-6">
           <div className="flex shrink-0 items-center gap-3">
             <Link to="/" className="flex shrink-0 min-w-0 items-center gap-2.5 rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-fill">
               <img src="/margix-logo.png" alt="Margix" className="h-8 w-8 shrink-0 object-contain" />
-              <span className="text-lg font-bold tracking-tight text-white whitespace-nowrap">
+              <span className="text-lg font-semibold tracking-tight text-white whitespace-nowrap">
                 Margix<span className="text-brand-fill">India</span>
               </span>
             </Link>
-            <span className="hidden 2xl:inline-flex shrink-0 items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold text-white/70">
+            <span className="hidden 2xl:inline-flex shrink-0 items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-xs font-semibold text-white/70">
               <Truck size={12} className="text-brand-fill" /> Freight Operating System
             </span>
           </div>
@@ -335,7 +335,7 @@ export default function LandingPage() {
             </Link>
             <Link
               to="/vendor/request"
-              className="hidden sm:inline-flex shrink-0 items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-control text-xs font-bold text-on-brand bg-brand-fill hover:bg-brand-fill-hover shadow-xs transition-all whitespace-nowrap"
+              className="hidden sm:inline-flex shrink-0 items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-control text-xs font-semibold text-on-brand bg-brand-fill hover:bg-brand-fill-hover shadow-xs transition-all whitespace-nowrap"
             >
               Post a load <ArrowRight size={13} />
             </Link>
@@ -358,13 +358,13 @@ export default function LandingPage() {
         {mobileMenuOpen && (
           <>
             <div
-              className="fixed inset-0 top-16 z-40 bg-black/60 backdrop-blur-xs xl:hidden animate-fade-in"
+              className="fixed inset-0 top-16 z-40 bg-black/60  xl:hidden animate-fade-in"
               onClick={() => setMobileMenuOpen(false)}
               aria-hidden="true"
             />
             <div
               ref={mobileMenuPanel}
-              className="relative z-50 xl:hidden border-t border-white/10 bg-[#121216]/98 backdrop-blur-xl px-4 py-5 space-y-4 animate-fade-in text-sm shadow-2xl max-h-[calc(100dvh-4.5rem)] overflow-y-auto"
+              className="relative z-50 xl:hidden border-t border-white/10 bg-text/95 px-4 py-5 space-y-4 animate-fade-in text-sm shadow-dialog max-h-[calc(100dvh-4.5rem)] overflow-y-auto"
             >
               <div className="flex flex-col gap-1 text-white/85 font-medium">
                 <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="px-3 py-2 rounded-control hover:bg-white/10 hover:text-white transition-colors">How it works</a>
@@ -380,7 +380,7 @@ export default function LandingPage() {
                 <a href="tel:+9102248901234" className="flex items-center gap-2 px-3 py-1.5 text-xs text-white/60 hover:text-white transition-colors">
                   <Phone size={13} className="text-brand-fill" /> +91 (022) 4890-1234
                 </a>
-                <Link to="/vendor/request" onClick={() => setMobileMenuOpen(false)} className={clsx(buttonClasses({ variant: 'primary', fullWidth: true }), 'justify-center font-bold py-2.5')}>
+                <Link to="/vendor/request" onClick={() => setMobileMenuOpen(false)} className={clsx(buttonClasses({ variant: 'primary', fullWidth: true }), 'justify-center font-semibold py-2.5')}>
                   Post a load
                 </Link>
                 <Link to="/login" onClick={() => setMobileMenuOpen(false)} className={clsx(buttonClasses({ variant: 'secondary', fullWidth: true }), 'justify-center bg-white/10 text-white border-white/15 py-2.5')}>
@@ -394,7 +394,7 @@ export default function LandingPage() {
 
       <main>
         {/* Hero Section */}
-        <section className="relative overflow-hidden bg-gradient-to-b from-[#0a0a0d] via-[#131318] to-[#0a0a0d] text-white pt-12 pb-20 sm:pt-16 sm:pb-28 lg:pt-20 lg:pb-32">
+        <section className="relative overflow-hidden bg-text text-white pt-12 pb-20 sm:pt-16 sm:pb-28 lg:pt-20 lg:pb-32">
           {/* Subtle grid pattern & radial accent glow */}
           <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none" />
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-brand-fill/10 blur-[130px] rounded-full pointer-events-none" />
@@ -409,7 +409,7 @@ export default function LandingPage() {
                 </div>
 
                 <div className="space-y-4">
-                  <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white leading-[1.12]">
+                  <h1 className="text-3xl sm:text-5xl lg:text-5xl font-semibold tracking-tight text-white leading-[1.12]">
                     Freight operations, capacity and tracking in one place
                   </h1>
                   <p className="max-w-xl text-base sm:text-lg text-white/75 leading-relaxed">
@@ -425,7 +425,7 @@ export default function LandingPage() {
                       to="/vendor/request"
                       className={clsx(
                         buttonClasses({ variant: 'primary', size: 'lg' }),
-                        'px-7 py-3.5 font-bold shadow-raised flex items-center justify-center gap-2'
+                        'px-7 py-3.5 font-semibold shadow-raised flex items-center justify-center gap-2'
                       )}
                     >
                       Post a load <ArrowRight size={16} />
@@ -447,7 +447,7 @@ export default function LandingPage() {
 
                 {/* Quick Consignment Search Input */}
                 <div className="pt-3 max-w-lg">
-                  <form onSubmit={handleQuickTrack} className="group flex items-center rounded-2xl bg-white/10 border border-white/20 p-1.5 backdrop-blur-md shadow-lg transition-all focus-within:border-brand-fill focus-within:ring-4 focus-within:ring-brand-fill/25 hover:border-white/30">
+                  <form onSubmit={handleQuickTrack} className="group flex items-center rounded-2xl bg-white/10 border border-white/20 p-1.5  shadow-raised transition-all focus-within:border-brand-fill focus-within:ring-4 focus-within:ring-brand-fill/25 hover:border-white/30">
                     <Search size={18} className="text-white/60 ml-3 shrink-0 group-focus-within:text-brand-fill transition-colors" />
                     <input
                       type="text"
@@ -473,7 +473,7 @@ export default function LandingPage() {
                     <button
                       type="submit"
                       disabled={!quickTrackId.trim()}
-                      className="px-4 py-2 rounded-xl text-xs font-bold text-on-brand bg-brand-fill hover:bg-brand-fill-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs shrink-0 cursor-pointer flex items-center gap-1.5"
+                      className="px-4 py-2 rounded-control text-xs font-semibold text-on-brand bg-brand-fill hover:bg-brand-fill-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs shrink-0 cursor-pointer flex items-center gap-1.5"
                     >
                       Track <ArrowRight size={13} />
                     </button>
@@ -499,20 +499,20 @@ export default function LandingPage() {
 
               {/* Right Column: Live Console Simulator Graphic with Interactive Feed Switcher */}
               <div className="lg:col-span-5">
-                <div className="rounded-card border border-white/15 bg-[#17171d]/90 backdrop-blur-xl p-5 sm:p-6 shadow-2xl space-y-4 relative overflow-hidden">
+                <div className="rounded-card border border-white/15 bg-text/90 p-5 sm:p-6 shadow-dialog space-y-4 relative overflow-hidden">
                   {/* Top Feed Selector Tabs */}
                   <div className="flex items-center justify-between border-b border-white/10 pb-3">
                     <div className="flex items-center gap-2">
                       <span className="relative flex h-2.5 w-2.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-success" />
                       </span>
-                      <span className="text-[11px] font-bold tracking-wider text-emerald-400 uppercase">
+                      <span className="text-xs font-semibold  text-success uppercase">
                         Live Fleet Stream
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-1 bg-white/5 p-1 rounded-control border border-white/10 text-[10px] font-mono">
+                    <div className="flex items-center gap-1 bg-white/5 p-1 rounded-control border border-white/10 text-xs font-mono">
                       {liveTelemetryFeeds.map((feed, idx) => (
                         <button
                           key={feed.id}
@@ -521,7 +521,7 @@ export default function LandingPage() {
                           className={clsx(
                             'px-2 py-0.5 rounded transition-all',
                             activeTelemetryIndex === idx
-                              ? 'bg-brand-fill text-on-brand font-bold shadow-xs'
+                              ? 'bg-brand-fill text-on-brand font-semibold shadow-xs'
                               : 'text-white/60 hover:text-white'
                           )}
                         >
@@ -535,12 +535,12 @@ export default function LandingPage() {
                   <div className="rounded-control bg-black/40 border border-white/10 p-4 space-y-3.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-0.5">
-                        <span className="text-[10px] uppercase font-bold text-white/40 tracking-wider">Departure Terminal</span>
-                        <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span className="text-xs uppercase font-semibold text-white/40 ">Departure Terminal</span>
+                        <p className="text-xs font-semibold text-white flex items-center gap-1.5">
                           <MapPin size={13} className="text-brand-fill" /> {currentTelemetry.origin}
                         </p>
                       </div>
-                      <span className="text-[10px] font-mono text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full shrink-0">
+                      <span className="text-xs font-mono text-success font-semibold bg-success/10 px-2 py-0.5 rounded-full shrink-0">
                         {currentTelemetry.originTime}
                       </span>
                     </div>
@@ -549,42 +549,42 @@ export default function LandingPage() {
                     <div className="relative py-1">
                       <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-gradient-to-r from-brand-fill to-amber-300 rounded-full transition-all duration-500"
+                          className="h-full bg-brand-fill rounded-full transition-all duration-500"
                           style={{ width: `${currentTelemetry.progressPct}%` }}
                         />
                       </div>
-                      <div className="mt-1.5 flex items-center justify-between text-[10px] text-white/50 font-mono">
+                      <div className="mt-1.5 flex items-center justify-between text-xs text-white/50 font-mono">
                         <span>{currentTelemetry.corridorTag} · {currentTelemetry.speed}</span>
-                        <span className="text-white/80 font-bold">ETA {currentTelemetry.eta}</span>
+                        <span className="text-white/80 font-semibold">ETA {currentTelemetry.eta}</span>
                       </div>
                     </div>
 
                     <div className="flex items-start justify-between gap-2 pt-1 border-t border-white/5">
                       <div className="space-y-0.5">
-                        <span className="text-[10px] uppercase font-bold text-white/40 tracking-wider">Destination Hub</span>
-                        <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                          <Navigation size={13} className="text-amber-400" /> {currentTelemetry.destination}
+                        <span className="text-xs uppercase font-semibold text-white/40 ">Destination Hub</span>
+                        <p className="text-xs font-semibold text-white flex items-center gap-1.5">
+                          <Navigation size={13} className="text-warning" /> {currentTelemetry.destination}
                         </p>
                       </div>
-                      <span className="text-[10px] font-mono text-white/60 shrink-0">{currentTelemetry.distRemaining}</span>
+                      <span className="text-xs font-mono text-white/60 shrink-0">{currentTelemetry.distRemaining}</span>
                     </div>
                   </div>
 
                   {/* Shipment Capacity & Specs Grid */}
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div className="p-3 rounded-control bg-white/5 border border-white/10 space-y-1">
-                      <span className="text-[10px] uppercase font-semibold text-white/40 block">Assigned Fleet</span>
-                      <p className="font-bold text-white truncate">{currentTelemetry.vehicle}</p>
-                      <p className="text-[10px] text-white/50 font-mono">{currentTelemetry.regNo}</p>
+                      <span className="text-xs uppercase font-semibold text-white/40 block">Assigned Fleet</span>
+                      <p className="font-semibold text-white truncate">{currentTelemetry.vehicle}</p>
+                      <p className="text-xs text-white/50 font-mono">{currentTelemetry.regNo}</p>
                     </div>
 
                     <div className="p-3 rounded-control bg-white/5 border border-white/10 space-y-1">
-                      <span className="text-[10px] uppercase font-semibold text-white/40 block">Capacity &amp; Temp</span>
-                      <p className="font-bold text-white">{currentTelemetry.payload}</p>
+                      <span className="text-xs uppercase font-semibold text-white/40 block">Capacity &amp; Temp</span>
+                      <p className="font-semibold text-white">{currentTelemetry.payload}</p>
                       {currentTelemetry.tempStatus ? (
-                        <span className="inline-block text-[10px] font-semibold text-cyan-400">{currentTelemetry.tempStatus}</span>
+                        <span className="inline-block text-xs font-semibold text-info">{currentTelemetry.tempStatus}</span>
                       ) : (
-                        <span className="inline-block text-[10px] font-semibold text-emerald-400">{currentTelemetry.loadPct}</span>
+                        <span className="inline-block text-xs font-semibold text-success">{currentTelemetry.loadPct}</span>
                       )}
                     </div>
                   </div>
@@ -593,9 +593,9 @@ export default function LandingPage() {
                   <div className="p-3 rounded-control bg-brand-fill/10 border border-brand-fill/30 flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2 text-white">
                       <Zap size={14} className="text-brand-fill shrink-0" />
-                      <span className="font-medium text-[11px] truncate">{currentTelemetry.highlightBadge}</span>
+                      <span className="font-medium text-xs truncate">{currentTelemetry.highlightBadge}</span>
                     </div>
-                    <span className="text-[10px] font-bold text-brand-fill uppercase tracking-wider shrink-0">Live Verified</span>
+                    <span className="text-xs font-semibold text-brand-fill uppercase  shrink-0">Live Verified</span>
                   </div>
                 </div>
               </div>
@@ -609,16 +609,16 @@ export default function LandingPage() {
         {/* Interactive Instant Rate & Corridor Estimator */}
         <section id="calculator" className="scroll-mt-20 mx-auto max-w-content px-4 py-14 sm:px-6 sm:py-20">
           <div className="rounded-card border border-border bg-surface shadow-raised overflow-hidden">
-            <div className="bg-gradient-to-r from-[#111116] via-[#1a1a24] to-[#111116] p-6 sm:p-10 text-white border-b border-border">
+            <div className="bg-text p-6 sm:p-10 text-white border-b border-border">
               <div className="max-w-2xl space-y-2">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-fill/15 border border-brand-fill/30 text-xs font-bold text-brand-fill">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-fill/15 border border-brand-fill/30 text-xs font-semibold text-brand-fill">
                   <IndianRupee size={13} /> Transparent Corridors
                 </span>
-                <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+                <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">
                   Instant Freight &amp; Lane Rate Estimator
                 </h2>
                 <p className="text-sm text-white/70">
-                  Select your dispatch corridor and vehicle configuration to see indicative market rates, transit times, and return backhaul savings.
+                  Select your dispatch corridor and vehicle configuration to see indicative market rates, transit times, and return trip savings.
                 </p>
               </div>
 
@@ -636,9 +636,9 @@ export default function LandingPage() {
                         : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                     )}
                   >
-                    <span className="font-bold block truncate">{lane.origin}</span>
-                    <span className="text-[11px] text-white/50 block">→ {lane.dest}</span>
-                    <span className="mt-1 font-mono text-[10px] text-brand-fill block">{lane.km} km</span>
+                    <span className="font-semibold block truncate">{lane.origin}</span>
+                    <span className="text-xs text-white/50 block">→ {lane.dest}</span>
+                    <span className="mt-1 font-mono text-xs text-brand-fill block">{lane.km} km</span>
                   </button>
                 ))}
               </div>
@@ -656,7 +656,7 @@ export default function LandingPage() {
                       className={clsx(
                         'flex items-center gap-1.5 px-3 py-1.5 rounded-control text-xs font-semibold border transition-all cursor-pointer',
                         selectedVehicleIdx === idx
-                          ? 'border-brand-fill bg-white text-black shadow-xs font-bold'
+                          ? 'border-brand-fill bg-white text-black shadow-xs font-semibold'
                           : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                       )}
                     >
@@ -671,8 +671,8 @@ export default function LandingPage() {
             {/* Estimator Calculation Summary */}
             <div className="p-6 sm:p-10 grid grid-cols-1 md:grid-cols-4 gap-6 items-center bg-surface-subtle">
               <div className="space-y-1 border-b md:border-b-0 md:border-r border-border pb-4 md:pb-0 md:pr-4">
-                <span className="text-xs text-muted font-medium uppercase tracking-wider block">Estimated Freight Rate</span>
-                <p className="text-3xl font-extrabold text-text tracking-tight flex items-baseline gap-1">
+                <span className="text-xs text-muted font-medium uppercase  block">Estimated Freight Rate</span>
+                <p className="text-3xl font-semibold text-text tracking-tight flex items-baseline gap-1">
                   <span>₹{calculatedFreight.toLocaleString('en-IN')}</span>
                   <span className="text-xs text-muted font-normal">/ trip</span>
                 </p>
@@ -680,16 +680,16 @@ export default function LandingPage() {
               </div>
 
               <div className="space-y-1 border-b md:border-b-0 md:border-r border-border pb-4 md:pb-0 md:pr-4">
-                <span className="text-xs text-muted font-medium uppercase tracking-wider block">Est. Transit Time</span>
-                <p className="text-2xl font-bold text-text flex items-center gap-2">
+                <span className="text-xs text-muted font-medium uppercase  block">Est. Transit Time</span>
+                <p className="text-2xl font-semibold text-text flex items-center gap-2">
                   <Clock size={20} className="text-brand" /> {currentLane.hours}
                 </p>
                 <p className="text-xs text-muted">{currentLane.km} km highway linehaul</p>
               </div>
 
               <div className="space-y-1 border-b md:border-b-0 md:border-r border-border pb-4 md:pb-0 md:pr-4">
-                <span className="text-xs text-muted font-medium uppercase tracking-wider block">Return Backhaul Discount</span>
-                <p className="text-2xl font-bold text-brand flex items-center gap-1">
+                <span className="text-xs text-muted font-medium uppercase  block">Return trip discount</span>
+                <p className="text-2xl font-semibold text-brand flex items-center gap-1">
                   <span>-₹{calculatedSavings.toLocaleString('en-IN')}</span>
                 </p>
                 <p className="text-xs text-muted">When pairing empty return trips</p>
@@ -700,12 +700,12 @@ export default function LandingPage() {
                   to="/vendor/request"
                   className={clsx(
                     buttonClasses({ variant: 'primary', fullWidth: true }),
-                    'py-3 font-bold justify-center shadow-xs'
+                    'py-3 font-semibold justify-center shadow-xs'
                   )}
                 >
                   Post a load on this lane <ArrowRight size={14} className="ml-1" />
                 </Link>
-                <span className="text-[11px] text-center text-muted">Instant match across active 3PL carriers</span>
+                <span className="text-xs text-center text-muted">Instant match across active 3PL carriers</span>
               </div>
             </div>
           </div>
@@ -714,8 +714,8 @@ export default function LandingPage() {
         {/* How It Works Section */}
         <section id="how-it-works" aria-labelledby="how-it-works-title" className="scroll-mt-20 mx-auto max-w-content px-4 pb-12 pt-10 sm:px-6 sm:pt-16">
           <div className="max-w-2xl">
-            <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">Simple 3-Step Execution</span>
-            <h2 id="how-it-works-title" className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-text">
+            <span className="text-xs font-semibold uppercase  text-brand block mb-1">Simple 3-Step Execution</span>
+            <h2 id="how-it-works-title" className="text-2xl sm:text-3xl lg:text-3xl font-semibold tracking-tight text-text">
               How it works
             </h2>
             <p className="mt-2 text-sm sm:text-base text-muted">
@@ -730,7 +730,7 @@ export default function LandingPage() {
                 className="relative flex flex-col p-6 rounded-card border border-border bg-surface shadow-xs hover:shadow-raised hover:-translate-y-1 transition-all duration-200"
               >
                 <div className="flex items-center justify-between mb-4">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-card bg-brand-soft font-mono font-bold text-brand text-base shadow-xs">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-card bg-brand-soft font-mono font-semibold text-brand text-base shadow-xs">
                     {stepNumber}
                   </span>
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-subtle text-muted border border-border">
@@ -738,7 +738,7 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                <h3 className="text-base sm:text-lg font-bold text-text mb-2">
+                <h3 className="text-base sm:text-lg font-semibold text-text mb-2">
                   {title}
                 </h3>
                 <p className="text-xs sm:text-sm text-muted leading-relaxed flex-1">
@@ -758,8 +758,8 @@ export default function LandingPage() {
         <section id="network" className="scroll-mt-20 mx-auto max-w-content px-4 py-12 sm:px-6 sm:py-16">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
             <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">Freight Network</span>
-              <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-text">
+              <span className="text-xs font-semibold uppercase  text-brand block mb-1">Freight Network</span>
+              <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-text">
                 Pan-India Core Corridors
               </h2>
               <p className="mt-1 text-sm text-muted">
@@ -768,7 +768,7 @@ export default function LandingPage() {
             </div>
             <Link
               to="/3pl/onboard"
-              className="text-xs font-bold text-brand hover:underline inline-flex items-center gap-1 shrink-0"
+              className="text-xs font-semibold text-brand hover:underline inline-flex items-center gap-1 shrink-0"
             >
               Add your fleet corridor <ChevronRight size={14} />
             </Link>
@@ -782,10 +782,10 @@ export default function LandingPage() {
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <h3 className="font-bold text-text text-sm sm:text-base flex items-center gap-2">
+                    <h3 className="font-semibold text-text text-sm sm:text-base flex items-center gap-2">
                       <Route size={16} className="text-brand shrink-0" /> {c.name}
                     </h3>
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-soft text-brand shrink-0">
+                    <span className="text-xs font-semibold uppercase  px-2 py-0.5 rounded-full bg-brand-soft text-brand shrink-0">
                       {c.tag}
                     </span>
                   </div>
@@ -801,7 +801,7 @@ export default function LandingPage() {
                   </div>
                   <Link
                     to="/vendor/request"
-                    className="font-bold text-brand hover:text-brand-hover"
+                    className="font-semibold text-brand hover:text-brand-hover"
                   >
                     Book lane →
                   </Link>
@@ -816,8 +816,8 @@ export default function LandingPage() {
           <div className="mx-auto max-w-content px-4 sm:px-6">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
               <div className="lg:col-span-5 space-y-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-brand block">Efficiency Benchmark</span>
-                <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-text">
+                <span className="text-xs font-semibold uppercase  text-brand block">Efficiency Benchmark</span>
+                <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-text">
                   Calculate Your Monthly Freight Ops Savings
                 </h2>
                 <p className="text-sm text-muted leading-relaxed">
@@ -828,7 +828,7 @@ export default function LandingPage() {
                 <div className="pt-4 space-y-2">
                   <div className="flex justify-between items-center text-xs font-semibold">
                     <span className="text-muted">Monthly Corridors &amp; Full Truckloads:</span>
-                    <span className="text-brand font-bold text-base font-mono">{monthlyTrips} trips</span>
+                    <span className="text-brand font-semibold text-base font-mono">{monthlyTrips} trips</span>
                   </div>
                   <input
                     type="range"
@@ -839,7 +839,7 @@ export default function LandingPage() {
                     onChange={e => setMonthlyTrips(Number(e.target.value))}
                     className="w-full accent-brand h-2 bg-border rounded-lg cursor-pointer"
                   />
-                  <div className="flex justify-between text-[11px] text-muted font-mono">
+                  <div className="flex justify-between text-xs text-muted font-mono">
                     <span>10 trips/mo</span>
                     <span>100 trips/mo</span>
                     <span>250+ trips/mo</span>
@@ -849,36 +849,36 @@ export default function LandingPage() {
 
               <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="p-5 rounded-card border border-border bg-surface text-center space-y-2 shadow-xs">
-                  <span className="flex h-10 w-10 mx-auto items-center justify-center rounded-control bg-emerald-500/10 text-emerald-600">
+                  <span className="flex h-10 w-10 mx-auto items-center justify-center rounded-control bg-success/10 text-success">
                     <TrendingUp size={20} />
                   </span>
-                  <span className="text-xs font-semibold text-muted uppercase tracking-wider block">Direct Broker Cut Saved</span>
-                  <p className="text-2xl sm:text-3xl font-extrabold text-text tabular tracking-tight">
+                  <span className="text-xs font-semibold text-muted uppercase  block">Direct Broker Cut Saved</span>
+                  <p className="text-2xl sm:text-3xl font-semibold text-text tabular tracking-tight">
                     ₹{brokerCommissionSaved.toLocaleString('en-IN')}
                   </p>
-                  <p className="text-[11px] text-muted">Eliminating 5-8% intermediary cuts</p>
+                  <p className="text-xs text-muted">Eliminating 5-8% intermediary cuts</p>
                 </div>
 
                 <div className="p-5 rounded-card border border-border bg-surface text-center space-y-2 shadow-xs">
                   <span className="flex h-10 w-10 mx-auto items-center justify-center rounded-control bg-brand-soft text-brand">
                     <RefreshCw size={20} />
                   </span>
-                  <span className="text-xs font-semibold text-muted uppercase tracking-wider block">Backhaul Recovery</span>
-                  <p className="text-2xl sm:text-3xl font-extrabold text-brand tabular tracking-tight">
+                  <span className="text-xs font-semibold text-muted uppercase  block">Return trip recovery</span>
+                  <p className="text-2xl sm:text-3xl font-semibold text-brand tabular tracking-tight">
                     ₹{deadheadSavings.toLocaleString('en-IN')}
                   </p>
-                  <p className="text-[11px] text-muted">Monetizing empty return trips</p>
+                  <p className="text-xs text-muted">Monetizing empty return trips</p>
                 </div>
 
                 <div className="p-5 rounded-card border border-border bg-surface text-center space-y-2 shadow-xs">
-                  <span className="flex h-10 w-10 mx-auto items-center justify-center rounded-control bg-indigo-500/10 text-indigo-600">
+                  <span className="flex h-10 w-10 mx-auto items-center justify-center rounded-control bg-info/10 text-info">
                     <Clock size={20} />
                   </span>
-                  <span className="text-xs font-semibold text-muted uppercase tracking-wider block">Time Saved</span>
-                  <p className="text-2xl sm:text-3xl font-extrabold text-text tabular tracking-tight">
+                  <span className="text-xs font-semibold text-muted uppercase  block">Time Saved</span>
+                  <p className="text-2xl sm:text-3xl font-semibold text-text tabular tracking-tight">
                     {opsHoursSaved} hrs
                   </p>
-                  <p className="text-[11px] text-muted">Automated ePOD &amp; dispatch tracking</p>
+                  <p className="text-xs text-muted">Automated ePOD &amp; dispatch tracking</p>
                 </div>
               </div>
             </div>
@@ -888,8 +888,8 @@ export default function LandingPage() {
         {/* Get Started / Audience Solutions Section */}
         <section id="audiences" aria-labelledby="audiences-title" className="scroll-mt-20 mx-auto max-w-content px-4 pb-16 pt-12 sm:px-6 sm:pb-24 sm:pt-16">
           <div className="max-w-2xl">
-            <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">Role-Based Gateways</span>
-            <h2 id="audiences-title" className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-text">
+            <span className="text-xs font-semibold uppercase  text-brand block mb-1">Role-Based Gateways</span>
+            <h2 id="audiences-title" className="text-2xl sm:text-3xl lg:text-3xl font-semibold tracking-tight text-text">
               Get started
             </h2>
             <p className="mt-2 text-sm sm:text-base text-muted">
@@ -910,12 +910,12 @@ export default function LandingPage() {
                     <span className="flex h-11 w-11 items-center justify-center rounded-control bg-brand-soft text-brand">
                       <AudienceIcon size={22} aria-hidden />
                     </span>
-                    <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-surface-subtle border border-border text-muted">
+                    <span className="text-xs font-semibold uppercase  px-2.5 py-0.5 rounded-full bg-surface-subtle border border-border text-muted">
                       {tag}
                     </span>
                   </div>
 
-                  <h3 className="text-xl font-bold text-text tracking-tight mb-2">
+                  <h3 className="text-lg font-semibold text-text tracking-tight mb-2">
                     {title}
                   </h3>
                   <p className="text-xs sm:text-sm text-muted leading-relaxed mb-5">
@@ -938,7 +938,7 @@ export default function LandingPage() {
                       to={to}
                       className={clsx(
                         buttonClasses({ variant: 'primary', fullWidth: true }),
-                        'py-2.5 font-bold shadow-xs text-center justify-center'
+                        'py-2.5 font-semibold shadow-xs text-center justify-center'
                       )}
                     >
                       {label}
@@ -965,8 +965,8 @@ export default function LandingPage() {
         <section id="features" aria-labelledby="features-title" className="scroll-mt-20 border-t border-border bg-surface-subtle">
           <div className="mx-auto max-w-content px-4 py-16 sm:px-6 sm:py-24">
             <div className="max-w-2xl">
-              <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">Platform Architecture</span>
-              <h2 id="features-title" className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-text">
+              <span className="text-xs font-semibold uppercase  text-brand block mb-1">Platform Architecture</span>
+              <h2 id="features-title" className="text-2xl sm:text-3xl lg:text-3xl font-semibold tracking-tight text-text">
                 What the console does
               </h2>
               <p className="mt-2 text-sm sm:text-base text-muted">
@@ -985,11 +985,11 @@ export default function LandingPage() {
                       <span className="flex h-10 w-10 items-center justify-center rounded-control bg-brand-soft text-brand">
                         <FeatureIcon size={19} aria-hidden />
                       </span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-surface-subtle border border-border text-muted">
+                      <span className="text-xs font-semibold uppercase  px-2 py-0.5 rounded-full bg-surface-subtle border border-border text-muted">
                         {category}
                       </span>
                     </div>
-                    <h3 className="text-base font-bold text-text">{title}</h3>
+                    <h3 className="text-base font-semibold text-text">{title}</h3>
                     <p className="mt-1.5 text-xs sm:text-sm text-muted leading-relaxed">{description}</p>
                   </div>
                 </li>
@@ -1001,8 +1001,8 @@ export default function LandingPage() {
         {/* Client & Partner Testimonials */}
         <section className="mx-auto max-w-content px-4 py-16 sm:px-6 sm:py-24">
           <div className="text-center max-w-2xl mx-auto mb-12">
-            <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">Industry Feedback</span>
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-text">
+            <span className="text-xs font-semibold uppercase  text-brand block mb-1">Industry Feedback</span>
+            <h2 className="text-2xl sm:text-3xl lg:text-3xl font-semibold tracking-tight text-text">
               Trusted by Carriers &amp; Enterprise Shippers
             </h2>
             <p className="mt-2 text-sm text-muted">
@@ -1017,7 +1017,7 @@ export default function LandingPage() {
                 className="p-6 rounded-card border border-border bg-surface shadow-xs flex flex-col justify-between"
               >
                 <div className="space-y-4">
-                  <div className="flex items-center gap-1 text-amber-500">
+                  <div className="flex items-center gap-1 text-warning">
                     {[...Array(5)].map((_, starI) => (
                       <Star key={starI} size={15} fill="currentColor" />
                     ))}
@@ -1029,10 +1029,10 @@ export default function LandingPage() {
 
                 <div className="mt-6 pt-4 border-t border-border flex items-center justify-between">
                   <div>
-                    <p className="font-bold text-xs text-text">{v.author}</p>
-                    <p className="text-[11px] text-muted">{v.role} · {v.company}</p>
+                    <p className="font-semibold text-xs text-text">{v.author}</p>
+                    <p className="text-xs text-muted">{v.role} · {v.company}</p>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-soft text-brand shrink-0">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-brand-soft text-brand shrink-0">
                     {v.metric}
                   </span>
                 </div>
@@ -1045,8 +1045,8 @@ export default function LandingPage() {
         <section id="faq" className="scroll-mt-20 border-t border-border bg-surface-subtle py-16 sm:py-24">
           <div className="mx-auto max-w-3xl px-4 sm:px-6">
             <div className="text-center mb-12">
-              <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">Frequently Asked Questions</span>
-              <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-text">
+              <span className="text-xs font-semibold uppercase  text-brand block mb-1">Frequently Asked Questions</span>
+              <h2 className="text-2xl sm:text-3xl lg:text-3xl font-semibold tracking-tight text-text">
                 Got questions? We've got answers.
               </h2>
               <p className="mt-2 text-sm text-muted">
@@ -1065,7 +1065,7 @@ export default function LandingPage() {
                     <button
                       type="button"
                       onClick={() => setOpenFaqIdx(isOpen ? null : idx)}
-                      className="w-full p-4 sm:p-5 flex items-center justify-between text-left font-bold text-sm sm:text-base text-text hover:text-brand transition-colors cursor-pointer"
+                      className="w-full p-4 sm:p-5 flex items-center justify-between text-left font-semibold text-sm sm:text-base text-text hover:text-brand transition-colors cursor-pointer"
                       aria-expanded={isOpen}
                     >
                       <span className="pr-4">{faq.q}</span>
@@ -1087,19 +1087,19 @@ export default function LandingPage() {
         </section>
 
         {/* Bottom Call to Action Banner */}
-        <section className="relative overflow-hidden bg-gradient-to-r from-[#0e0e11] via-[#1a1a22] to-[#0e0e11] text-white py-14 sm:py-18 border-t border-white/10">
+        <section className="relative overflow-hidden bg-text text-white py-14 sm:py-18 border-t border-white/10">
           <div className="mx-auto max-w-content px-4 sm:px-6 text-center space-y-6">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-fill/10 border border-brand-fill/30 text-xs font-semibold text-brand-fill">
               <Zap size={13} /> Immediate Capacity Available
             </div>
-            <h2 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-white max-w-2xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white max-w-2xl mx-auto">
               Ready to streamline your freight dispatch &amp; transport network?
             </h2>
             <p className="text-sm sm:text-base text-white/70 max-w-xl mx-auto">
               Join enterprise logistics shippers and top 3PL carriers executing reliable, profitable loads every day.
             </p>
             <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <Link to="/vendor/request" className={clsx(buttonClasses({ variant: 'primary', size: 'lg' }), 'px-8 font-bold shadow-raised')}>
+              <Link to="/vendor/request" className={clsx(buttonClasses({ variant: 'primary', size: 'lg' }), 'px-8 font-semibold shadow-raised')}>
                 Post a load today
               </Link>
               <Link to="/3pl/onboard" className={clsx(buttonClasses({ variant: 'secondary', size: 'lg' }), 'px-8 bg-white/10 hover:bg-white/15 text-white border-white/20 font-semibold')}>
@@ -1117,7 +1117,7 @@ export default function LandingPage() {
             <div className="md:col-span-2 space-y-3">
               <Link to="/" className="flex items-center gap-2.5">
                 <img src="/margix-logo.png" alt="" className="h-7 w-7 object-contain" />
-                <span className="text-lg font-bold tracking-tight text-text">
+                <span className="text-lg font-semibold tracking-tight text-text">
                   Margix<span className="text-brand">India</span>
                 </span>
               </Link>
@@ -1130,7 +1130,7 @@ export default function LandingPage() {
             </div>
 
             <div className="space-y-3 text-xs">
-              <p className="font-bold text-text uppercase tracking-wider">Quick Navigation</p>
+              <p className="font-semibold text-text uppercase ">Quick Navigation</p>
               <ul className="space-y-2">
                 <li><Link to="/track" className="hover:text-text transition-colors">Track a shipment</Link></li>
                 <li><Link to="/vendor/request" className="hover:text-text transition-colors">Post a load</Link></li>
@@ -1139,7 +1139,7 @@ export default function LandingPage() {
             </div>
 
             <div className="space-y-3 text-xs">
-              <p className="font-bold text-text uppercase tracking-wider">Partners &amp; Network</p>
+              <p className="font-semibold text-text uppercase ">Partners &amp; Network</p>
               <ul className="space-y-2">
                 <li>
                   <Link to={tplPartnerId ? `/3pl-portal/${tplPartnerId}` : '/3pl/onboard'} className="hover:text-text transition-colors">

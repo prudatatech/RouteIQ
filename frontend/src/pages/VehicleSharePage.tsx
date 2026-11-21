@@ -61,28 +61,28 @@ export default function VehicleSharePage() {
     <main className="flex min-h-screen flex-col items-center bg-bg px-4 py-8 text-text selection:bg-brand-soft selection:text-brand">
       <div className="w-full max-w-xl space-y-5">
         <div className="text-center space-y-1.5">
-          <div className="inline-flex items-center gap-2 rounded-full border border-brand/20 bg-brand-soft px-3 py-0.5 text-xs font-bold uppercase tracking-wider text-brand shadow-xs">
+          <div className="inline-flex items-center gap-2 rounded-full border border-brand/20 bg-brand-soft px-3 py-0.5 text-xs font-semibold uppercase  text-brand shadow-xs">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-brand" />
             </span>
             MargixIndia Live Fleet Radar
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-text">Vehicle Location Tracker</h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-text">Vehicle Location Tracker</h1>
           <p className="text-xs text-muted max-w-sm mx-auto">
             Direct highway telemetry feed authorized for recipient viewing.
           </p>
         </div>
 
         {query.isLoading && (
-          <Card padded className="flex flex-col items-center gap-3 py-12 rounded-3xl border border-border shadow-raised">
+          <Card padded className="flex flex-col items-center gap-3 py-12 rounded-card border border-border shadow-raised">
             <Spinner size={32} label="Acquiring satellite telemetry" />
             <p className="text-xs text-muted font-medium">Resolving vehicle GPS fix…</p>
           </Card>
         )}
 
         {query.isError && (
-          <Card padded className="rounded-3xl border border-border shadow-raised">
+          <Card padded className="rounded-card border border-border shadow-raised">
             <ErrorState
               title={closed ? 'This link has expired or was revoked' : 'We could not connect to telemetry feed'}
               description={closed ? 'Ask your dispatch team for an active live vehicle share link.' : 'Check your internet connection and retry.'}
@@ -93,12 +93,12 @@ export default function VehicleSharePage() {
 
         {data && (
           <>
-            <div className="rounded-3xl border border-border/80 bg-surface shadow-raised overflow-hidden">
+            <div className="rounded-card border border-border/80 bg-surface shadow-raised overflow-hidden">
               {/* Header */}
               <div className="border-b border-border/80 bg-surface-subtle/50 p-5 sm:p-6 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted">Vehicle Registration</span>
-                  <h2 className="font-mono text-xl sm:text-2xl font-black text-text tracking-wide">
+                  <span className="text-xs font-semibold uppercase  text-muted">Vehicle Registration</span>
+                  <h2 className="font-mono text-lg sm:text-2xl font-semibold text-text tracking-wide">
                     {data.plate_number}
                   </h2>
                 </div>
@@ -134,7 +134,7 @@ export default function VehicleSharePage() {
                   </div>
 
                   {!data.live && (
-                    <div className="rounded-xl border border-warning/30 bg-warning-soft p-3 text-xs text-warning font-medium">
+                    <div className="rounded-control border border-warning/30 bg-warning-soft p-3 text-xs text-warning font-medium">
                       This vehicle has not reported GPS coordinates recently. The pin indicates its last confirmed position.
                     </div>
                   )}
@@ -144,13 +144,13 @@ export default function VehicleSharePage() {
                       href={googleMapsUrl(data.latitude!, data.longitude!)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-brand hover:underline"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand hover:underline"
                     >
                       <ExternalLink size={14} aria-hidden="true" />
                       Open Coordinates in Google Maps
                     </a>
 
-                    <span className="text-[11px] text-muted font-medium">
+                    <span className="text-xs text-muted font-medium">
                       Auto-refreshes every 10s
                     </span>
                   </div>

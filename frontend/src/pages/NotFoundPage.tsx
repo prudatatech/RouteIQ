@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Compass, Home, ArrowLeft, Search, Truck, Shield } from 'lucide-react'
+import { Compass, Home, ArrowLeft, } from 'lucide-react'
 import { Button, buttonClasses } from '@/components/ui'
 
 /** Shown for any address that does not exist. */
@@ -21,7 +21,7 @@ export default function NotFoundPage() {
       <header className="relative z-10 mx-auto flex w-full max-w-content items-center justify-between px-4 py-5 sm:px-6 border-b border-border">
         <Link to="/" className="flex items-center gap-2.5 rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
           <img src="/margix-logo.png" alt="Margix" className="h-8 w-8 object-contain shrink-0" />
-          <span className="text-lg font-bold tracking-tight text-text">
+          <span className="text-lg font-semibold tracking-tight text-text">
             Margix<span className="text-brand">India</span>
           </span>
         </Link>
@@ -37,10 +37,10 @@ export default function NotFoundPage() {
           </div>
 
           <div className="space-y-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-subtle border border-border text-xs font-bold text-muted uppercase tracking-wider">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-subtle border border-border text-xs font-semibold text-muted uppercase ">
               404 · Error
             </span>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-text">
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-text">
               We could not find that page
             </h1>
             <p className="text-sm text-muted leading-relaxed">
@@ -58,7 +58,7 @@ export default function NotFoundPage() {
           </div>
 
           <div className="pt-4 border-t border-border">
-            <p className="text-xs font-semibold text-muted mb-3 uppercase tracking-wider">Quick links</p>
+            <p className="text-xs font-semibold text-muted mb-3 uppercase ">Quick links</p>
             <div className="flex flex-wrap justify-center gap-2">
               <Link to="/today" className="px-2.5 py-1 rounded-control bg-surface-subtle hover:bg-surface text-xs font-medium text-text border border-border transition-colors">
                 Dashboard

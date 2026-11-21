@@ -241,7 +241,7 @@ export default function UsersPage() {
           <Stat
             label="Supervised Drivers"
             value={people.isLoading ? '—' : counts.drivers.toLocaleString('en-IN')}
-            hint="Assigned to highway routes"
+            hint="Assigned to highway trips"
             icon={<ShieldAlert size={18} />}
             className="border border-border shadow-xs hover:border-brand/40 hover:shadow-raised transition-all"
           />

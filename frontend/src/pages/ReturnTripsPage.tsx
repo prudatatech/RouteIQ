@@ -87,29 +87,29 @@ export default function ReturnTripsPage() {
       {/* Return Trips & Backhaul Quick Pulse */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-brand uppercase tracking-wider">Open Return Trips</span>
-          <p className="mt-1 text-2xl font-bold tabular text-brand">
+          <span className="text-xs font-semibold text-brand uppercase ">Open Return Trips</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-brand">
             {board.isLoading ? '–' : openWindows.length.toLocaleString('en-IN')}
           </p>
-          <p className="mt-0.5 text-xs text-muted">Active backhaul capacity</p>
+          <p className="mt-0.5 text-xs text-muted">Active return-trip capacity</p>
         </div>
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-warning uppercase tracking-wider">Bids Waiting Decision</span>
-          <p className="mt-1 text-2xl font-bold tabular text-warning">
+          <span className="text-xs font-semibold text-warning uppercase ">Bids Waiting Decision</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-warning">
             {board.isLoading ? '–' : pendingBids.length.toLocaleString('en-IN')}
           </p>
           <p className="mt-0.5 text-xs text-muted">Awaiting dispatcher review</p>
         </div>
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-success uppercase tracking-wider">Awarded Backhauls</span>
-          <p className="mt-1 text-2xl font-bold tabular text-success">
+          <span className="text-xs font-semibold text-success uppercase ">Awarded return trips</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-success">
             {board.isLoading ? '–' : wonBids.length.toLocaleString('en-IN')}
           </p>
           <p className="mt-0.5 text-xs text-muted">Filled & assigned to fleet</p>
         </div>
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-info uppercase tracking-wider">Co-load & Pooling</span>
-          <p className="mt-1 text-lg font-bold tabular text-text">
+          <span className="text-xs font-semibold text-info uppercase ">Co-load & shared trips</span>
+          <p className="mt-1 text-lg font-semibold tabular text-text">
             Smart Matching
           </p>
           <p className="mt-0.5 text-xs text-muted">Corridor optimization</p>

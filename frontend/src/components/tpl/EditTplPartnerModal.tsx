@@ -281,7 +281,7 @@ export function EditTplPartnerModal({
             <ShieldCheck size={14} />
             Legal & Tax
             {tabHasFlagged('identity') ? (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-warning/20 text-warning">Fix requested</span>
+              <span className="px-1.5 py-0.2 rounded-full text-xs font-semibold bg-warning/20 text-warning">Fix requested</span>
             ) : tabHasError('identity') ? (
               <span className="h-1.5 w-1.5 rounded-full bg-danger inline-block" title="Has errors" />
             ) : pan ? (
@@ -301,7 +301,7 @@ export function EditTplPartnerModal({
             <Landmark size={14} />
             Bank & Payout
             {tabHasFlagged('bank') ? (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-warning/20 text-warning">Fix requested</span>
+              <span className="px-1.5 py-0.2 rounded-full text-xs font-semibold bg-warning/20 text-warning">Fix requested</span>
             ) : tabHasError('bank') ? (
               <span className="h-1.5 w-1.5 rounded-full bg-danger inline-block" title="Has errors" />
             ) : bankAccount ? (
@@ -322,7 +322,7 @@ export function EditTplPartnerModal({
               <Building2 size={14} />
               Operations & Profile
               {tabHasFlagged('operations') ? (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-warning/20 text-warning">Fix requested</span>
+                <span className="px-1.5 py-0.2 rounded-full text-xs font-semibold bg-warning/20 text-warning">Fix requested</span>
               ) : tabHasError('operations') && (
                 <span className="h-1.5 w-1.5 rounded-full bg-danger inline-block" title="Has errors" />
               )}

@@ -255,14 +255,14 @@ export default function VehicleDetailPage() {
                   <span className="text-xs font-medium text-muted">GPS Tracking</span>
                   {isLive ? (
                     <span className="relative flex h-2.5 w-2.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-success" />
                     </span>
                   ) : (
                     <span className="h-2 w-2 rounded-full bg-muted/40" />
                   )}
                 </div>
-                <div className="mt-2 text-lg font-bold text-text">
+                <div className="mt-2 text-lg font-semibold text-text">
                   {isLive ? 'Live On Highway' : 'Stationary'}
                 </div>
                 <p className="mt-0.5 text-xs text-muted truncate">
@@ -277,7 +277,7 @@ export default function VehicleDetailPage() {
                     {vehicle.capacity_kg && vehicle.current_load_kg ? `${Math.min(100, Math.round((vehicle.current_load_kg / vehicle.capacity_kg) * 100))}%` : '0%'}
                   </span>
                 </div>
-                <div className="mt-2 text-lg font-bold text-text">
+                <div className="mt-2 text-lg font-semibold text-text">
                   {vehicle.current_load_kg ? formatKg(vehicle.current_load_kg) : '0 kg'}
                 </div>
                 <p className="mt-0.5 text-xs text-muted truncate">
@@ -292,7 +292,7 @@ export default function VehicleDetailPage() {
                     <StatusPill tone={bandTone[healthRow.band as HealthBand]}>{bandLabel[healthRow.band as HealthBand]}</StatusPill>
                   ) : null}
                 </div>
-                <div className="mt-2 text-lg font-bold text-text">
+                <div className="mt-2 text-lg font-semibold text-text">
                   {healthRow && healthRow.score != null ? `${healthRow.score} / 100` : 'Calibrating'}
                 </div>
                 <p className="mt-0.5 text-xs text-muted truncate">
@@ -304,16 +304,16 @@ export default function VehicleDetailPage() {
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-medium text-muted">Compliance & SOS</span>
                   {counts && counts.open > 0 ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-danger">
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-danger">
                       <span className="h-2 w-2 rounded-full bg-danger animate-pulse" /> {counts.open} SOS
                     </span>
                   ) : attention > 0 ? (
                     <span className="text-xs font-semibold text-warning">{attention} Attention</span>
                   ) : (
-                    <span className="text-xs font-semibold text-emerald-600">Cleared</span>
+                    <span className="text-xs font-semibold text-success">Cleared</span>
                   )}
                 </div>
-                <div className="mt-2 text-lg font-bold text-text">
+                <div className="mt-2 text-lg font-semibold text-text">
                   {attention === 0 && (!counts || counts.open === 0) ? 'Fully Compliant' : attention > 0 ? `${attention} Docs Issue` : `${counts?.open} Active SOS`}
                 </div>
                 <p className="mt-0.5 text-xs text-muted truncate">

@@ -248,20 +248,20 @@ export default function RoutesPage() {
       {/* Trips & Dispatch Pulse KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-muted uppercase tracking-wider">Total Scheduled Trips</span>
-          <p className="mt-1 text-2xl font-bold tabular text-text">{isLoading ? '–' : totalCount.toLocaleString('en-IN')}</p>
+          <span className="text-xs font-semibold text-muted uppercase ">Total Scheduled Trips</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-text">{isLoading ? '–' : totalCount.toLocaleString('en-IN')}</p>
         </div>
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-info uppercase tracking-wider">Active On Road</span>
-          <p className="mt-1 text-2xl font-bold tabular text-info">{isLoading ? '–' : activeCount.toLocaleString('en-IN')}</p>
+          <span className="text-xs font-semibold text-info uppercase ">Active On Road</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-info">{isLoading ? '–' : activeCount.toLocaleString('en-IN')}</p>
         </div>
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-warning uppercase tracking-wider">To Dispatch</span>
-          <p className="mt-1 text-2xl font-bold tabular text-warning">{isLoading ? '–' : toSendCount.toLocaleString('en-IN')}</p>
+          <span className="text-xs font-semibold text-warning uppercase ">To Dispatch</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-warning">{isLoading ? '–' : toSendCount.toLocaleString('en-IN')}</p>
         </div>
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-success uppercase tracking-wider">Completed</span>
-          <p className="mt-1 text-2xl font-bold tabular text-success">{isLoading ? '–' : completedCount.toLocaleString('en-IN')}</p>
+          <span className="text-xs font-semibold text-success uppercase ">Completed</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-success">{isLoading ? '–' : completedCount.toLocaleString('en-IN')}</p>
         </div>
       </div>
 

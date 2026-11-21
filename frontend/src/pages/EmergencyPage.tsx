@@ -320,17 +320,17 @@ export default function EmergencyPage() {
       {activeAlerts.length > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-card border border-danger/40 bg-danger-soft/20 p-4 shadow-xs">
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-danger-soft text-danger shrink-0">
+            <span className="flex h-10 w-10 items-center justify-center rounded-control bg-danger-soft text-danger shrink-0">
               <ShieldAlert size={20} className="animate-pulse" />
             </span>
             <div>
-              <h2 className="text-sm font-bold text-text">
+              <h2 className="text-sm font-semibold text-text">
                 {activeAlerts.length} Active Emergency {activeAlerts.length === 1 ? 'Dispatch Call' : 'Dispatch Calls'}
               </h2>
               <p className="text-xs text-muted">Acknowledge or contact drivers immediately. Coordinate road assistance or maintenance.</p>
             </div>
           </div>
-          <span className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-danger-soft text-danger text-xs font-bold uppercase tracking-wider">
+          <span className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-danger-soft text-danger text-xs font-semibold uppercase ">
             Immediate Attention
           </span>
         </div>

@@ -341,20 +341,20 @@ export default function ShipmentsPage() {
       {/* Operational Pulse Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-muted uppercase tracking-wider">Total Consignments</span>
-          <p className="mt-1 text-2xl font-bold tabular text-text">{isLoading ? '–' : activeCount.toLocaleString('en-IN')}</p>
+          <span className="text-xs font-semibold text-muted uppercase ">Total shipments</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-text">{isLoading ? '–' : activeCount.toLocaleString('en-IN')}</p>
         </div>
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-info uppercase tracking-wider">In Transit</span>
-          <p className="mt-1 text-2xl font-bold tabular text-info">{isLoading ? '–' : inTransitCount.toLocaleString('en-IN')}</p>
+          <span className="text-xs font-semibold text-info uppercase ">In Transit</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-info">{isLoading ? '–' : inTransitCount.toLocaleString('en-IN')}</p>
         </div>
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-warning uppercase tracking-wider">Awaiting Dispatch</span>
-          <p className="mt-1 text-2xl font-bold tabular text-warning">{isLoading ? '–' : pendingCount.toLocaleString('en-IN')}</p>
+          <span className="text-xs font-semibold text-warning uppercase ">Awaiting Dispatch</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-warning">{isLoading ? '–' : pendingCount.toLocaleString('en-IN')}</p>
         </div>
         <div className="rounded-card border border-border bg-surface p-4 shadow-xs">
-          <span className="text-xs font-semibold text-success uppercase tracking-wider">Delivered</span>
-          <p className="mt-1 text-2xl font-bold tabular text-success">{isLoading ? '–' : deliveredCount.toLocaleString('en-IN')}</p>
+          <span className="text-xs font-semibold text-success uppercase ">Delivered</span>
+          <p className="mt-1 text-2xl font-semibold tabular text-success">{isLoading ? '–' : deliveredCount.toLocaleString('en-IN')}</p>
         </div>
       </div>
 

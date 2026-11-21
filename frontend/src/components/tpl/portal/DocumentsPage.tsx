@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { AlertCircle, Eye, FileText, UploadCloud } from 'lucide-react'
-import { Alert, Button, Card, CardHeader, EmptyState, FileButton, PageHeader, StatusPill, useConfirm } from '@/components/ui'
+import { Button, Card, CardHeader, EmptyState, FileButton, PageHeader, StatusPill, useConfirm } from '@/components/ui'
 import { DocUploadField } from '@/components/kyc/DocUploadField'
 import { tplAPI } from '@/services/api'
 import { openKycDocument } from '@/services/kycDocuments'
@@ -113,8 +113,8 @@ export default function DocumentsPage() {
               return (
                 <div key={category.id} className="space-y-3">
                   <div className="border-b border-border/80 pb-1">
-                    <h4 className="text-xs font-bold uppercase tracking-wide text-text">{category.title}</h4>
-                    <p className="text-[11px] text-muted">{category.subtitle}</p>
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-text">{category.title}</h4>
+                    <p className="text-xs text-muted">{category.subtitle}</p>
                   </div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {categoryMissing.map(docType => {
@@ -138,7 +138,7 @@ export default function DocumentsPage() {
                           <div className="flex items-center justify-between text-xs px-0.5">
                             <span className="font-medium text-text truncate">{spec?.label || docType}</span>
                             {req && (
-                              <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded border ${badgeColor}`}>
+                              <span className={`inline-block px-1.5 py-0.5 text-xs font-semibold rounded border ${badgeColor}`}>
                                 {req.badgeText}
                               </span>
                             )}
@@ -202,7 +202,7 @@ export default function DocumentsPage() {
                     {issue ? (
                       <StatusPill tone="warning" dot={false}>Fix requested</StatusPill>
                     ) : (
-                      <span className="text-[11px] font-semibold text-success flex items-center gap-1 shrink-0">
+                      <span className="text-xs font-semibold text-success flex items-center gap-1 shrink-0">
                         Active
                       </span>
                     )}

@@ -20,7 +20,8 @@ import { TPL_DOCUMENT_TYPES, corridorRateText, rateText, type RateUnit } from '@
 import { GstinStatus } from '@/components/tpl/GstinStatus'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 import { FlagDocumentsModal } from '@/components/admin/FlagDocumentsModal'
-import { FlagDetailsModal, TPL_FIELD_LABELS } from '@/components/admin/FlagDetailsModal'
+import { FlagDetailsModal } from '@/components/admin/FlagDetailsModal'
+import { TPL_FIELD_LABELS } from '@/components/admin/tplFieldLabels'
 import { HistorySection } from '@/components/admin/vendor-review/ReviewSections'
 import { EditTplPartnerModal } from '@/components/tpl/EditTplPartnerModal'
 
@@ -495,7 +496,7 @@ export default function TplPartnerDetailPage() {
                     <div>
                       <span>{partner.company_name}</span>
                       {partner.field_issues?.company_name && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                        <p className="mt-1 flex items-center gap-1 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
                           <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.company_name}
                         </p>
                       )}
@@ -508,7 +509,7 @@ export default function TplPartnerDetailPage() {
                     <div>
                       <span>{partner.contact_name || '—'}</span>
                       {partner.field_issues?.contact_name && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                        <p className="mt-1 flex items-center gap-1 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
                           <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.contact_name}
                         </p>
                       )}
@@ -521,7 +522,7 @@ export default function TplPartnerDetailPage() {
                     <div>
                       <span>{partner.phone || '—'}</span>
                       {partner.field_issues?.phone && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                        <p className="mt-1 flex items-center gap-1 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
                           <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.phone}
                         </p>
                       )}
@@ -534,7 +535,7 @@ export default function TplPartnerDetailPage() {
                     <div>
                       {partner.pan_number ? <span className="font-mono">{partner.pan_number}</span> : '—'}
                       {partner.field_issues?.pan_number && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                        <p className="mt-1 flex items-center gap-1 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
                           <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.pan_number}
                         </p>
                       )}
@@ -553,7 +554,7 @@ export default function TplPartnerDetailPage() {
                         </div>
                       ) : '—'}
                       {partner.field_issues?.gstin && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                        <p className="mt-1 flex items-center gap-1 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
                           <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.gstin}
                         </p>
                       )}
@@ -566,7 +567,7 @@ export default function TplPartnerDetailPage() {
                     <div>
                       <span>{partner.entity_type || '—'}</span>
                       {partner.field_issues?.entity_type && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                        <p className="mt-1 flex items-center gap-1 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
                           <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.entity_type}
                         </p>
                       )}
@@ -579,7 +580,7 @@ export default function TplPartnerDetailPage() {
                     <div>
                       {partner.cin ? <span className="font-mono">{partner.cin}</span> : '—'}
                       {partner.field_issues?.cin && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                        <p className="mt-1 flex items-center gap-1 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
                           <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.cin}
                         </p>
                       )}
@@ -592,7 +593,7 @@ export default function TplPartnerDetailPage() {
                     <div>
                       <span>{partner.authorized_signatory_name || '—'}</span>
                       {partner.field_issues?.authorized_signatory_name && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                        <p className="mt-1 flex items-center gap-1 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
                           <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.authorized_signatory_name}
                         </p>
                       )}
@@ -607,7 +608,7 @@ export default function TplPartnerDetailPage() {
                     <div>
                       {partner.bank_account_no ? <span className="font-mono">{partner.bank_account_no}</span> : '—'}
                       {partner.field_issues?.bank_account_no && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                        <p className="mt-1 flex items-center gap-1 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
                           <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.bank_account_no}
                         </p>
                       )}
@@ -624,7 +625,7 @@ export default function TplPartnerDetailPage() {
                         </div>
                       ) : '—'}
                       {partner.field_issues?.bank_ifsc && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
+                        <p className="mt-1 flex items-center gap-1 text-xs text-warning bg-warning/10 px-2 py-0.5 rounded font-medium">
                           <StatusPill tone="warning" dot={false}>Fix requested</StatusPill> {partner.field_issues.bank_ifsc}
                         </p>
                       )}
@@ -636,11 +637,11 @@ export default function TplPartnerDetailPage() {
             />
             <div className="mt-6 border-t border-border pt-4">
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+                <p className="text-xs font-semibold uppercase  text-muted">
                   Uploaded documents ({uniqueDocuments.length})
                 </p>
                 {partner.tpl_documents && partner.tpl_documents.length > uniqueDocuments.length && (
-                  <span className="text-[11px] font-semibold text-warning bg-warning/10 px-2.5 py-0.5 rounded-full border border-warning/20">
+                  <span className="text-xs font-semibold text-warning bg-warning/10 px-2.5 py-0.5 rounded-full border border-warning/20">
                     Duplicates cleaned from view
                   </span>
                 )}

@@ -131,7 +131,7 @@ export default function VendorInvoicesPage() {
 
   return (
     <Page>
-      <PageHeader title="Invoices & Proof of Delivery" description="Invoices issued on delivery, linked directly to consignment waybills, POD signatures, and payment settlement records.">
+      <PageHeader title="Invoices & Proof of Delivery" description="Invoices issued on delivery, linked directly to shipment waybills, POD signatures, and payment settlement records.">
         <div className="flex flex-wrap items-center gap-3">
           <SearchInput value={search} onChange={setSearch} placeholder="Search by invoice or load" className="w-full sm:max-w-sm" />
           {search && (

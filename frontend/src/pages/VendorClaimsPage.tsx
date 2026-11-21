@@ -125,7 +125,7 @@ export default function VendorClaimsPage() {
     <Page>
       <PageHeader
         title="Cargo Claims & Insurance"
-        description="Formal claims for transit shortages, wet or damaged consignments, and surveyor settlements. Claims must be raised within 7 days of delivery."
+        description="Formal claims for transit shortages, wet or damaged shipments, and surveyor settlements. Claims must be raised within 7 days of delivery."
         actions={<Button icon={<Plus size={16} />} disabled={claimable.length === 0} onClick={() => setRaising(true)}>Raise a claim</Button>}
       />
 

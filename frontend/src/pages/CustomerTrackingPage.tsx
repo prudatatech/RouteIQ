@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Activity, ArrowRight, CheckCircle2, Clock, HelpCircle, Lock,
+  Activity, ArrowRight, Clock, Lock,
   MapPin, Phone, Radio, Search, ShieldCheck, Sparkles, Truck, X
 } from 'lucide-react'
 import { shipmentsAPI } from '@/services/api'
@@ -57,7 +57,7 @@ export default function CustomerTrackingPage() {
   return (
     <div className="min-h-screen bg-bg text-text flex flex-col selection:bg-brand-soft selection:text-brand">
       {/* Top Floating Glassmorphic Navbar */}
-      <header className="sticky top-0 z-40 border-b border-border/80 bg-surface/90 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-border/80 bg-surface/90 ">
         <div className="mx-auto flex h-16 w-full max-w-content items-center justify-between gap-4 px-4 sm:px-6">
           <Link
             to="/"
@@ -67,20 +67,20 @@ export default function CustomerTrackingPage() {
               <img src="/margix-logo.png" alt="" className="h-full w-full object-contain" />
             </div>
             <div className="flex flex-col">
-              <span className="text-lg font-extrabold tracking-tight text-text leading-tight">
+              <span className="text-lg font-semibold tracking-tight text-text leading-tight">
                 Margix<span className="text-brand">India</span>
               </span>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted -mt-0.5">
+              <span className="text-xs font-semibold uppercase  text-muted -mt-0.5">
                 RouteIQ Telemetry
               </span>
             </div>
           </Link>
 
           {/* Telemetry Status Indicator */}
-          <div className="hidden md:flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+          <div className="hidden md:flex items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1 text-xs font-semibold text-success dark:text-success">
             <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
             </span>
             Highway GPS Active • Sub-minute updates
           </div>
@@ -96,7 +96,7 @@ export default function CustomerTrackingPage() {
               to="/login"
               className={clsx(
                 buttonClasses({ variant: 'ghost', size: 'sm' }),
-                'text-xs font-bold border border-border/80 hover:border-brand/40 shadow-xs'
+                'text-xs font-semibold border border-border/80 hover:border-brand/40 shadow-xs'
               )}
             >
               Staff Portal
@@ -107,18 +107,18 @@ export default function CustomerTrackingPage() {
 
       <main className="mx-auto w-full max-w-content flex-1 space-y-8 px-4 py-8 sm:px-6 sm:py-12">
         {/* Hero Search Section */}
-        <div className="relative overflow-hidden rounded-3xl border border-border/80 bg-gradient-to-b from-surface via-surface to-surface-subtle p-6 sm:p-10 shadow-raised">
+        <div className="relative overflow-hidden rounded-card border border-border/80 bg-surface p-6 sm:p-10 shadow-raised">
           {/* Subtle decorative mesh glow */}
           <div className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-brand/10 blur-3xl" />
-          <div className="pointer-events-none absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-emerald-500/10 blur-3xl" />
+          <div className="pointer-events-none absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-success/10 blur-3xl" />
 
           <div className="relative z-10 max-w-3xl space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-brand/20 bg-brand-soft px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-brand shadow-xs">
+            <div className="inline-flex items-center gap-2 rounded-full border border-brand/20 bg-brand-soft px-3.5 py-1 text-xs font-semibold uppercase  text-brand shadow-xs">
               <Radio size={13} className="animate-pulse" /> Live Highway Telemetry
             </div>
 
-            <h1 className="text-2xl font-black tracking-tight text-text sm:text-4xl lg:text-5xl">
-              Track Consignment & Freight <span className="text-brand">Live</span>
+            <h1 className="text-2xl font-semibold tracking-tight text-text sm:text-3xl lg:text-5xl">
+              Track Shipment & Freight <span className="text-brand">Live</span>
             </h1>
 
             <p className="text-sm text-muted sm:text-base leading-relaxed max-w-2xl">
@@ -167,9 +167,9 @@ export default function CustomerTrackingPage() {
                   type="submit"
                   size="lg"
                   disabled={!searchId.trim()}
-                  className="h-12 px-7 text-sm font-bold tracking-wide justify-center shrink-0 rounded-xl sm:rounded-full shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99]"
+                  className="h-12 px-7 text-sm font-semibold tracking-wide justify-center shrink-0 rounded-control sm:rounded-full shadow-xs transition-all hover:scale-[1.01] active:scale-[0.99]"
                 >
-                  Track Consignment <ArrowRight size={16} className="ml-1.5" />
+                  Track shipment <ArrowRight size={16} className="ml-1.5" />
                 </Button>
               </div>
             </form>
@@ -197,7 +197,7 @@ export default function CustomerTrackingPage() {
             {/* Value Props Strip */}
             <div className="grid grid-cols-2 gap-3 pt-4 sm:grid-cols-4 border-t border-border/80">
               <div className="flex items-center gap-2 text-xs font-medium text-muted">
-                <Activity size={15} className="text-emerald-500 shrink-0" />
+                <Activity size={15} className="text-success shrink-0" />
                 <span>Live Highway Radar</span>
               </div>
               <div className="flex items-center gap-2 text-xs font-medium text-muted">
@@ -205,11 +205,11 @@ export default function CustomerTrackingPage() {
                 <span>Electronic POD Verified</span>
               </div>
               <div className="flex items-center gap-2 text-xs font-medium text-muted">
-                <Clock size={15} className="text-amber-500 shrink-0" />
+                <Clock size={15} className="text-warning shrink-0" />
                 <span>Dynamic Traffic ETA</span>
               </div>
               <div className="flex items-center gap-2 text-xs font-medium text-muted">
-                <Lock size={15} className="text-indigo-500 shrink-0" />
+                <Lock size={15} className="text-info shrink-0" />
                 <span>No Sign-in Required</span>
               </div>
             </div>
@@ -231,32 +231,32 @@ export default function CustomerTrackingPage() {
           /* Empty Initial State: Explanation of Highway Tracking */
           <div className="grid gap-6 md:grid-cols-3 pt-4">
             <div className="rounded-2xl border border-border bg-surface p-6 shadow-xs transition-all hover:border-brand/40 hover:shadow-raised">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-soft text-brand mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-control bg-brand-soft text-brand mb-4">
                 <Truck size={24} />
               </div>
-              <h2 className="text-base font-bold text-text mb-1">1. Highway Telemetry</h2>
+              <h2 className="text-base font-semibold text-text mb-1">1. Highway Telemetry</h2>
               <p className="text-xs text-muted leading-relaxed">
                 Every vehicle transmits continuous GPS pings, road speed, and heading directly to the control room, updating your map without page refreshes.
               </p>
             </div>
 
             <div className="rounded-2xl border border-border bg-surface p-6 shadow-xs transition-all hover:border-brand/40 hover:shadow-raised">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-control bg-success/10 text-success dark:text-success mb-4">
                 <MapPin size={24} />
               </div>
-              <h2 className="text-base font-bold text-text mb-1">2. Corridor Waypoints</h2>
+              <h2 className="text-base font-semibold text-text mb-1">2. Corridor Waypoints</h2>
               <p className="text-xs text-muted leading-relaxed">
                 Follow milestone progress across major national highways, cross-dock transit hubs, and toll checkpoints right up to destination arrival.
               </p>
             </div>
 
             <div className="rounded-2xl border border-border bg-surface p-6 shadow-xs transition-all hover:border-brand/40 hover:shadow-raised">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-control bg-info/10 text-info dark:text-info mb-4">
                 <ShieldCheck size={24} />
               </div>
-              <h2 className="text-base font-bold text-text mb-1">3. Proof of Delivery</h2>
+              <h2 className="text-base font-semibold text-text mb-1">3. Proof of Delivery</h2>
               <p className="text-xs text-muted leading-relaxed">
-                Upon delivery, access receiver sign-off records, photo verification of packages, and official timestamped consignment manifests.
+                Upon delivery, access receiver sign-off records, photo verification of packages, and official timestamped shipment records.
               </p>
             </div>
           </div>

@@ -99,10 +99,10 @@ export default function LiveMapPage() {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold tracking-tight text-text">Live Fleet Map</h1>
+                <h1 className="text-lg font-semibold tracking-tight text-text">Live Fleet Map</h1>
                 {liveCount > 0 && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> {liveCount} Live
+                  <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-xs font-semibold text-success dark:text-success">
+                    <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" /> {liveCount} Live
                   </span>
                 )}
               </div>
@@ -168,8 +168,8 @@ export default function LiveMapPage() {
                       <div className="flex items-center gap-2.5 min-w-0">
                         {live ? (
                           <span className="relative flex h-2.5 w-2.5 shrink-0" title="Transmitting live telemetry">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-success" />
                           </span>
                         ) : (
                           <span className="h-2 w-2 shrink-0 rounded-full bg-muted/40" title="Stationary or offline" />

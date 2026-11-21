@@ -246,16 +246,16 @@ export default function VendorShipmentRequestPage() {
 
       <div className="flex items-center justify-between text-xs text-muted pt-1">
         <span className="flex items-center gap-1.5 font-medium">
-          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
           Draft saved automatically
         </span>
-        <span className="text-[11px] font-semibold text-brand">Zero broker margin</span>
+        <span className="text-xs font-semibold text-brand">Zero broker margin</span>
       </div>
 
       <FormStepper step={step} onGo={goTo} />
 
       <section aria-labelledby="step-title" className="space-y-4" ref={formRoot}>
-        <h2 id="step-title" className="scroll-mt-24 text-lg font-bold text-text">{STEP_LABELS[step]}</h2>
+        <h2 id="step-title" className="scroll-mt-24 text-lg font-semibold text-text">{STEP_LABELS[step]}</h2>
 
         {step === 0 && (
           <AddressStep

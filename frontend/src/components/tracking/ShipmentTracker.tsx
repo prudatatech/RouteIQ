@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Activity, ArrowRight, Box, Check, CheckCircle2, Clock, Copy, CornerDownRight,
-  FileText, MapPin, Navigation, Package, PackageCheck, Printer, Radio, Share2,
-  ShieldAlert, ShieldCheck, Truck, UserCheck, Zap
+  Activity, ArrowRight, Box, Check, CheckCircle2, Clock, Copy, 
+  MapPin, Navigation, Package, PackageCheck, Printer, Share2,
+  ShieldAlert, ShieldCheck, Truck, UserCheck, 
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { Card, DetailList } from '@/components/ui/Card'
+import { DetailList } from '@/components/ui/Card'
 import { StatusPill } from '@/components/ui/StatusPill'
-import { Button } from '@/components/ui/Button'
+import { } from '@/components/ui/Button'
 import { EmptyState, ErrorState, Skeleton } from '@/components/ui/States'
 import { Timeline } from '@/components/ui/Timeline'
 import { MapView, type MapPoint, type MapVehicle } from '@/components/map'
 import { fetchTrackedRoute, type DrivingRoute } from '@/components/map/directions'
-import { formatKg, formatMinutes, formatDateTime, formatPieces, formatRelative } from '@/utils/display'
+import { formatKg, formatMinutes, formatDateTime, formatPieces, } from '@/utils/display'
 import { formatAddress } from '@/utils/address'
 import {
   isPartlyDelivered, lotIsDone, lotLine, partDeliveredStep, partDeliveredText,
@@ -132,9 +132,9 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
   if (isLoading) {
     return (
       <div className={clsx('space-y-6', className)}>
-        <div className="rounded-3xl border border-border bg-surface p-6 sm:p-8 space-y-6 shadow-xs animate-pulse">
+        <div className="rounded-card border border-border bg-surface p-6 sm:p-8 space-y-6 shadow-xs animate-pulse">
           <div className="flex items-center justify-between">
-            <Skeleton className="h-9 w-64 rounded-xl" />
+            <Skeleton className="h-9 w-64 rounded-control" />
             <Skeleton className="h-8 w-28 rounded-full" />
           </div>
           <Skeleton className="h-24 w-full rounded-2xl" />
@@ -151,7 +151,7 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
 
   if (error) {
     return (
-      <div className={clsx('rounded-3xl border border-border bg-surface p-6 sm:p-8 shadow-xs', className)}>
+      <div className={clsx('rounded-card border border-border bg-surface p-6 sm:p-8 shadow-xs', className)}>
         <ErrorState title="We could not load this shipment" description={error} onRetry={onRetry} />
       </div>
     )
@@ -159,11 +159,11 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
 
   if (!shipment) {
     return (
-      <div className={clsx('rounded-3xl border border-border bg-surface p-6 sm:p-8 shadow-xs text-center', className)}>
+      <div className={clsx('rounded-card border border-border bg-surface p-6 sm:p-8 shadow-xs text-center', className)}>
         <EmptyState
           icon={<MapPin size={24} className="text-brand" />}
           title={trackingId ? `No shipment found for "${trackingId}"` : 'No shipment found'}
-          description="Check the consignment code for typos. Consignments begin with RTX- or CM-LOAD. If you were sent a link, please request a refreshed code from your dispatcher."
+          description="Check the tracking code for typos. Tracking codes begin with RTX- or CM-LOAD. If you were sent a link, please request a refreshed code from your dispatcher."
         />
       </div>
     )
@@ -244,20 +244,20 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
   return (
     <div className={clsx('space-y-6', className)}>
       {/* Consignment Master Hero Card */}
-      <div className="overflow-hidden rounded-3xl border border-border/80 bg-surface shadow-raised">
+      <div className="overflow-hidden rounded-card border border-border/80 bg-surface shadow-raised">
         {/* Top Header Banner */}
         <div className="border-b border-border/80 bg-surface-subtle/50 p-6 sm:p-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-muted">Consignment Waybill</span>
+                <span className="text-xs font-semibold uppercase  text-muted">Shipment waybill</span>
                 <span className="h-1.5 w-1.5 rounded-full bg-border" />
                 <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-brand">
                   <Activity size={12} className="animate-pulse" /> Verified
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-3">
-                <h2 className="font-mono text-2xl sm:text-3xl font-black tracking-tight text-text">
+                <h2 className="font-mono text-2xl sm:text-3xl font-semibold tracking-tight text-text">
                   {shipment.tracking_id}
                 </h2>
                 <button
@@ -266,7 +266,7 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
                   title="Copy Tracking ID"
                   className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-semibold text-muted transition-all hover:border-brand/40 hover:bg-surface-subtle hover:text-text shadow-xs active:scale-95"
                 >
-                  {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                  {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
                   <span>{copied ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
@@ -277,14 +277,14 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
               <button
                 type="button"
                 onClick={handleShare}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-xs font-bold text-muted transition-all hover:border-brand/40 hover:bg-surface-subtle hover:text-text shadow-xs active:scale-95"
+                className="inline-flex items-center gap-1.5 rounded-control border border-border bg-surface px-3 py-2 text-xs font-semibold text-muted transition-all hover:border-brand/40 hover:bg-surface-subtle hover:text-text shadow-xs active:scale-95"
               >
                 <Share2 size={14} /> Share
               </button>
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-xs font-bold text-muted transition-all hover:border-brand/40 hover:bg-surface-subtle hover:text-text shadow-xs active:scale-95"
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-control border border-border bg-surface px-3 py-2 text-xs font-semibold text-muted transition-all hover:border-brand/40 hover:bg-surface-subtle hover:text-text shadow-xs active:scale-95"
               >
                 <Printer size={14} /> Print
               </button>
@@ -302,16 +302,16 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
           </div>
 
           {failed && (
-            <div className="mt-4 rounded-xl border border-danger/30 bg-danger-soft p-3 text-xs sm:text-sm font-medium text-danger flex items-center gap-2">
+            <div className="mt-4 rounded-control border border-danger/30 bg-danger-soft p-3 text-xs sm:text-sm font-medium text-danger flex items-center gap-2">
               <ShieldAlert size={16} className="shrink-0" />
               <span>A delivery attempt was not completed. The carrier dispatch team has scheduled automatic resolution.</span>
             </div>
           )}
 
           {partly && (
-            <div className="mt-4 rounded-xl border border-brand/30 bg-brand-soft p-3 text-xs sm:text-sm font-medium text-brand flex items-center gap-2">
+            <div className="mt-4 rounded-control border border-brand/30 bg-brand-soft p-3 text-xs sm:text-sm font-medium text-brand flex items-center gap-2">
               <PackageCheck size={16} className="shrink-0" />
-              <span>{partDeliveredText(lots)}. Remaining consignments are actively in highway transit.</span>
+              <span>{partDeliveredText(lots)}. Remaining shipments are actively in highway transit.</span>
             </div>
           )}
         </div>
@@ -320,7 +320,7 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
         {!cancelled ? (
           <div className="p-6 sm:p-8 bg-surface">
             <div className="relative">
-              <ol className="grid grid-cols-2 gap-4 sm:grid-cols-5" aria-label="Consignment Delivery Milestones">
+              <ol className="grid grid-cols-2 gap-4 sm:grid-cols-5" aria-label="Shipment delivery milestones">
                 {STEPS.map((step, i) => {
                   const isDone = i < currentStepIdx
                   const active = i === currentStepIdx
@@ -336,7 +336,7 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
                             active
                               ? 'border-brand bg-brand text-on-brand shadow-raised ring-4 ring-brand/20 scale-105'
                               : isDone
-                              ? 'border-emerald-500 bg-emerald-500 text-white'
+                              ? 'border-success bg-success text-white'
                               : 'border-border bg-surface-subtle text-muted'
                           )}
                         >
@@ -353,17 +353,17 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
                       <div className="mt-3 space-y-0.5">
                         <p
                           className={clsx(
-                            'text-xs font-bold tracking-tight',
+                            'text-xs font-semibold tracking-tight',
                             active ? 'text-brand' : isDone ? 'text-text' : 'text-muted'
                           )}
                         >
                           {step.label}
                         </p>
                         {milestoneTime && (
-                          <p className="text-[11px] text-muted font-medium">{milestoneTime}</p>
+                          <p className="text-xs text-muted font-medium">{milestoneTime}</p>
                         )}
                         {active && !milestoneTime && inProgress && (
-                          <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-brand">
+                          <span className="inline-block text-xs font-semibold uppercase  text-brand">
                             In Progress
                           </span>
                         )}
@@ -386,10 +386,10 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
         {/* Card 1: ETA & Time to Arrival */}
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-xs transition-all hover:border-brand/40 hover:shadow-raised">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-muted uppercase tracking-wider">Estimated Arrival</span>
+            <span className="text-xs font-semibold text-muted uppercase ">Estimated Arrival</span>
             <Clock size={16} className="text-brand shrink-0" />
           </div>
-          <div className="mt-2 text-xl font-black text-text">
+          <div className="mt-2 text-lg font-semibold text-text">
             {delivered
               ? 'Delivered Safely'
               : cancelled
@@ -414,10 +414,10 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
         {/* Card 2: Assigned Vehicle & Plate */}
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-xs transition-all hover:border-brand/40 hover:shadow-raised">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-muted uppercase tracking-wider">Assigned Truck</span>
-            <Truck size={16} className="text-emerald-500 shrink-0" />
+            <span className="text-xs font-semibold text-muted uppercase ">Assigned Truck</span>
+            <Truck size={16} className="text-success shrink-0" />
           </div>
-          <div className="mt-2 font-mono text-xl font-black text-text tracking-wide truncate">
+          <div className="mt-2 font-mono text-lg font-semibold text-text tracking-wide truncate">
             {shipment.vehicle?.plate_number || 'Pending'}
           </div>
           <p className="mt-1 text-xs text-muted truncate">
@@ -428,10 +428,10 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
         {/* Card 3: Payload & Weight */}
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-xs transition-all hover:border-brand/40 hover:shadow-raised">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-muted uppercase tracking-wider">Consignment Load</span>
-            <Package size={16} className="text-amber-500 shrink-0" />
+            <span className="text-xs font-semibold text-muted uppercase ">Shipment load</span>
+            <Package size={16} className="text-warning shrink-0" />
           </div>
-          <div className="mt-2 text-xl font-black text-text">
+          <div className="mt-2 text-lg font-semibold text-text">
             {shipment.total_weight_kg ? formatKg(shipment.total_weight_kg) : 'Standard Load'}
           </div>
           <p className="mt-1 text-xs text-muted truncate">
@@ -442,10 +442,10 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
         {/* Card 4: Electronic Proof of Delivery */}
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-xs transition-all hover:border-brand/40 hover:shadow-raised">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-muted uppercase tracking-wider">EPOD Custody</span>
-            <ShieldCheck size={16} className="text-indigo-500 shrink-0" />
+            <span className="text-xs font-semibold text-muted uppercase ">EPOD Custody</span>
+            <ShieldCheck size={16} className="text-info shrink-0" />
           </div>
-          <div className="mt-2 text-xl font-black text-text truncate">
+          <div className="mt-2 text-lg font-semibold text-text truncate">
             {delivered ? 'Verified' : 'In Custody'}
           </div>
           <p className="mt-1 text-xs text-muted truncate">
@@ -458,15 +458,15 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
       <div className="grid gap-6 lg:grid-cols-12">
         {/* Left: Interactive Highway Map View */}
         <div className="lg:col-span-7 space-y-4">
-          <div className="relative overflow-hidden rounded-3xl border border-border bg-surface shadow-raised">
+          <div className="relative overflow-hidden rounded-card border border-border bg-surface shadow-raised">
             {/* Map Header Overlay Bar */}
-            <div className="flex items-center justify-between border-b border-border bg-surface/90 px-4 py-3 backdrop-blur-sm">
+            <div className="flex items-center justify-between border-b border-border bg-surface/90 px-4 py-3 ">
               <div className="flex items-center gap-2">
                 <span className="relative flex h-2.5 w-2.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-success" />
                 </span>
-                <span className="text-xs font-bold tracking-tight text-text">Live Highway Radar</span>
+                <span className="text-xs font-semibold tracking-tight text-text">Live Highway Radar</span>
               </div>
               {shipment.vehicle?.plate_number && (
                 <span className="font-mono text-xs font-semibold text-muted">
@@ -490,8 +490,8 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
 
         {/* Right: Waypoint Journey Details & Split Lots */}
         <div className="lg:col-span-5 space-y-6">
-          <div className="rounded-3xl border border-border bg-surface p-6 shadow-raised space-y-6">
-            <h3 className="text-base font-bold text-text flex items-center gap-2">
+          <div className="rounded-card border border-border bg-surface p-6 shadow-raised space-y-6">
+            <h3 className="text-base font-semibold text-text flex items-center gap-2">
               <Navigation size={18} className="text-brand" /> Waypoint Corridor
             </h3>
 
@@ -499,12 +499,12 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
             <div className="space-y-6 relative pl-2">
               {/* Origin Point */}
               <div className="flex items-start gap-3 relative">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand shadow-xs">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-brand-soft text-brand shadow-xs">
                   <Box size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted">Origin Depot</span>
-                  <p className="font-bold text-text text-sm leading-tight mt-0.5">
+                  <span className="text-xs font-semibold uppercase  text-muted">Origin Depot</span>
+                  <p className="font-semibold text-text text-sm leading-tight mt-0.5">
                     {shipment.origin_name || 'Origin Hub'}
                   </p>
                   {shipment.origin_address && (
@@ -518,12 +518,12 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
 
               {/* Destination Point */}
               <div className="flex items-start gap-3 relative">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shadow-xs">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-success/10 text-success dark:text-success shadow-xs">
                   <MapPin size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted">Destination Drop</span>
-                  <p className="font-bold text-text text-sm leading-tight mt-0.5">
+                  <span className="text-xs font-semibold uppercase  text-muted">Destination Drop</span>
+                  <p className="font-semibold text-text text-sm leading-tight mt-0.5">
                     {shipment.destination?.name || (isSplit ? splitDestination(shipment.drops, lots, formatAddress) : 'Consignee')}
                   </p>
                   {shipment.destination?.address && (
@@ -549,23 +549,23 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
 
           {/* Split Lots Card (If Multi-lot consignment) */}
           {isSplit && (
-            <div className="rounded-3xl border border-border bg-surface p-6 shadow-raised space-y-4">
+            <div className="rounded-card border border-border bg-surface p-6 shadow-raised space-y-4">
               <div className="flex items-center justify-between">
-                <h4 className="text-sm font-bold text-text flex items-center gap-2">
-                  <PackageCheck size={16} className="text-brand" /> Split Consignment Lots
+                <h4 className="text-sm font-semibold text-text flex items-center gap-2">
+                  <PackageCheck size={16} className="text-brand" /> Split shipment lots
                 </h4>
-                <span className="text-xs font-bold text-brand">
+                <span className="text-xs font-semibold text-brand">
                   {lotsDone} of {lots.length} Delivered
                 </span>
               </div>
 
-              <ul className="divide-y divide-border rounded-xl border border-border overflow-hidden">
+              <ul className="divide-y divide-border rounded-control border border-border overflow-hidden">
                 {lots.map(l => (
                   <li key={l.tracking_id} className="p-3 bg-surface hover:bg-surface-subtle transition-colors flex items-center justify-between gap-3 text-xs">
                     <div>
-                      <p className="font-bold text-text">{lotLine(l)}</p>
+                      <p className="font-semibold text-text">{lotLine(l)}</p>
                       {l.vehicle?.plate_number && (
-                        <p className="text-[11px] text-muted">Truck {l.vehicle.plate_number}</p>
+                        <p className="text-xs text-muted">Truck {l.vehicle.plate_number}</p>
                       )}
                     </div>
                     <span className="font-mono text-xs text-muted font-semibold">{l.tracking_id}</span>
@@ -579,9 +579,9 @@ export function ShipmentTracker({ shipment, trackingId, isLoading, error, onRetr
 
       {/* Milestone Event History Stream */}
       {history.length > 0 && (
-        <div className="rounded-3xl border border-border bg-surface p-6 sm:p-8 shadow-raised space-y-6">
+        <div className="rounded-card border border-border bg-surface p-6 sm:p-8 shadow-raised space-y-6">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-text flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-text flex items-center gap-2">
               <Activity size={20} className="text-brand" /> Verified Milestone History
             </h3>
             <span className="text-xs text-muted font-medium">Automatic Highway Audit</span>

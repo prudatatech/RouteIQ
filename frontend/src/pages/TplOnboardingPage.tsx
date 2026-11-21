@@ -1,9 +1,9 @@
 import { useState, useEffect, type FormEvent } from 'react'
-import { Page, Card, Input, Button, Select, Alert, Stepper, IfscField } from '@/components/ui'
+import { Card, Input, Button, Select, Alert, Stepper, IfscField } from '@/components/ui'
 import {
   CheckCircle2, ChevronLeft, ChevronRight, Truck, Blocks, Zap, ShieldCheck,
-  Landmark, FileText, Building, Phone, Mail, Clock, Headphones, Award, Check,
-  ExternalLink, Sparkles
+  Landmark, FileText, Building, Phone, Mail, Clock, Headphones, Award, 
+  Sparkles
 } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
@@ -22,7 +22,7 @@ import { getKycDocumentUrl } from '@/services/kycDocuments'
 import { ENTITY_TYPE_OPTIONS, entityTypeRequiresCin, isCinFormat } from '@/utils/entityType'
 import { gstinError } from '@/utils/gstin'
 import { validatePanFormat, validateGstinFormat } from '@/utils/taxValidation'
-import { TPL_DOCUMENT_TYPES, TPL_MSME_OPTIONS, TPL_DOC_CATEGORIES, TPL_DOCUMENT_SPECS, type TplDocType } from '@/components/tpl/constants'
+import { TPL_DOCUMENT_TYPES, TPL_MSME_OPTIONS, TPL_DOC_CATEGORIES, TPL_DOCUMENT_SPECS } from '@/components/tpl/constants'
 
 const QUICK_STEPS = [
   'Contact Details',
@@ -38,15 +38,6 @@ const FULL_STEPS = [
   'KYC Documents',
   'Review',
 ]
-
-const STEP_DESCRIPTIONS: Record<string, string> = {
-  'Contact Details': 'Primary contact, operating base & speed',
-  'Fleet Details': 'Fleet scale & vehicle carrying capacity',
-  'Business & Identity': 'Entity type, PAN card & GSTIN verification',
-  'Bank Details': 'Bank account for freight payouts & settlements',
-  'KYC Documents': 'Upload verified company & compliance scans',
-  'Review': 'Confirm application details before submission',
-}
 
 const MIN_PASSWORD_LENGTH = 8
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -495,17 +486,17 @@ export default function TplOnboardingPage() {
 
   // Common Header for unauthenticated and authenticated onboarding views
   const renderTopNavbar = () => (
-    <header className="border-b border-border bg-surface/95 backdrop-blur-md sticky top-0 z-40">
+    <header className="border-b border-border bg-surface/95  sticky top-0 z-40">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-3">
           <Link to="/" className="flex items-center gap-2.5 rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
             <img src="/margix-logo.png" alt="Margix" className="h-8 w-8 object-contain" />
-            <span className="text-lg font-bold tracking-tight text-text">
+            <span className="text-lg font-semibold tracking-tight text-text">
               Margix<span className="text-brand">India</span>
             </span>
           </Link>
           <div className="hidden h-5 w-px bg-border sm:block" />
-          <span className="hidden text-xs font-semibold uppercase tracking-wider text-muted sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface-subtle border border-border">
+          <span className="hidden text-xs font-semibold uppercase  text-muted sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface-subtle border border-border">
             <Truck size={12} className="text-brand" /> 3PL Carrier Partner Network
           </span>
         </div>
@@ -556,7 +547,7 @@ export default function TplOnboardingPage() {
               </div>
 
               <div className="space-y-3">
-                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-text leading-[1.15]">
+                <h1 className="text-3xl sm:text-3xl lg:text-5xl font-semibold tracking-tight text-text leading-[1.15]">
                   Drive High-Margin Loads. Get Paid <span className="text-brand">On Time</span>.
                 </h1>
                 <p className="text-base sm:text-lg text-muted leading-relaxed max-w-xl">
@@ -602,7 +593,7 @@ export default function TplOnboardingPage() {
                     <span>24/7 Dispatch Control</span>
                   </div>
                   <p className="text-xs text-muted leading-relaxed">
-                    Live operational coordinators assist your drivers through every route and checkpost.
+                    Live operational coordinators assist your drivers through every trip and checkpost.
                   </p>
                 </div>
               </div>
@@ -628,7 +619,7 @@ export default function TplOnboardingPage() {
             <div className="lg:col-span-5">
               <Card padded className="p-6 sm:p-8 shadow-raised border border-border bg-surface rounded-card">
                 <div className="mb-6 space-y-1">
-                  <h2 className="text-xl font-bold text-text">Start Partner Application</h2>
+                  <h2 className="text-lg font-semibold text-text">Start Partner Application</h2>
                   <p className="text-xs text-muted">
                     Create or connect your account to submit your fleet details.
                   </p>
@@ -652,7 +643,7 @@ export default function TplOnboardingPage() {
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-border" />
                   </div>
-                  <span className="relative bg-surface px-3 text-xs uppercase tracking-wider text-muted font-medium">
+                  <span className="relative bg-surface px-3 text-xs uppercase  text-muted font-medium">
                     or with work email
                   </span>
                 </div>
@@ -721,7 +712,7 @@ export default function TplOnboardingPage() {
             </div>
 
             <div className="space-y-2">
-              <h2 className="text-2xl font-bold text-text">Application Submitted!</h2>
+              <h2 className="text-2xl font-semibold text-text">Application Submitted!</h2>
               <p className="text-sm text-muted leading-relaxed">
                 {onboardingMode === 'full'
                   ? 'Your company profile, bank payout details, and KYC compliance documents have been sent to our dispatch operations team for verification.'
@@ -781,10 +772,10 @@ export default function TplOnboardingPage() {
                 {/* Form Step Header */}
                 <div className="flex items-center justify-between border-b border-border pb-5 mb-7">
                   <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-brand block mb-1">
+                    <span className="text-xs font-semibold uppercase  text-brand block mb-1">
                       Step {step + 1} of {steps.length}
                     </span>
-                    <h2 className="text-2xl font-bold tracking-tight text-text">
+                    <h2 className="text-2xl font-semibold tracking-tight text-text">
                       {steps[step]}
                     </h2>
                   </div>
@@ -797,7 +788,7 @@ export default function TplOnboardingPage() {
                 {step === 0 && (
                   <div className="space-y-7">
                     <div>
-                      <label className="text-xs font-bold uppercase tracking-wider text-muted mb-3 block">
+                      <label className="text-xs font-semibold uppercase  text-muted mb-3 block">
                         Choose Onboarding Speed
                       </label>
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -812,11 +803,11 @@ export default function TplOnboardingPage() {
                           )}
                         >
                           <div className="flex items-center justify-between w-full mb-1.5">
-                            <div className="flex items-center gap-1.5 font-bold text-sm text-text">
+                            <div className="flex items-center gap-1.5 font-semibold text-sm text-text">
                               <Zap size={16} className="text-brand" />
                               <span>Quick Onboard (2 mins)</span>
                             </div>
-                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-brand-soft text-brand">
+                            <span className="text-xs font-semibold uppercase px-2 py-0.5 rounded-full bg-brand-soft text-brand">
                               Fastest
                             </span>
                           </div>
@@ -843,11 +834,11 @@ export default function TplOnboardingPage() {
                           )}
                         >
                           <div className="flex items-center justify-between w-full mb-1.5">
-                            <div className="flex items-center gap-1.5 font-bold text-sm text-text">
+                            <div className="flex items-center gap-1.5 font-semibold text-sm text-text">
                               <ShieldCheck size={16} className="text-brand" />
                               <span>Complete Self-Onboarding</span>
                             </div>
-                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-surface-subtle text-muted border border-border">
+                            <span className="text-xs font-semibold uppercase px-2 py-0.5 rounded-full bg-surface-subtle text-muted border border-border">
                               Direct Approval
                             </span>
                           </div>
@@ -947,7 +938,7 @@ export default function TplOnboardingPage() {
                 {step === 1 && (
                   <div className="space-y-7">
                     <div>
-                      <label className="text-xs font-bold uppercase tracking-wider text-muted mb-3 block">
+                      <label className="text-xs font-semibold uppercase  text-muted mb-3 block">
                         Select Fleet Scale
                       </label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -964,7 +955,7 @@ export default function TplOnboardingPage() {
                           <div className={clsx('p-3 rounded-full mb-2.5', fleetSize === 'single' ? 'bg-brand text-brand-fill' : 'bg-surface-subtle text-muted')}>
                             <Truck size={28} />
                           </div>
-                          <span className="font-bold text-base text-text">Single Truck</span>
+                          <span className="font-semibold text-base text-text">Single Truck</span>
                           <span className="text-xs text-muted mt-0.5">Owner operator / single vehicle</span>
                         </button>
 
@@ -981,7 +972,7 @@ export default function TplOnboardingPage() {
                           <div className={clsx('p-3 rounded-full mb-2.5', fleetSize === 'multiple' ? 'bg-brand text-brand-fill' : 'bg-surface-subtle text-muted')}>
                             <Blocks size={28} />
                           </div>
-                          <span className="font-bold text-base text-text">Multiple Trucks</span>
+                          <span className="font-semibold text-base text-text">Multiple Trucks</span>
                           <span className="text-xs text-muted mt-0.5">Fleet owner / transport agency</span>
                         </button>
                       </div>
@@ -992,7 +983,7 @@ export default function TplOnboardingPage() {
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                           <p className="text-sm font-semibold text-text">Specify vehicle counts across your fleet:</p>
                           {totalTrucksCount > 0 && (
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-soft text-brand rounded-full text-xs font-bold border border-brand/30">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-soft text-brand rounded-full text-xs font-semibold border border-brand/30">
                               <Truck size={13} />
                               <span>{totalTrucksCount} Trucks · {totalTonnage.toFixed(1)} Tons Total Capacity</span>
                             </div>
@@ -1018,16 +1009,16 @@ export default function TplOnboardingPage() {
                                   <button
                                     type="button"
                                     onClick={() => setMultipleTruckCounts(p => ({ ...p, [v.key]: Math.max(0, count - 1) }))}
-                                    className="w-7 h-7 flex items-center justify-center text-muted hover:text-text hover:bg-surface-subtle rounded-full transition-colors cursor-pointer text-base font-bold disabled:opacity-30 disabled:cursor-not-allowed"
+                                    className="w-7 h-7 flex items-center justify-center text-muted hover:text-text hover:bg-surface-subtle rounded-full transition-colors cursor-pointer text-base font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
                                     disabled={count === 0}
                                   >
                                     -
                                   </button>
-                                  <span className="text-sm font-bold w-6 text-center text-text">{count}</span>
+                                  <span className="text-sm font-semibold w-6 text-center text-text">{count}</span>
                                   <button
                                     type="button"
                                     onClick={() => setMultipleTruckCounts(p => ({ ...p, [v.key]: count + 1 }))}
-                                    className="w-7 h-7 flex items-center justify-center text-brand hover:bg-brand-soft rounded-full transition-colors cursor-pointer text-base font-bold"
+                                    className="w-7 h-7 flex items-center justify-center text-brand hover:bg-brand-soft rounded-full transition-colors cursor-pointer text-base font-semibold"
                                   >
                                     +
                                   </button>
@@ -1055,11 +1046,11 @@ export default function TplOnboardingPage() {
                         {selectedVehicle && (
                           <div className="p-4 bg-surface-subtle border border-border rounded-card flex items-center justify-between">
                             <div>
-                              <p className="text-xs uppercase font-bold text-muted tracking-wider">Vehicle Specification</p>
-                              <p className="text-base font-bold text-text mt-0.5">{selectedVehicle.name}</p>
+                              <p className="text-xs uppercase font-semibold text-muted ">Vehicle Specification</p>
+                              <p className="text-base font-semibold text-text mt-0.5">{selectedVehicle.name}</p>
                             </div>
                             <div className="text-right">
-                              <p className="text-2xl font-bold text-brand">{selectedVehicle.max_t} Tons</p>
+                              <p className="text-2xl font-semibold text-brand">{selectedVehicle.max_t} Tons</p>
                               <p className="text-xs text-muted">Maximum Rated Payload</p>
                             </div>
                           </div>
@@ -1212,7 +1203,7 @@ export default function TplOnboardingPage() {
                   <div className="space-y-6">
                     <div className="p-4 bg-surface-subtle border border-border rounded-card flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-muted">
                       <span>Upload clear scanned copies or phone photos (PDF, PNG, JPG up to 10MB). Photos are auto-optimized in browser for rapid upload.</span>
-                      <span className="font-bold text-brand shrink-0">PAN Card &amp; Entity Proof required</span>
+                      <span className="font-semibold text-brand shrink-0">PAN Card &amp; Entity Proof required</span>
                     </div>
 
                     <div className="space-y-6">
@@ -1223,7 +1214,7 @@ export default function TplOnboardingPage() {
                         return (
                           <div key={category.id} className="space-y-3">
                             <div className="border-b border-border/80 pb-1.5">
-                              <h4 className="text-sm font-bold text-text">{category.title}</h4>
+                              <h4 className="text-sm font-semibold text-text">{category.title}</h4>
                               <p className="text-xs text-muted">{category.subtitle}</p>
                             </div>
 
@@ -1248,7 +1239,7 @@ export default function TplOnboardingPage() {
                                     <div className="flex items-center justify-between text-xs px-0.5">
                                       <span className="font-medium text-text truncate">{spec?.label || docType}</span>
                                       {req && (
-                                        <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded border ${badgeColor}`}>
+                                        <span className={`inline-block px-1.5 py-0.5 text-xs font-semibold rounded border ${badgeColor}`}>
                                           {req.badgeText}
                                         </span>
                                       )}
@@ -1284,7 +1275,7 @@ export default function TplOnboardingPage() {
                         <div className="flex items-center justify-between border-b border-border pb-3 mb-3.5">
                           <div className="flex items-center gap-2">
                             <Building size={16} className="text-brand" />
-                            <h4 className="text-sm font-bold text-text">Contact & Business Details</h4>
+                            <h4 className="text-sm font-semibold text-text">Contact & Business Details</h4>
                           </div>
                           <button
                             type="button"
@@ -1323,7 +1314,7 @@ export default function TplOnboardingPage() {
                         <div className="flex items-center justify-between border-b border-border pb-3 mb-3.5">
                           <div className="flex items-center gap-2">
                             <Truck size={16} className="text-brand" />
-                            <h4 className="text-sm font-bold text-text">Fleet Specifications</h4>
+                            <h4 className="text-sm font-semibold text-text">Fleet Specifications</h4>
                           </div>
                           <button
                             type="button"
@@ -1369,7 +1360,7 @@ export default function TplOnboardingPage() {
                             <div className="flex items-center justify-between border-b border-border pb-3 mb-3.5">
                               <div className="flex items-center gap-2">
                                 <ShieldCheck size={16} className="text-brand" />
-                                <h4 className="text-sm font-bold text-text">Identity & Tax Information</h4>
+                                <h4 className="text-sm font-semibold text-text">Identity & Tax Information</h4>
                               </div>
                               <button
                                 type="button"
@@ -1390,16 +1381,16 @@ export default function TplOnboardingPage() {
                               </div>
                               <div>
                                 <span className="text-muted block text-xs mb-0.5">PAN</span>
-                                <span className="font-mono font-bold text-text">{pan}</span>
+                                <span className="font-mono font-semibold text-text">{pan}</span>
                               </div>
                               <div>
                                 <span className="text-muted block text-xs mb-0.5">GSTIN</span>
-                                <span className="font-mono font-bold text-text">{gst || '—'}</span>
+                                <span className="font-mono font-semibold text-text">{gst || '—'}</span>
                               </div>
                               {cin && (
                                 <div>
                                   <span className="text-muted block text-xs mb-0.5">CIN</span>
-                                  <span className="font-mono font-bold text-text">{cin}</span>
+                                  <span className="font-mono font-semibold text-text">{cin}</span>
                                 </div>
                               )}
                               <div>
@@ -1413,7 +1404,7 @@ export default function TplOnboardingPage() {
                             <div className="flex items-center justify-between border-b border-border pb-3 mb-3.5">
                               <div className="flex items-center gap-2">
                                 <Landmark size={16} className="text-brand" />
-                                <h4 className="text-sm font-bold text-text">Bank Account for Payouts</h4>
+                                <h4 className="text-sm font-semibold text-text">Bank Account for Payouts</h4>
                               </div>
                               <button
                                 type="button"
@@ -1426,13 +1417,13 @@ export default function TplOnboardingPage() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs sm:text-sm">
                               <div>
                                 <span className="text-muted block text-xs mb-0.5">Account number</span>
-                                <span className="font-mono font-bold text-text">
+                                <span className="font-mono font-semibold text-text">
                                   {bankAccount ? `••••••••${bankAccount.slice(-4)}` : '—'}
                                 </span>
                               </div>
                               <div>
                                 <span className="text-muted block text-xs mb-0.5">IFSC code</span>
-                                <span className="font-mono font-bold text-text">{bankIfsc || '—'}</span>
+                                <span className="font-mono font-semibold text-text">{bankIfsc || '—'}</span>
                               </div>
                             </div>
                           </div>
@@ -1441,7 +1432,7 @@ export default function TplOnboardingPage() {
                             <div className="flex items-center justify-between border-b border-border pb-3 mb-3.5">
                               <div className="flex items-center gap-2">
                                 <FileText size={16} className="text-brand" />
-                                <h4 className="text-sm font-bold text-text">Uploaded Documents</h4>
+                                <h4 className="text-sm font-semibold text-text">Uploaded Documents</h4>
                               </div>
                               <button
                                 type="button"
@@ -1470,7 +1461,7 @@ export default function TplOnboardingPage() {
                                   >
                                     <div className="min-w-0 pr-2">
                                       <p className="font-medium text-text truncate">{docType}</p>
-                                      <p className="text-[11px] text-muted truncate">{req?.badgeText || spec?.hint}</p>
+                                      <p className="text-xs text-muted truncate">{req?.badgeText || spec?.hint}</p>
                                     </div>
                                     {isUploaded ? (
                                       <span className="text-success flex items-center gap-1 font-semibold shrink-0">
@@ -1531,10 +1522,10 @@ export default function TplOnboardingPage() {
             <Card padded className="p-6 bg-surface border border-border shadow-xs rounded-card space-y-5">
               <div>
                 <div className="flex items-center justify-between text-xs font-semibold mb-2">
-                  <span className="text-brand uppercase tracking-wider">
+                  <span className="text-brand uppercase ">
                     Application Progress
                   </span>
-                  <span className="text-muted font-bold">{progressPercent}%</span>
+                  <span className="text-muted font-semibold">{progressPercent}%</span>
                 </div>
                 <div className="w-full h-2 bg-surface-subtle border border-border rounded-full overflow-hidden">
                   <div
@@ -1560,7 +1551,7 @@ export default function TplOnboardingPage() {
 
             {/* Carrier Advantages Card */}
             <Card padded className="p-6 bg-surface border border-border shadow-xs rounded-card space-y-4">
-              <h3 className="text-sm font-bold text-text flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-text flex items-center gap-2">
                 <Award size={16} className="text-brand" />
                 <span>Partner Advantages</span>
               </h3>
@@ -1575,21 +1566,21 @@ export default function TplOnboardingPage() {
                 </li>
                 <li className="flex items-start gap-2.5">
                   <CheckCircle2 size={15} className="text-brand shrink-0 mt-0.5" />
-                  <span><strong className="text-text">Dedicated Dispatch:</strong> 24/7 route support and live load assistance for your drivers.</span>
+                  <span><strong className="text-text">Dedicated Dispatch:</strong> 24/7 trip support and live load assistance for your drivers.</span>
                 </li>
               </ul>
             </Card>
 
             {/* Need Help Desk Card */}
             <div className="p-5 rounded-card border border-border bg-surface-subtle text-xs text-muted space-y-3">
-              <div className="flex items-center gap-2 font-bold text-text text-sm">
+              <div className="flex items-center gap-2 font-semibold text-text text-sm">
                 <Headphones size={16} className="text-brand" />
                 <span>Need help onboarding?</span>
               </div>
               <p className="leading-relaxed">
                 Our partner operations desk is available Monday to Saturday (9 AM – 7 PM IST) to assist with registration.
               </p>
-              <div className="pt-1 space-y-1.5 font-mono text-[11px] text-text">
+              <div className="pt-1 space-y-1.5 font-mono text-xs text-text">
                 <div className="flex items-center gap-2">
                   <Phone size={12} className="text-muted" />
                   <span>+91 (022) 4890-1234</span>
