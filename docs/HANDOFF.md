@@ -230,6 +230,14 @@ disabled for billing; everything was moved with docs/DEPLOYMENT.md §4.6 (databa
   4. Central India refuses every Postgres size on this account, so the servers run in South India (~20 ms per query
      from the apps). A quota request for Central India would let them move back.
   5. Once the files are copied, delete the old account's resource group.
+  6. Google sign-in now uses a new OAuth client: Google account `prudata.tech@gmail.com`, project `margixindia`,
+     client "MargixIndia web sign-in" (published, External, scopes email/profile; redirect URIs
+     `https://staging-data.margixindia.com/auth/v1/callback` and `https://data.margixindia.com/auth/v1/callback`).
+     Its ID and secret live in `infra/platform.<stage>.env` (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`), so every
+     `./infra/platform.sh` run keeps them; before, they were set by hand on the app and were lost with the old account.
+     The consent screen links `/privacy` and `/terms` (frontend/src/pages/LegalPage.tsx): drafted from what the
+     platform does; have them reviewed. The live web app was deployed from `main` plus that one commit, ahead of the
+     next release (the commit is on `test`).
 - Owner choices pending: put the Resend key on live; restore "Need unloading help" on delivery?; company board
   order within the same priority and date (newest first now, or longest-waiting first).
 - Owner configuration still missing: Twilio + Redis (SMS OTP), WhatsApp, TomTom key (route optimisation returns
