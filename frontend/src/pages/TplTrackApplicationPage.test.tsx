@@ -18,6 +18,8 @@ const bankAPI = vi.hoisted(() => ({
 }))
 
 vi.mock('@/services/api', () => ({ tplAPI, bankAPI }))
+// The UI kit barrel pulls in NotificationsBell, which creates the client at import; CI has no Supabase URL.
+vi.mock('@/services/supabase', () => ({ supabase: {} }))
 vi.mock('react-hot-toast', () => ({
   default: {
     error: vi.fn(),
