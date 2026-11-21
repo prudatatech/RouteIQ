@@ -236,8 +236,12 @@ disabled for billing; everything was moved with docs/DEPLOYMENT.md §4.6 (databa
      Its ID and secret live in `infra/platform.<stage>.env` (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`), so every
      `./infra/platform.sh` run keeps them; before, they were set by hand on the app and were lost with the old account.
      The consent screen links `/privacy` and `/terms` (frontend/src/pages/LegalPage.tsx): drafted from what the
-     platform does; have them reviewed. The live web app was deployed from `main` plus that one commit, ahead of the
-     next release (the commit is on `test`).
+     platform does; have them reviewed.
+  7. Until items 1-2 are done, `Deploy to Azure` fails at `migrate` and deploys nothing; releases go by hand. Release
+     PR #24 (`f022b773`, 21 Nov 2026) went that way: its 14 migrations ran through `scripts/db-migrate.sh` inside an
+     `az acr run` task (the Postgres firewall admits Azure services, not this Mac), then `margix-rest` was
+     deactivated/activated, `margix-api:f022b773` was built with `az acr build` and swapped in, and the web app was
+     built and uploaded by an `az acr run` task with the static web app's token (reset afterwards).
 - Owner choices pending: put the Resend key on live; restore "Need unloading help" on delivery?; company board
   order within the same priority and date (newest first now, or longest-waiting first).
 - Owner configuration still missing: Twilio + Redis (SMS OTP), WhatsApp, TomTom key (route optimisation returns
