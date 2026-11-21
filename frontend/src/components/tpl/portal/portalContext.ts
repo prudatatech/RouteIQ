@@ -31,6 +31,9 @@ export interface PortalPartner {
   custom_id?: string | null
   gstin?: string | null
   pan_number?: string | null
+  entity_type?: string | null
+  cin?: string | null
+  authorized_signatory_name?: string | null
   msme_status?: string | null
   bank_account_no?: string | null
   bank_ifsc?: string | null

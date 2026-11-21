@@ -56,7 +56,7 @@ export const TPL_DOCUMENT_TYPES = [
   'Carriage by Road Registration',
   'MSME / Udyam Certificate',
   'Trade License / Shop & Establishment',
-  'Sample Consignment Note (LR)',
+  'Sample Consignment Note (LR)', // vocab-ok: statutory GTA document name; stored as the document type
 ] as const;
 
 /** Accepted upload formats and the file extension each is stored under. */
