@@ -81,7 +81,7 @@ export const SYNONYM_MAP: Record<string, string[]> = {
   dress: ['garments'], garment: ['garments'], shirts: ['shirt'], readymade: ['garments'],
   // Food
   chawal: ['rice'], gehu: ['wheat'], atta: ['flour', 'wheat flour'], cheeni: ['sugar'], shakkar: ['sugar'], gur: ['jaggery', 'sugar'],
-  doodh: ['milk'], ghee: ['butter', 'milk'], makhan: ['butter', 'cream'], sabzi: ['vegetables'], pyaaz: ['onion'], tamatar: ['tomato'],
+  doodh: ['milk'], ghee: ['butter'], makhan: ['butter', 'cream'], sabzi: ['vegetables'], pyaaz: ['onion'], tamatar: ['tomato'],
   lehsun: ['garlic'], adrak: ['ginger'], aloo: ['potato'], nimbu: ['lemon', 'lime'], santra: ['orange'], kela: ['banana'],
   aam: ['mango'], chai: ['tea'], daal: ['dal', 'lentil'], mirch: ['chilli', 'pepper'], haldi: ['turmeric'], kesar: ['saffron'],
   sarso: ['mustard'], til: ['sesame'], moongfali: ['groundnut', 'peanut'], kapas: ['cotton'], kapda: ['cloth', 'fabric', 'textile'],
@@ -110,6 +110,22 @@ const stemWord = (w: string): string => {
   if (w.length > 4 && /(ches|shes|xes|oes)$/.test(w)) return w.slice(0, -2);
   if (w.length > 3 && w.endsWith('s') && !/(ss|us|is)$/.test(w)) return w.slice(0, -1);
   return w;
+};
+
+const isWordChar = (c: string | undefined) => !!c && /[a-z0-9]/.test(c);
+
+/**
+ * True when `term` appears in `text` as a whole word (or a whole multi-word phrase), never inside another word.
+ * Without this "air" matches "hair" and "air conditioner" ranks shampoo first.
+ */
+const hasWords = (text: string, term: string): boolean => {
+  if (!term) return false;
+  const hay = text.toLowerCase();
+  const needle = term.toLowerCase();
+  for (let at = hay.indexOf(needle); at >= 0; at = hay.indexOf(needle, at + 1)) {
+    if (!isWordChar(hay[at - 1]) && !isWordChar(hay[at + needle.length])) return true;
+  }
+  return false;
 };
 
 const rateOf = (v: unknown): number | null => {
@@ -251,12 +267,14 @@ function scoreEntry(e: HsnEntry, query: string, terms: string[], fuzzy: Set<stri
   }
 
   const desc = e.description.toLowerCase();
+  // A keyword or synonym that is the whole query ("steel pipe", "air conditioner") beats a one-word overlap.
+  if (e.terms.some(k => k === query || (query.length >= 3 && stemWord(k) === stemWord(query)))) { score += 80; strong = true; }
   for (const term of terms) {
     if (term.length < 2) continue;
     const stem = stemWord(term);
     if (e.terms.some(k => k === term || k === stem)) { score += 60; strong = true; continue; }
     if (e.terms.some(k => k.startsWith(term) || term.startsWith(k))) { score += 40; strong = true; continue; }
-    if (e.terms.some(k => k.includes(term) || term.includes(k))) { score += 25; strong = true; continue; }
+    if (e.terms.some(k => hasWords(k, term) || (k.length >= 3 && hasWords(term, k)))) { score += 25; strong = true; continue; }
     const at = e.descWords.findIndex(w => w === term || stemWord(w) === stem);
     if (at >= 0) {
       // A word the description leads with, or repeats ("PORTLAND CEMENT, ALUMINOUS CEMENT, SLAG CEMENT"), is what the code is about
@@ -266,7 +284,7 @@ function scoreEntry(e: HsnEntry, query: string, terms: string[], fuzzy: Set<stri
       continue;
     }
     if (term.length >= 3 && e.descWords.some(w => w.startsWith(term))) { score += 16; strong = true; continue; }
-    if (term.length >= 3 && desc.includes(term)) { score += 12; strong = true; continue; }
+    if (term.length >= 3 && hasWords(desc, term)) { score += 12; strong = true; continue; }
     if (term.length >= 3 && fuzzy.has(term)) {
       const maxDist = maxTypos(term);
       if (e.terms.some(k => Math.abs(k.length - term.length) <= maxDist && levenshtein(k, term) <= maxDist)) { score += 15; continue; }
@@ -305,8 +323,8 @@ function candidates(index: HsnIndex, query: string, terms: string[]): { ids: Set
     addAll(index.postings.get(stem));
     if (term.length >= 3) {
       for (const w of index.vocabulary) if (w.startsWith(stem) || (w.length >= 3 && term.startsWith(w) && w.length >= term.length - 2)) addAll(index.postings.get(w));
-      // A keyword or synonym that contains the word ("soft drink" for "drink")
-      for (const i of index.curated) if (index.entries[i].terms.some(k => k.includes(term) || (k.length >= 3 && term.includes(k)))) ids.add(i);
+      // A keyword or synonym that contains the word as a whole word ("soft drink" for "drink")
+      for (const i of index.curated) if (index.entries[i].terms.some(k => hasWords(k, term) || (k.length >= 3 && hasWords(term, k)))) ids.add(i);
     }
     if (ids.size === before && term.length >= 3) {
       fuzzy.add(term);
@@ -361,20 +379,42 @@ export function resolveHsn(index: HsnIndex, code: string): { entry: HsnEntry; ma
 }
 
 const PAGE = 1000;
+/** How many pages to read at once; 22 pages sequentially is what made the first search wait about 5 seconds. */
+const PAGE_BATCH = 6;
+const HSN_COLUMNS = 'hsn_code, description, gst_rate, gst_rates, rate_note, category, keywords, synonyms, is_hazmat, is_perishable, eway_always, is_active';
 
-/** Every active HSN row; pages through PostgREST's row cap. */
+async function readHsnPage(from: number): Promise<HsnRow[]> {
+  const { data, error } = await supabase
+    .from('hsn_codes')
+    .select(HSN_COLUMNS)
+    .eq('is_active', true)
+    .order('hsn_code')
+    .range(from, from + PAGE - 1);
+  if (error) throw new Error(`Failed to read hsn_codes: ${error.message}`);
+  return (data ?? []) as HsnRow[];
+}
+
+/** Every active HSN row; one count, then the pages in parallel batches. */
 async function fetchHsnRows(): Promise<HsnRow[]> {
+  const { count, error } = await supabase
+    .from('hsn_codes')
+    .select('hsn_code', { count: 'exact', head: true })
+    .eq('is_active', true);
+  if (error) throw new Error(`Failed to count hsn_codes: ${error.message}`);
+  if (count == null) {
+    // No count from PostgREST: fall back to reading until a short page.
+    const rows: HsnRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const page = await readHsnPage(from);
+      rows.push(...page);
+      if (page.length < PAGE) return rows;
+    }
+  }
+  const pages = Math.ceil(count / PAGE);
   const rows: HsnRow[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from('hsn_codes')
-      .select('hsn_code, description, gst_rate, gst_rates, rate_note, category, keywords, synonyms, is_hazmat, is_perishable, eway_always, is_active')
-      .eq('is_active', true)
-      .order('hsn_code')
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(`Failed to read hsn_codes: ${error.message}`);
-    rows.push(...((data ?? []) as HsnRow[]));
-    if (!data || data.length < PAGE) break;
+  for (let start = 0; start < pages; start += PAGE_BATCH) {
+    const batch = Array.from({ length: Math.min(PAGE_BATCH, pages - start) }, (_, k) => readHsnPage((start + k) * PAGE));
+    rows.push(...(await Promise.all(batch)).flat());
   }
   return rows;
 }

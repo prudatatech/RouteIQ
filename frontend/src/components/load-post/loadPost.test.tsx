@@ -199,9 +199,8 @@ describe('HSN search', () => {
     expect(rate.value).toBe('12')
   })
 
-  it('offers manual HSN entry and the "why" tooltip', () => {
+  it('shows HSN entry and the "why" tooltip for every product', () => {
     render(<Single />)
-    fireEvent.click(screen.getByRole('button', { name: /enter hsn manually/i }))
     expect(screen.getByLabelText(/^hsn code/i)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /why is hsn needed/i }))
     expect(screen.getByRole('tooltip').textContent).toMatch(/e-Way Bill and GST invoice/)

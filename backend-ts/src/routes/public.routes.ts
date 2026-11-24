@@ -288,7 +288,7 @@ const GOODS_CACHE = 'public, max-age=600';
 const HsnSearchQuery = z.object({ q: z.string().trim().min(3, 'Type at least 3 characters').max(80) });
 
 // GET /public/hsn/search?q= — up to 8 suggestions: code, description, category, GST rate(s), flags
-router.get('/hsn/search', rateLimitByIp('public-hsn', 120, 60), async (req: Request, res: Response) => {
+router.get('/hsn/search', rateLimitByIp('public-hsn-search', 600, 60), async (req: Request, res: Response) => {
   try {
     const parsed = HsnSearchQuery.safeParse(req.query);
     if (!parsed.success) return badRequest(res, parsed.error);
@@ -301,7 +301,7 @@ router.get('/hsn/search', rateLimitByIp('public-hsn', 120, 60), async (req: Requ
 });
 
 // GET /public/hsn/:code — one HSN code with every rate it allows
-router.get('/hsn/:code', rateLimitByIp('public-hsn', 120, 60), async (req: Request, res: Response) => {
+router.get('/hsn/:code', rateLimitByIp('public-hsn-code', 300, 60), async (req: Request, res: Response) => {
   try {
     if (!/^\d{2,8}$/.test(req.params.code)) return void res.status(400).json({ detail: 'An HSN code is 2 to 8 digits' });
     const found = resolveHsn(await loadHsnIndex(), req.params.code);

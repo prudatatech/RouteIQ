@@ -44,6 +44,27 @@ describe('HSN search', () => {
     expect(codes('doodh')[0]).toBe('0401');
   });
 
+  it('ranks the code that covers the goods, not a broader heading that shares a word', () => {
+    expect(codes('atta')[0]).toBe('1101');
+    expect(codes('flour')[0]).toBe('1101');
+    expect(codes('biscuit')[0]).toBe('1905');
+    expect(codes('noodles')[0]).toBe('1902');
+    expect(codes('pasta')[0]).toBe('1902');
+    expect(codes('chocolate')[0]).toBe('1806');
+    expect(codes('mustard oil')[0]).toBe('1514');
+    expect(codes('ghee')[0]).toBe('0405');
+    expect(codes('tiles')[0]).toBe('6907');
+    expect(codes('shoes')[0]).toBe('6403');
+    expect(codes('timber')[0]).toBe('4407');
+  });
+
+  it('does not match a short word inside a longer one, and prefers the whole phrase', () => {
+    // "air" inside "hair" used to put shampoo (3305) above air conditioners (8415).
+    expect(codes('air conditioner')[0]).toBe('8415');
+    expect(codes('steel pipe')[0]).toBe('7304');
+    expect(codes('plastic chair')[0]).toBe('9401');
+  });
+
   it('finds medicines at 5% or nil', () => {
     const hit = searchHsn(index, 'medicine')[0];
     expect(hit.hsn_code).toBe('3004');

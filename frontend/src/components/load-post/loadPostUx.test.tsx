@@ -100,7 +100,7 @@ describe('HSN list keyboard', () => {
     type(0, 'cement')
     await suggestions()
     fireEvent.keyDown(box(0), { key: 'Enter' })
-    expect(screen.queryByLabelText(/^HSN code/)).toBeNull()
+    expect((screen.getByLabelText(/^HSN code/) as HTMLInputElement).value).toBe('')
     fireEvent.keyDown(box(0), { key: 'Escape' })
     expect(screen.queryByRole('listbox')).toBeNull()
     fireEvent.keyDown(box(0), { key: 'ArrowDown' })

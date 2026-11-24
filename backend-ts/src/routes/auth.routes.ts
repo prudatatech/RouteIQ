@@ -126,7 +126,7 @@ async function sendOtp(kind: OtpKind, req: Request, res: Response): Promise<void
       const { emailService } = await import('../services/email.service');
       const html = `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; background-color: #ffffff; padding: 32px; border: 1px solid #f0f0f0; border-top: 4px solid #facc15; border-radius: 8px; text-align: center;">
-          <img src="https://staging.margixindia.com/margix-logo.png" alt="MargixIndia Logo" style="height: 48px; margin-bottom: 24px;" />
+          <img src="https://portal.margixindia.com/logo.png" alt="MargixIndia Logo" style="height: 48px; margin-bottom: 24px;" />
           <h1 style="font-size: 20px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">Welcome Partner!</h1>
           <p style="font-size: 15px; color: #4b5563; margin: 0 0 24px 0; line-height: 1.5;">Let's post your loads and manage them with premium logistics market</p>
           <div style="background-color: #fefce8; border: 1px dashed #facc15; border-radius: 6px; padding: 16px; margin-bottom: 24px;">
@@ -649,7 +649,7 @@ router.post('/reset-password', rateLimitByIp('reset-password', 5, 3600), async (
       const { emailService } = await import('../services/email.service');
       const html = `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; background-color: #ffffff; padding: 32px; border: 1px solid #f0f0f0; border-top: 4px solid #facc15; border-radius: 8px; text-align: center;">
-          <img src="https://staging.margixindia.com/margix-logo.png" alt="MargixIndia Logo" style="height: 48px; margin-bottom: 24px;" />
+          <img src="https://portal.margixindia.com/logo.png" alt="MargixIndia Logo" style="height: 48px; margin-bottom: 24px;" />
           <h1 style="font-size: 20px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">Reset your password</h1>
           <p style="font-size: 15px; color: #4b5563; margin: 0 0 24px 0; line-height: 1.5;">Click the button below to set a new password for your account.</p>
           <a href="${link.properties.action_link}" style="display: inline-block; background-color: #facc15; color: #854d0e; font-weight: bold; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin-bottom: 24px;">Set new password</a>

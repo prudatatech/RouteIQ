@@ -555,6 +555,23 @@ const compact = (params: object) => Object.fromEntries(
   Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '' && !(typeof v === 'number' && Number.isNaN(v))),
 )
 
+/** The same goods name is searched from every product card; a short memory keeps repeat typing off the API. */
+const HSN_CACHE_MS = 5 * 60_000
+const HSN_CACHE_MAX = 100
+const hsnCache = new Map<string, { at: number; items: HsnHit[] }>()
+
+function cachedHsnSearch(key: string): HsnHit[] | null {
+  const hit = hsnCache.get(key)
+  if (!hit) return null
+  if (Date.now() - hit.at > HSN_CACHE_MS) { hsnCache.delete(key); return null }
+  return hit.items
+}
+
+function rememberHsnSearch(key: string, items: HsnHit[]) {
+  hsnCache.set(key, { at: Date.now(), items })
+  if (hsnCache.size > HSN_CACHE_MAX) hsnCache.delete(hsnCache.keys().next().value as string)
+}
+
 export const publicAPI = {
   /** Aggregate counts for the landing page. No sign-in needed. */
   stats: () => publicClient.get('/public/stats').then(r => r.data as PublicStats),
@@ -568,8 +585,19 @@ export const publicAPI = {
   cities: (q: string) =>
     publicClient.get('/public/cities', { params: { q } }).then(r => ensureArray(r.data?.cities).filter((c): c is string => typeof c === 'string' && c.length > 0)),
   /** HSN suggestions for what the person typed (at least 3 characters), up to 8. */
-  hsnSearch: (q: string, signal?: AbortSignal) =>
-    publicClient.get('/public/hsn/search', { params: { q }, signal }).then(r => ensureArray(r.data?.items) as HsnHit[]),
+  hsnSearch: (q: string, signal?: AbortSignal) => {
+    const key = q.trim().toLowerCase()
+    const cached = cachedHsnSearch(key)
+    if (cached) {
+      if (signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'))
+      return Promise.resolve(cached)
+    }
+    return publicClient.get('/public/hsn/search', { params: { q }, signal }).then(r => {
+      const items = ensureArray(r.data?.items) as HsnHit[]
+      rememberHsnSearch(key, items)
+      return items
+    })
+  },
   /** One HSN code with its rate or rates; null when the code is not in the master. */
   hsn: (code: string) =>
     publicClient.get(`/public/hsn/${encodeURIComponent(code)}`)

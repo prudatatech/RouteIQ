@@ -34,7 +34,6 @@ export default function HsnSearch({ row, index, onChange, onPicked, errors = {},
   const [open, setOpen] = useState(false)
   const [searching, setSearching] = useState(false)
   const [failed, setFailed] = useState(false)
-  const [manual, setManual] = useState(false)
   const [lookupNote, setLookupNote] = useState<string | null>(null)
   const [active, setActive] = useState(-1)
   const [showAll, setShowAll] = useState(false)
@@ -44,7 +43,7 @@ export default function HsnSearch({ row, index, onChange, onPicked, errors = {},
   const scrolled = useRef(false)
 
   const query = row.product_name.trim()
-  const searchable = !manual && !row.hsn_code
+  const searchable = !row.hsn_code
   // The code the rate options belong to: a lookup only runs when the code changed, so a rate the person chose is kept.
   const knownCode = useRef(row.hsn_code.trim())
 
@@ -122,12 +121,10 @@ export default function HsnSearch({ row, index, onChange, onPicked, errors = {},
         const patch = applyHsnHit(row, hit)
         // Keep the rate the person had chosen when the new code allows it.
         onChange(row.gst_rate !== null && hit.gst_rates.includes(row.gst_rate) ? { ...patch, gst_rate: row.gst_rate } : patch)
-        setManual(false)
       } else setLookupNote('We do not have this code listed. Choose the GST rate yourself.')
     } catch { setLookupNote('We could not check this code. Choose the GST rate yourself.') }
   }
 
-  const showCode = !!row.hsn_code || manual
   const rateOptions = rateChoices(row.rate_options, row.gst_rate)
   const nameId = `${listId}-name`
 
@@ -161,41 +158,38 @@ export default function HsnSearch({ row, index, onChange, onPicked, errors = {},
         )}
       </div>
 
-      {showCode && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Input
-            label="HSN code"
-            required
-            inputMode="numeric"
-            value={row.hsn_code}
-            onChange={e => {
-              const code = e.target.value.replace(/\D/g, '').slice(0, 8)
-              // The old code's rates no longer apply to a changed code; the lookup brings the new ones.
-              onChange(code === knownCode.current ? { hsn_code: code } : { hsn_code: code, rate_options: [], rate_note: null })
-            }}
-            onBlur={lookupManual}
-            error={errors.hsn}
-            hint={lookupNote ?? '4 to 8 digits, as on your invoice. You can change it.'}
-          />
-          <Select
-            label="GST rate"
-            required
-            value={row.gst_rate === null ? '' : String(row.gst_rate)}
-            onChange={e => onChange({ gst_rate: e.target.value === '' ? null : Number(e.target.value) })}
-            placeholder="Select rate"
-            options={rateOptions.map(r => ({ value: String(r), label: `${r}%` }))}
-            error={errors.rate}
-            hint={row.rate_note ?? undefined}
-          />
-        </div>
-      )}
-      {!showCode && errors.hsn && <p className="text-xs text-danger" role="alert">{errors.hsn}</p>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Input
+          label="HSN code"
+          required
+          inputMode="numeric"
+          value={row.hsn_code}
+          onChange={e => {
+            const code = e.target.value.replace(/\D/g, '').slice(0, 8)
+            // The old code's rates no longer apply to a changed code; the lookup brings the new ones.
+            onChange(code === knownCode.current ? { hsn_code: code } : { hsn_code: code, rate_options: [], rate_note: null })
+          }}
+          onBlur={lookupManual}
+          error={errors.hsn}
+          hint={lookupNote ?? '4 to 8 digits, as on your invoice. You can change it.'}
+        />
+        <Select
+          label="GST rate"
+          required
+          value={row.gst_rate === null ? '' : String(row.gst_rate)}
+          onChange={e => onChange({ gst_rate: e.target.value === '' ? null : Number(e.target.value) })}
+          placeholder="Select rate"
+          options={rateOptions.map(r => ({ value: String(r), label: `${r}%` }))}
+          error={errors.rate}
+          hint={row.rate_note ?? undefined}
+        />
+      </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         {row.hsn_code ? (
-          <Button variant="ghost" size="sm" onClick={() => { knownCode.current = ''; onChange(RESET); setManual(false); setLookupNote(null) }}>Search for other goods</Button>
+          <Button variant="ghost" size="sm" onClick={() => { knownCode.current = ''; onChange(RESET); setLookupNote(null) }}>Search for other goods</Button>
         ) : (
-          <Button variant="ghost" size="sm" onClick={() => setManual(true)}>Can't find your goods? Enter HSN manually</Button>
+          <p className="text-xs text-slate-500">Know the code? Type it in the HSN field above.</p>
         )}
         <WhyHsn />
       </div>
