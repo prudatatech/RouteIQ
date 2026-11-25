@@ -186,12 +186,24 @@ A live `POST /auth/vendor/send-otp` for a test phone and email returned HTTP 200
 ### P0 — fix the deploy pipeline
 
 GitHub Actions fails because the repository's Azure OIDC variables point at the disabled subscription
-`1c904442-a955-4519-b623-ab64bc6c902c`. The live resources are on
-`f26e3afa-0e86-4953-a563-bf1ed56271ab`. Until this is fixed, every push to `main` produces a red deploy and
-production can drift from the repository.
+`1c904442-a955-4519-b623-ab64bc6c902c`. The run on 25 Nov 2026 failed with:
+
+```text
+ERROR: (ReadOnlyDisabledSubscription) The subscription '1c904442-a955-4519-b623-ab64bc6c902c' is disabled
+and therefore marked as read only. You cannot perform any write actions on this subscription until it is
+re-enabled.
+```
+
+The live resources are on `f26e3afa-0e86-4953-a563-bf1ed56271ab`. The API and ML jobs also tried to push to
+`margixacr7m52h4t5it6og.azurecr.io`, an old registry from the disabled subscription's last deployment, not the
+live `margixacrtw23bcqkuyb4m.azurecr.io`. The web job built successfully with the live Supabase variables but
+failed when it asked Azure for the Static Web App token. Until this is fixed, every push to `main` produces a
+red deploy and production can drift from the repository.
 
 - Re-run `infra/github-oidc.sh` (or update the federated credential and `AZURE_*` repository variables) against
   the active subscription.
+- Re-run the infra deploy so the deployment outputs name the live ACR again, then confirm the API/ML jobs stop
+  looking at `margixacr7m52h4t5it6og.azurecr.io`.
 - Confirm the `web` job can fetch the Static Web App token again.
 - Remove the manual-deploy workaround from the release process once green.
 
