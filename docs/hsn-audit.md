@@ -121,9 +121,10 @@ A fresh database runs the same SQL from the seed state.
 
 ### 4.1 Second-pass duplicate audit (25 Nov 2026)
 
-A live scan of 21,808 curated codes found 974 distinct keywords; 42 appeared on more than one code. Most are
-legitimate parent/child pairs (chapter `61` and `6109`, chapter `62` and `6203`) where the specific code already
-ranks first. A second migration, `20261125090000_hsn_keyword_cleanup.sql`, moves the remaining cross-category
+The table holds 21,808 codes, of which **173 are curated** (a non-empty `keywords` array). Those 173 rows carry
+**985 distinct keywords**, and **42 appeared on more than one code** before this pass. Most were legitimate
+parent/child pairs (chapter `61` and `6109`, chapter `62` and `6203`) where the specific code already ranks
+first. A second migration, `20261125090000_hsn_keyword_cleanup.sql`, moved the remaining cross-category
 words to the right heading:
 
 | Word | Wrong code | Correct code |
@@ -146,6 +147,37 @@ product decision, not a data move.
 
 The staging API was also rolled to the same fixed image (`margix-test-api` now runs `margix-api:e799f3c0`) so
 this pass could be verified on the new ranking code before it was applied to live.
+
+### 4.2 A repeatable keyword check (and the drift it found)
+
+This failure mode (one word curated on two headings) was found by hand twice, so it is now a script:
+
+```bash
+node scripts/check-hsn-keywords.mjs --stage live   # or --stage test
+```
+
+It reads every curated `keywords` array, groups the words by code, and fails when a duplicated word is not in
+`scripts/hsn-keyword-allowlist.json` or when an allowlisted word moved to a different set of codes. Each
+allowlist entry carries the reason (`parent-child`, `two-products`, `bare-or-insulated`, `three-oils`). It only
+reads the table, so it needs the Supabase service-role key; run it here or in Azure, where that key is kept.
+
+Running it immediately found that **test had drifted from live**: the first-pass migration
+`20261124090000_hsn_keyword_fixes.sql` had never been applied to the test database, so staging still had eight
+duplicated words (`atta`, `flour`, `bread`, `cake`, `pastry`, `rusk`, `putty`, `tile`) that live had already
+fixed. The 18 updates were applied to test through the Supabase REST API, the migration was recorded in its
+`app_migrations`, and the test API revision was restarted. Both stages now report the same numbers:
+
+```text
+stage live: 21808 codes, 173 curated, 985 distinct keywords
+duplicated: 26 (allowlisted: 26)
+stage test: 21808 codes, 173 curated, 985 distinct keywords
+duplicated: 26 (allowlisted: 26)
+```
+
+The 26 remaining duplicates are the allowlisted ones above: chapter/heading pairs (`shirt`, `trouser`, `suit`,
+`t-shirt`, `tshirt`, `innerwear`, `formal wear`), real two-product words (`bottle`, `cream`, `tablet`, `motor`,
+`washer`, `plate`, `lamp`, `led light`, `tube light`, `napkin`, `cabinet`, `acid`, `spice`, `fibre board`,
+`particle board`, `steel sheet`), the three cooking oils, and `copper` / `copper wire`.
 
 ## 5. Verification
 
@@ -254,12 +286,11 @@ A live `POST /auth/vendor/send-otp` for a test phone and email returned HTTP 200
 
 `Deploy to Azure` fails in two places, in order:
 
-1. **`migrate` (first):** the GitHub runner cannot reach the Postgres server. On 25 Nov 2026 the job failed with
-   `connection to server at "margix-test-pg.postgres.database.azure.com" ... Connection timed out` because the
-   Postgres firewall admits Azure services, not GitHub's egress. Every later job is skipped, so the deploy never
-   reaches the Azure login.
-2. **`api`/`ml`/`web` (when `migrate` passes):** the repository's Azure OIDC variables point at the disabled
-   subscription `1c904442-a955-4519-b623-ab64bc6c902c`. The earlier run failed with:
+1. **`api` and `ml`:** the jobs still push to the old registry and fail before the login:
+   `ERROR: Looks like you don't have access to registry 'margixacr7m52h4t5it6og.azurecr.io'`. Live is on
+   `margixacrtw23bcqkuyb4m.azurecr.io`.
+2. **`web`:** the build succeeds, then fetching the Static Web App token hits the disabled subscription
+   `1c904442-a955-4519-b623-ab64bc6c902c`:
 
 ```text
 ERROR: (ReadOnlyDisabledSubscription) The subscription '1c904442-a955-4519-b623-ab64bc6c902c' is disabled
@@ -267,14 +298,14 @@ and therefore marked as read only. You cannot perform any write actions on this 
 re-enabled.
 ```
 
-The live resources are on `f26e3afa-0e86-4953-a563-bf1ed56271ab`. The API and ML jobs also tried to push to
-`margixacr7m52h4t5it6og.azurecr.io`, an old registry from the disabled subscription's last deployment, not the
-live `margixacrtw23bcqkuyb4m.azurecr.io`. The web job built successfully with the live Supabase variables but
-failed when it asked Azure for the Static Web App token. Until this is fixed, every push to `main` produces a
-red deploy and production can drift from the repository.
+The live resources are on `f26e3afa-0e86-4953-a563-bf1ed56271ab`. Until this is fixed, every push to `main`
+produces a red deploy and production can drift from the repository.
 
-- Let the runner reach Postgres: allow GitHub's egress ranges on the server firewall, run the migrate job from a
-  self-hosted runner or Container Apps job inside the VNet, or keep using `az acr run` for migrations.
+`migrate` is mostly fine now: the 16:00Z run on 25 Nov connected and printed `database is up to date`, so the
+GitHub runner can reach Postgres. An earlier 11:41Z run on the same day timed out on
+`margix-test-pg.postgres.database.azure.com`, so that path is intermittent — watch the job, and if it times out
+again allow GitHub's egress ranges or run migrations from inside the VNet.
+
 - Re-run `infra/github-oidc.sh` (or update the federated credential and `AZURE_*` repository variables) against
   the active subscription.
 - Re-run the infra deploy so the deployment outputs name the live ACR again, then confirm the API/ML jobs stop
@@ -299,12 +330,19 @@ more than one curated heading without a disambiguation plan; that recreates the 
 
 ### P1 — make keyword QA repeatable
 
-Only 18 rows were corrected. The seed has other curated rows, and the same failure mode (a generic word on two
-codes) can return.
+Only 18 + 15 rows were corrected, out of 173 curated rows, and the same failure mode (a generic word on two
+codes) can return with any new keyword.
 
-- Add a test/check that each curated keyword maps to exactly one intended code, or at least flags duplicates.
-- Audit the remaining curated rows and everyday synonyms (regional words, brand names, plurals).
-- Keep `supabase/seed/hsn_master.csv` and the migration in sync.
+- **Done:** `node scripts/check-hsn-keywords.mjs --stage live|test` flags every duplicated keyword that is not
+  allowlisted, and `scripts/hsn-keyword-allowlist.json` records the 26 legitimate ones with a reason. It found
+  and fixed the test/live drift described in 4.2. It is not wired into CI because the runners do not hold the service-role key.
+- Audit the remaining curated rows for the other direction: a word that belongs on a heading but is missing
+  from it (`glass` has no entry on `7005`, `steel` none on `7214`).
+- Everyday synonyms (regional words, brand names, plurals) are still thin: `moongfali` and `saria` exist, but
+  most brand names do not.
+- `supabase/seed/hsn_master.csv` has no `keywords` column, so the curated arrays live only in
+  `20261003010000_goods_master.sql` and its follow-up migrations. Keep new words in a migration, never only in
+  the live table.
 
 ### P2 — cache and cold start
 
@@ -334,6 +372,15 @@ codes) can return.
   be exercised in the E2E test.
 
 ## 8. Operating notes
+
+### Check the curated keywords
+
+```bash
+node scripts/check-hsn-keywords.mjs --stage live   # or --stage test, or: npm run check:hsn-keywords
+```
+
+Run it after touching any `hsn_codes.keywords` row. It fails on a duplicated word that is not in
+`scripts/hsn-keyword-allowlist.json`, which is how the test/live drift in 4.2 was found.
 
 ### Bypass the response cache while testing
 
