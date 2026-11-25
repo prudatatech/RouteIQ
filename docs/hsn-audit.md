@@ -7,10 +7,10 @@
 ## Summary
 
 - **HSN search:** on a 59-query production smoke set, the correct code ranked first for **41/59** queries before
-  the fix and **55/59** after the API deploy. The last wrong result (`putty` returning paints `3209` instead of
-  putty `3214`) was a stale 10-minute edge cache; it now returns `3214`, so the effective result is **56/59**.
-  The remaining three (`fertilizer`, `glass`, `steel`) are ambiguous generic words that return a plausible
-  heading, not a different product.
+  the fix and **55/59** after the API deploy. The last `putty` and `fertilizer` misses were fixed by data
+  corrections and cache expiry; they now return `3214` and `3105`, so the effective result is **57/59**. The
+  remaining two (`glass`, `steel`) are ambiguous generic words that return a plausible heading, not a different
+  product.
 - **Root causes:** substring matching without word boundaries, cross-contaminated curated keywords, no bonus for
   an exact whole-query keyword, HSN/GST fields hidden behind a manual-entry toggle, a low per-IP limit, a
   sequential 22k-row index load, no client cache, and a 10-minute public response cache.
@@ -85,7 +85,8 @@ the secrets were missing.
 | Client cache | `frontend/src/services/api.ts` | Added a bounded 5-minute in-memory cache for `hsnSearch`. |
 | UI | `frontend/src/components/load-post/HsnSearch.tsx` | HSN code and GST rate are always visible; removed the **Enter HSN manually** button. |
 | Data | `supabase/migrations/20261124090000_hsn_keyword_fixes.sql` | Corrected 18 curated keyword sets (table below). |
-| Tests | `backend-ts/test/goods-search.test.ts`, `backend-ts/test/support/goods-world.ts` | Ranking and fixture coverage for the corrected terms. |
+| Data | `supabase/migrations/20261125090000_hsn_keyword_cleanup.sql` | Second-pass cleanup of 15 duplicated keyword sets (table below). |
+| Tests | `backend-ts/test/goods-search.test.ts`, `backend-ts/test/support/goods-world.ts` | Ranking and fixture coverage for both correction passes. |
 | Tests | `frontend/src/components/load-post/loadPost.test.tsx`, `loadPostUx.test.tsx` | Expect the HSN/GST fields to be visible without a toggle. |
 | OTP | `backend-ts/src/routes/auth.routes.ts` | Email logo now points at `https://portal.margixindia.com/logo.png`. |
 | OTP config | `infra/secrets.live.env` (gitignored) | Added `RESEND_API_KEY` and `EMAIL_FROM`; applied with `./infra/set-secrets.sh --stage live`. |
@@ -118,12 +119,41 @@ The migration keeps each everyday word on the heading that actually covers the g
 The live database was patched through the Supabase REST API and the migration was recorded in `app_migrations`.
 A fresh database runs the same SQL from the seed state.
 
+### 4.1 Second-pass duplicate audit (25 Nov 2026)
+
+A live scan of 21,808 curated codes found 974 distinct keywords; 42 appeared on more than one code. Most are
+legitimate parent/child pairs (chapter `61` and `6109`, chapter `62` and `6203`) where the specific code already
+ranks first. A second migration, `20261125090000_hsn_keyword_cleanup.sql`, moves the remaining cross-category
+words to the right heading:
+
+| Word | Wrong code | Correct code |
+| --- | --- | --- |
+| `groundnut`, `peanut` | `0802` other nuts | `1202` groundnuts |
+| `fertilizer`, `dap`, `npk` | `3102` nitrogenous | `3105` NPK |
+| `urea` | `3105` NPK | `3102` nitrogenous |
+| `pvc pipe` | `3904` polymer | `3917` plastic pipes |
+| `plywood`, `laminate`, `block board` | `4410` particle board | `4412` plywood |
+| `mdf` | `4410` / `4412` | `4411` fibre board |
+| `raw cotton`, `cotton bale`, `ginned cotton` | `5601` wadding | `5201` cotton |
+| `bedsheet` | `6301` blankets | `6302` bed linen |
+| `copper wire` | `7403` refined copper | `7408` bare / `8544` insulated |
+| `cr coil` | `7208` / `7210` | `7209` cold-rolled |
+| `tractor` | `8432` farm machinery | `8701` tractors |
+
+The remaining duplicates are ambiguous but valid on both headings: `bottle`, `cream`, `tablet`, `motor`,
+`washer`, `plate`, `lamp`, `spice`, `acid`, `napkin`, `cabinet`, `cooking oil` and `steel sheet`. They need a
+product decision, not a data move.
+
+The staging API was also rolled to the same fixed image (`margix-test-api` now runs `margix-api:e799f3c0`) so
+this pass could be verified on the new ranking code before it was applied to live.
+
 ## 5. Verification
 
 ### Automated
 
 - Backend `npm run typecheck` passes.
-- Backend `npm test` passes: **2542 tests**.
+- Backend `npm test` passes: **2542 tests** (first release); the targeted
+  `vitest run test/goods-search.test.ts` passes **25 tests** after the second pass.
 - Frontend `npm run build` passes.
 - Frontend `npx vitest run` passes: **1046 tests**.
 
@@ -152,10 +182,21 @@ Verified first hits:
 | `plastic chair` | `9401` |
 | `timber` | `4407` |
 | `putty` | `3214` |
+| `pvc pipe` | `3917` |
+| `plywood`, `laminate` | `4412` |
+| `mdf` | `4411` |
+| `raw cotton`, `cotton bale` | `5201` |
+| `bedsheet` | `6302` |
+| `groundnut`, `peanut` | `1202` |
+| `fertilizer`, `dap`, `npk` | `3105` |
+| `urea` | `3102` |
+| `cr coil` | `7209` |
+| `tractor` | `8701` |
+| `copper wire` | `8544` (insulated) or `7408` (bare) |
 
-The three known generic misses are `fertilizer` (`3102` instead of `3105`), `glass` (`7013` instead of `7005`)
-and `steel` (`7306` instead of `7214`). Each returned a valid product family; they are not the same kind of
-failure as the old wrong-product hits.
+The remaining two known generic misses are `glass` (`7013` instead of `7005`) and `steel` (`7306` instead of
+`7214`). Each returns a valid product family; they are not the same kind of failure as the old wrong-product
+hits.
 
 ### Live web
 
@@ -179,6 +220,9 @@ A live `POST /auth/vendor/send-otp` for a test phone and email returned HTTP 200
 - Web built with the live Supabase URL/key and `VITE_API_URL=https://api.margixindia.com`, then uploaded to
   `margix-web` with the Static Web Apps CLI. The CLI's `StaticSitesClient` binary is x86_64, so Rosetta 2 was
   installed on the Apple Silicon machine to run it.
+- Second-pass data cleanup (`20261125090000_hsn_keyword_cleanup.sql`) applied to test and live through Supabase
+  REST and recorded in `app_migrations`; the test API was rolled to `margix-api:e799f3c0` (revision
+  `margix-test-api--0000003`) for verification.
 - **Manual deploys are currently the source of truth.** GitHub Actions still cannot deploy (see below).
 
 ## 7. Remaining gaps and next work
@@ -209,13 +253,15 @@ red deploy and production can drift from the repository.
 
 ### P1 — decide the generic terms
 
-`fertilizer`, `glass` and `steel` are broad words with several valid headings. Pick the intended behaviour:
+`glass` and `steel` are broad words with several valid headings. Pick the intended behaviour:
 
 - prefer the most specific heading; or
-- show a small disambiguation list (`fertilizer: urea / NPK / DAP`); or
+- show a small disambiguation list (`glass: float / safety / glassware`); or
 - document the current choice as intentional.
 
-Do not add the same generic keyword to more than one curated heading; that recreates the original tie.
+The duplicate audit also leaves `bottle`, `cream`, `tablet`, `motor`, `washer`, `plate`, `lamp`, `spice`, `acid`,
+`napkin`, `cabinet`, `cooking oil` and `steel sheet` on two valid headings. Do not add the same generic keyword to
+more than one curated heading without a disambiguation plan; that recreates the original tie.
 
 ### P1 — make keyword QA repeatable
 
@@ -264,6 +310,12 @@ curl --get 'https://api.margixindia.com/api/v1/public/hsn/search' \
 ```
 
 The `_` parameter changes the URL, so the edge cache misses and the current API answer is returned.
+
+### After a revision restart
+
+The HSN index lives in memory. After `az containerapp revision restart`, the old replica can keep serving for
+about 30 seconds. Wait before judging a data fix; the new replica builds the index on its first search. The
+`pvc pipe` and `plywood` checks looked stale for exactly this reason.
 
 ### Database access from this machine
 

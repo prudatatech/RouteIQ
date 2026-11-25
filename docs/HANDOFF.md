@@ -45,7 +45,7 @@ disabled for billing; everything was moved with docs/DEPLOYMENT.md §4.6 (databa
 - CI: `margixindia CI` on every push (backend-ts, frontend, ml-service, mobile apps). Story: `uat.yml`
   (manual dispatch, 91 steps on a throwaway database on the GitHub runner).
 - Email: Resend (domain `margixindia.com` verified). Sender `EMAIL_FROM` = `MargixIndia <no-reply@margixindia.com>`.
-  Key set on TEST only.
+  Key set on TEST and LIVE (live fixed 24 Nov 2026).
 
 ## 3. Decisions already taken (do not reopen without the owner)
 - Requests opens on New loads and keeps pending vendor rows visible there when the company board is unavailable
@@ -242,7 +242,11 @@ disabled for billing; everything was moved with docs/DEPLOYMENT.md §4.6 (databa
      `az acr run` task (the Postgres firewall admits Azure services, not this Mac), then `margix-rest` was
      deactivated/activated, `margix-api:f022b773` was built with `az acr build` and swapped in, and the web app was
      built and uploaded by an `az acr run` task with the static web app's token (reset afterwards).
-- Owner choices pending: put the Resend key on live; restore "Need unloading help" on delivery?; company board
+- Release 25 Nov 2026 (HSN/OTP): HSN search ranking, two keyword-data passes (18 + 15 code sets), HSN/GST fields
+  always visible, live Resend key set. API `margix-api:e799f3c0` (revision `margix-api--0000005`); the test API
+  was also rolled to `e799f3c0`. Web bundle `index-Dc-obEzl.js`. Deployed by hand because GitHub Actions still
+  fails at Azure login (owner action 1); evidence and remaining gaps are in `docs/hsn-audit.md`.
+- Owner choices pending: restore "Need unloading help" on delivery?; company board
   order within the same priority and date (newest first now, or longest-waiting first).
 - Owner configuration still missing: Twilio + Redis (SMS OTP), WhatsApp, TomTom key (route optimisation returns
   502; traffic calls get 401), telematics webhook secret, negotiated company per-km rate card, CA review of GST 2.0 rates (507 rows
