@@ -189,7 +189,7 @@ export default function HsnSearch({ row, index, onChange, onPicked, errors = {},
         {row.hsn_code ? (
           <Button variant="ghost" size="sm" onClick={() => { knownCode.current = ''; onChange(RESET); setLookupNote(null) }}>Search for other goods</Button>
         ) : (
-          <p className="text-xs text-slate-500">Know the code? Type it in the HSN field above.</p>
+          <p className="text-xs text-muted">Know the code? Type it in the HSN field above.</p>
         )}
         <WhyHsn />
       </div>
