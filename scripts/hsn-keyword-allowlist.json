@@ -1,0 +1,113 @@
+{
+  "_about": "Curated HSN keywords that legitimately name more than one heading. scripts/check-hsn-keywords.mjs fails on any duplicate that is not listed here, and on a listed keyword whose code set changed. Every entry needs a reason.",
+  "_rules": [
+    "parent-child: a chapter (61, 62) and its heading share the word; the heading ranks first.",
+    "two-products: the word really names two different goods; the first code is the usual reading.",
+    "bare-or-insulated: a wire or cable is classified by whether it is insulated.",
+    "three-oils: cooking oil covers the whole 1507-1515 range; each code is a different oil."
+  ],
+  "acid": {
+    "codes": ["2801", "2806"],
+    "why": "two-products: 2801 is fluorine/bromine/iodine acids, 2806 is hydrochloric and other chlorine acids"
+  },
+  "bottle": {
+    "codes": ["3923", "7013"],
+    "why": "two-products: plastic bottle (3923) and glass bottle (7013)"
+  },
+  "cabinet": {
+    "codes": ["8473", "9403"],
+    "why": "two-products: computer cabinet (8473) and furniture cabinet (9403); the shorter 8473 description wins the tie, see docs/hsn-audit.md P1"
+  },
+  "cooking oil": {
+    "codes": ["1507", "1508", "1511"],
+    "why": "three-oils: soya-bean (1507), groundnut (1508), palm (1511); the vendor picks from the list"
+  },
+  "copper": {
+    "codes": ["7403", "7408"],
+    "why": "two-products: refined copper (7403) and copper wire (7408)"
+  },
+  "copper wire": {
+    "codes": ["7408", "8544"],
+    "why": "bare-or-insulated: 7408 is bare copper wire, 8544 is insulated wire and cable"
+  },
+  "cream": {
+    "codes": ["0401", "3304"],
+    "why": "two-products: milk cream (0401) and cosmetic cream (3304)"
+  },
+  "fibre board": {
+    "codes": ["4411", "6808"],
+    "why": "two-products: wood fibre board or MDF (4411) and boards of vegetable fibre or cement (6808)"
+  },
+  "formal wear": {
+    "codes": ["62", "6203"],
+    "why": "parent-child: chapter 62 and the men's suit heading 6203"
+  },
+  "innerwear": {
+    "codes": ["61", "6109"],
+    "why": "parent-child: chapter 61 and the T-shirt and vest heading 6109"
+  },
+  "lamp": {
+    "codes": ["8539", "9405"],
+    "why": "two-products: a lamp bulb (8539) and a lamp fitting or luminaire (9405)"
+  },
+  "led light": {
+    "codes": ["8539", "9405"],
+    "why": "two-products: an LED bulb (8539) and an LED luminaire (9405); 9405 ranks first"
+  },
+  "motor": {
+    "codes": ["8407", "8501"],
+    "why": "two-products: a spark-ignition engine (8407) and an electric motor (8501)"
+  },
+  "napkin": {
+    "codes": ["4818", "6302"],
+    "why": "two-products: paper napkin (4818) and cloth table or toilet linen (6302)"
+  },
+  "particle board": {
+    "codes": ["4410", "6808"],
+    "why": "two-products: wood particle board (4410) and cement or mineral bonded board (6808)"
+  },
+  "plate": {
+    "codes": ["6911", "7208"],
+    "why": "two-products: a ceramic plate (6911) and a steel plate or sheet (7208)"
+  },
+  "shirt": {
+    "codes": ["62", "6205"],
+    "why": "parent-child: chapter 62 and the men's shirt heading 6205"
+  },
+  "spice": {
+    "codes": ["0904", "0910"],
+    "why": "two-products: pepper (0904) and mixed or other spices (0910)"
+  },
+  "steel sheet": {
+    "codes": ["7208", "7210"],
+    "why": "two-products: plain hot-rolled sheet (7208) and coated or galvanised sheet (7210)"
+  },
+  "suit": {
+    "codes": ["62", "6203"],
+    "why": "parent-child: chapter 62 and the men's suit heading 6203"
+  },
+  "t-shirt": {
+    "codes": ["61", "6109"],
+    "why": "parent-child: chapter 61 and the T-shirt heading 6109"
+  },
+  "tablet": {
+    "codes": ["3004", "8471"],
+    "why": "two-products: a medicine tablet (3004) and a tablet computer (8471)"
+  },
+  "trouser": {
+    "codes": ["62", "6203"],
+    "why": "parent-child: chapter 62 and the trousers heading 6203"
+  },
+  "tshirt": {
+    "codes": ["61", "6109"],
+    "why": "parent-child: an unspaced spelling of the 6109 pair above"
+  },
+  "tube light": {
+    "codes": ["8539", "9405"],
+    "why": "two-products: the tube lamp (8539) and the fitted luminaire (9405); 9405 ranks first"
+  },
+  "washer": {
+    "codes": ["7318", "8450"],
+    "why": "two-products: a steel washer (7318) and a washing machine (8450)"
+  }
+}

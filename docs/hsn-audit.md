@@ -121,9 +121,10 @@ A fresh database runs the same SQL from the seed state.
 
 ### 4.1 Second-pass duplicate audit (25 Nov 2026)
 
-A live scan of 21,808 curated codes found 974 distinct keywords; 42 appeared on more than one code. Most are
-legitimate parent/child pairs (chapter `61` and `6109`, chapter `62` and `6203`) where the specific code already
-ranks first. A second migration, `20261125090000_hsn_keyword_cleanup.sql`, moves the remaining cross-category
+The table holds 21,808 codes, of which **173 are curated** (a non-empty `keywords` array). Those 173 rows carry
+**985 distinct keywords**, and **42 appeared on more than one code** before this pass. Most were legitimate
+parent/child pairs (chapter `61` and `6109`, chapter `62` and `6203`) where the specific code already ranks
+first. A second migration, `20261125090000_hsn_keyword_cleanup.sql`, moved the remaining cross-category
 words to the right heading:
 
 | Word | Wrong code | Correct code |
@@ -146,6 +147,38 @@ product decision, not a data move.
 
 The staging API was also rolled to the same fixed image (`margix-test-api` now runs `margix-api:e799f3c0`) so
 this pass could be verified on the new ranking code before it was applied to live.
+
+### 4.2 A repeatable keyword check (and the drift it found)
+
+This failure mode (one word curated on two headings) was found by hand twice, so it is now a script:
+
+```bash
+node scripts/check-hsn-keywords.mjs --stage live   # or --stage test
+```
+
+It reads every curated `keywords` array, groups the words by code, and fails when a duplicated word is not in
+`scripts/hsn-keyword-allowlist.json` or when an allowlisted word moved to a different set of codes. Each
+allowlist entry carries the reason (`parent-child`, `two-products`, `bare-or-insulated`, `three-oils`). It only
+reads the table, so it needs database credentials and runs on this machine or in Azure, not on the GitHub
+runners (they cannot reach Postgres).
+
+Running it immediately found that **test had drifted from live**: the first-pass migration
+`20261124090000_hsn_keyword_fixes.sql` had never been applied to the test database, so staging still had eight
+duplicated words (`atta`, `flour`, `bread`, `cake`, `pastry`, `rusk`, `putty`, `tile`) that live had already
+fixed. The 18 updates were applied to test through the Supabase REST API, the migration was recorded in its
+`app_migrations`, and the test API revision was restarted. Both stages now report the same numbers:
+
+```text
+stage live: 21808 codes, 173 curated, 985 distinct keywords
+duplicated: 26 (allowlisted: 26)
+stage test: 21808 codes, 173 curated, 985 distinct keywords
+duplicated: 26 (allowlisted: 26)
+```
+
+The 26 remaining duplicates are the allowlisted ones above: chapter/heading pairs (`shirt`, `trouser`, `suit`,
+`t-shirt`, `tshirt`, `innerwear`, `formal wear`), real two-product words (`bottle`, `cream`, `tablet`, `motor`,
+`washer`, `plate`, `lamp`, `led light`, `tube light`, `napkin`, `cabinet`, `acid`, `spice`, `fibre board`,
+`particle board`, `steel sheet`), the three cooking oils, and `copper` / `copper wire`.
 
 ## 5. Verification
 
@@ -299,12 +332,19 @@ more than one curated heading without a disambiguation plan; that recreates the 
 
 ### P1 — make keyword QA repeatable
 
-Only 18 rows were corrected. The seed has other curated rows, and the same failure mode (a generic word on two
-codes) can return.
+Only 18 + 15 rows were corrected, out of 173 curated rows, and the same failure mode (a generic word on two
+codes) can return with any new keyword.
 
-- Add a test/check that each curated keyword maps to exactly one intended code, or at least flags duplicates.
-- Audit the remaining curated rows and everyday synonyms (regional words, brand names, plurals).
-- Keep `supabase/seed/hsn_master.csv` and the migration in sync.
+- **Done:** `node scripts/check-hsn-keywords.mjs --stage live|test` flags every duplicated keyword that is not
+  allowlisted, and `scripts/hsn-keyword-allowlist.json` records the 26 legitimate ones with a reason. It found
+  and fixed the test/live drift described in 4.2. It cannot run in CI because the runners cannot reach Postgres.
+- Audit the remaining curated rows for the other direction: a word that belongs on a heading but is missing
+  from it (`glass` has no entry on `7005`, `steel` none on `7214`).
+- Everyday synonyms (regional words, brand names, plurals) are still thin: `moongfali` and `saria` exist, but
+  most brand names do not.
+- `supabase/seed/hsn_master.csv` has no `keywords` column, so the curated arrays live only in
+  `20261003010000_goods_master.sql` and its follow-up migrations. Keep new words in a migration, never only in
+  the live table.
 
 ### P2 — cache and cold start
 
@@ -334,6 +374,15 @@ codes) can return.
   be exercised in the E2E test.
 
 ## 8. Operating notes
+
+### Check the curated keywords
+
+```bash
+node scripts/check-hsn-keywords.mjs --stage live   # or --stage test, or: npm run check:hsn-keywords
+```
+
+Run it after touching any `hsn_codes.keywords` row. It fails on a duplicated word that is not in
+`scripts/hsn-keyword-allowlist.json`, which is how the test/live drift in 4.2 was found.
 
 ### Bypass the response cache while testing
 

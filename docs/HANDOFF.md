@@ -252,6 +252,8 @@ disabled for billing; everything was moved with docs/DEPLOYMENT.md §4.6 (databa
   Second pass released through PR #25 (merge `c8cdf170`); `margixindia CI` is green, `Deploy to Azure` still fails
   (now at `migrate`, before the Azure login, see owner action 2). One cosmetic lint fix (`text-slate-500` ->
   `text-muted` in `HsnSearch.tsx`) is in `c8cdf170` but not yet in the live bundle; it changes no behaviour.
+  The test database had missed the first keyword migration; it is applied now, so test and live both report
+  21,808 codes / 173 curated / 985 keywords / 26 allowlisted duplicates (`node scripts/check-hsn-keywords.mjs`).
 - Owner choices pending: restore "Need unloading help" on delivery?; company board
   order within the same priority and date (newest first now, or longest-waiting first).
 - Owner configuration still missing: Twilio + Redis (SMS OTP), WhatsApp, TomTom key (route optimisation returns

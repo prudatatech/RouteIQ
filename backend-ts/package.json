@@ -13,7 +13,8 @@
     "seed": "ts-node src/scripts/seed.ts",
     "check:queries": "ts-node --transpile-only scripts/check-queries.ts",
     "check:vocabulary": "node ../scripts/check-vocabulary.mjs --only backend",
-    "import:hsn": "ts-node --transpile-only scripts/import-hsn.ts"
+    "import:hsn": "ts-node --transpile-only scripts/import-hsn.ts",
+    "check:hsn-keywords": "node ../scripts/check-hsn-keywords.mjs"
   },
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",
