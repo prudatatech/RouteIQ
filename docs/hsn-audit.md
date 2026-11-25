@@ -8,9 +8,9 @@
 
 - **HSN search:** on a 59-query production smoke set, the correct code ranked first for **41/59** queries before
   the fix and **55/59** after the API deploy. The last `putty` and `fertilizer` misses were fixed by data
-  corrections and cache expiry; they now return `3214` and `3105`, so the effective result is **57/59**. The
-  remaining two (`glass`, `steel`) are ambiguous generic words that return a plausible heading, not a different
-  product.
+  corrections and cache expiry; they now return `3214` and `3105`, so the effective result is **57/59**. A fresh
+  59-query sweep after the second data pass puts **56/59** first; the three that differ (`glass`, `steel`,
+  `cabinet`) are broad words that validly name two headings, not a different product.
 - **Root causes:** substring matching without word boundaries, cross-contaminated curated keywords, no bonus for
   an exact whole-query keyword, HSN/GST fields hidden behind a manual-entry toggle, a low per-IP limit, a
   sequential 22k-row index load, no client cache, and a 10-minute public response cache.
@@ -198,6 +198,21 @@ The remaining two known generic misses are `glass` (`7013` instead of `7005`) an
 `7214`). Each returns a valid product family; they are not the same kind of failure as the old wrong-product
 hits.
 
+### Live second sweep (25 Nov 2026, after the second data pass)
+
+The same 59-query sweep was run again on the merged build (`c8cdf170`). **56/59** returned the expected heading
+first. The three exceptions:
+
+| Query | Returns | Also valid |
+| --- | --- | --- |
+| `glass` | `7013` glassware | `7005` float/sheet glass |
+| `steel` | `7306` welded tubes | `7214` bars and rods |
+| `cabinet` | `8473` computer cabinet | `9403` furniture cabinet |
+
+`cabinet` is a new finding: it is curated on both `8473` (computer cabinet) and `9403` (furniture), and the
+shorter computer-parts description wins the tie. For a goods board it should probably be furniture, but that is a
+product call, so it is recorded rather than changed.
+
 ### Live web
 
 - `https://portal.margixindia.com` serves bundle `index-Dc-obEzl.js`.
@@ -224,13 +239,27 @@ A live `POST /auth/vendor/send-otp` for a test phone and email returned HTTP 200
   REST and recorded in `app_migrations`; the test API was rolled to `margix-api:e799f3c0` (revision
   `margix-test-api--0000003`) for verification.
 - **Manual deploys are currently the source of truth.** GitHub Actions still cannot deploy (see below).
+- Second pass released through **PR #25** (`fix(hsn): second-pass keyword cleanup and regression tests`), merged as
+  `c8cdf170`; `test` was fast-forwarded to `main`. `margixindia CI` is green on the merged commit, including the
+  frontend job after fixing one `design/no-off-theme-classes` lint error (`text-slate-500` -> `text-muted` in
+  `HsnSearch.tsx`).
+- The live web bundle `index-Dc-obEzl.js` predates that cosmetic lint fix. Nothing visible changes; the next web
+  deploy picks it up.
+- The API already runs `e799f3c0`, which contains the ranking code, so the second pass needed only the data
+  changes — no new image.
 
 ## 7. Remaining gaps and next work
 
 ### P0 — fix the deploy pipeline
 
-GitHub Actions fails because the repository's Azure OIDC variables point at the disabled subscription
-`1c904442-a955-4519-b623-ab64bc6c902c`. The run on 25 Nov 2026 failed with:
+`Deploy to Azure` fails in two places, in order:
+
+1. **`migrate` (first):** the GitHub runner cannot reach the Postgres server. On 25 Nov 2026 the job failed with
+   `connection to server at "margix-test-pg.postgres.database.azure.com" ... Connection timed out` because the
+   Postgres firewall admits Azure services, not GitHub's egress. Every later job is skipped, so the deploy never
+   reaches the Azure login.
+2. **`api`/`ml`/`web` (when `migrate` passes):** the repository's Azure OIDC variables point at the disabled
+   subscription `1c904442-a955-4519-b623-ab64bc6c902c`. The earlier run failed with:
 
 ```text
 ERROR: (ReadOnlyDisabledSubscription) The subscription '1c904442-a955-4519-b623-ab64bc6c902c' is disabled
@@ -244,6 +273,8 @@ live `margixacrtw23bcqkuyb4m.azurecr.io`. The web job built successfully with th
 failed when it asked Azure for the Static Web App token. Until this is fixed, every push to `main` produces a
 red deploy and production can drift from the repository.
 
+- Let the runner reach Postgres: allow GitHub's egress ranges on the server firewall, run the migrate job from a
+  self-hosted runner or Container Apps job inside the VNet, or keep using `az acr run` for migrations.
 - Re-run `infra/github-oidc.sh` (or update the federated credential and `AZURE_*` repository variables) against
   the active subscription.
 - Re-run the infra deploy so the deployment outputs name the live ACR again, then confirm the API/ML jobs stop
@@ -253,11 +284,14 @@ red deploy and production can drift from the repository.
 
 ### P1 — decide the generic terms
 
-`glass` and `steel` are broad words with several valid headings. Pick the intended behaviour:
+`glass`, `steel` and `cabinet` are broad words with several valid headings. Pick the intended behaviour:
 
 - prefer the most specific heading; or
 - show a small disambiguation list (`glass: float / safety / glassware`); or
 - document the current choice as intentional.
+
+`cabinet` is the newest example: `8473` (computer cabinet) beats `9403` (furniture) because its description is
+shorter. If the board is meant for general goods, move `cabinet` to `9403` only.
 
 The duplicate audit also leaves `bottle`, `cream`, `tablet`, `motor`, `washer`, `plate`, `lamp`, `spice`, `acid`,
 `napkin`, `cabinet`, `cooking oil` and `steel sheet` on two valid headings. Do not add the same generic keyword to

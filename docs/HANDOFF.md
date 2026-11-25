@@ -222,7 +222,10 @@ disabled for billing; everything was moved with docs/DEPLOYMENT.md §4.6 (databa
      "Deploy to Azure" run fails at the Azure login.
   2. Set the `DATABASE_URL` secret in the GitHub `test` and `production` environments to the new servers
      (`margix-test-pg-south` / `margix-pg-south`; the admin login from `infra/platform.<stage>.env`). The migrate job
-     and the nightly live backup use it.
+     and the nightly live backup use it. The secret is already set, but the runner still cannot connect: on 25 Nov
+     `migrate` failed with `connection to server at "margix-test-pg.postgres.database.azure.com" ... timed out`
+     because the Postgres firewall admits Azure services, not GitHub's runners. Either allow GitHub's egress
+     ranges, run the job from inside the VNet, or keep applying migrations with `az acr run` / the REST API.
   3. Uploaded files (KYC documents, POD photos, signatures) are still only in the old account's blob containers
      (`margixobjects6ewdsxpj3n2`, `margixtestobjectstc6vku2`): the disabled subscription lists no blobs and gives no keys.
      Re-enable it briefly (or ask Azure support for read access) and copy them to the new `margix[-test]-objects`
@@ -246,6 +249,9 @@ disabled for billing; everything was moved with docs/DEPLOYMENT.md §4.6 (databa
   always visible, live Resend key set. API `margix-api:e799f3c0` (revision `margix-api--0000005`); the test API
   was also rolled to `e799f3c0`. Web bundle `index-Dc-obEzl.js`. Deployed by hand because GitHub Actions still
   fails at Azure login (owner action 1); evidence and remaining gaps are in `docs/hsn-audit.md`.
+  Second pass released through PR #25 (merge `c8cdf170`); `margixindia CI` is green, `Deploy to Azure` still fails
+  (now at `migrate`, before the Azure login, see owner action 2). One cosmetic lint fix (`text-slate-500` ->
+  `text-muted` in `HsnSearch.tsx`) is in `c8cdf170` but not yet in the live bundle; it changes no behaviour.
 - Owner choices pending: restore "Need unloading help" on delivery?; company board
   order within the same priority and date (newest first now, or longest-waiting first).
 - Owner configuration still missing: Twilio + Redis (SMS OTP), WhatsApp, TomTom key (route optimisation returns
