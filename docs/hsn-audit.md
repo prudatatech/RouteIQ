@@ -220,6 +220,9 @@ A live `POST /auth/vendor/send-otp` for a test phone and email returned HTTP 200
 - Web built with the live Supabase URL/key and `VITE_API_URL=https://api.margixindia.com`, then uploaded to
   `margix-web` with the Static Web Apps CLI. The CLI's `StaticSitesClient` binary is x86_64, so Rosetta 2 was
   installed on the Apple Silicon machine to run it.
+- Second-pass data cleanup (`20261125090000_hsn_keyword_cleanup.sql`) applied to test and live through Supabase
+  REST and recorded in `app_migrations`; the test API was rolled to `margix-api:e799f3c0` (revision
+  `margix-test-api--0000003`) for verification.
 - **Manual deploys are currently the source of truth.** GitHub Actions still cannot deploy (see below).
 
 ## 7. Remaining gaps and next work
@@ -307,6 +310,12 @@ curl --get 'https://api.margixindia.com/api/v1/public/hsn/search' \
 ```
 
 The `_` parameter changes the URL, so the edge cache misses and the current API answer is returned.
+
+### After a revision restart
+
+The HSN index lives in memory. After `az containerapp revision restart`, the old replica can keep serving for
+about 30 seconds. Wait before judging a data fix; the new replica builds the index on its first search. The
+`pvc pipe` and `plywood` checks looked stale for exactly this reason.
 
 ### Database access from this machine
 
