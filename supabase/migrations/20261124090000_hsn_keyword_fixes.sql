@@ -80,4 +80,9 @@ update public.hsn_codes
    set keywords = array['timber', 'wood', 'lumber', 'sawn wood', 'teak', 'pine', 'hardwood', 'softwood']
  where hsn_code = '4407';
 
+-- Putty is 3214; 3209 is paints and varnishes.
+update public.hsn_codes
+   set keywords = array['water based paint', 'distemper', 'primer']
+ where hsn_code = '3209';
+
 commit;
