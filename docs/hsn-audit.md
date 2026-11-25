@@ -159,8 +159,7 @@ node scripts/check-hsn-keywords.mjs --stage live   # or --stage test
 It reads every curated `keywords` array, groups the words by code, and fails when a duplicated word is not in
 `scripts/hsn-keyword-allowlist.json` or when an allowlisted word moved to a different set of codes. Each
 allowlist entry carries the reason (`parent-child`, `two-products`, `bare-or-insulated`, `three-oils`). It only
-reads the table, so it needs database credentials and runs on this machine or in Azure, not on the GitHub
-runners (they cannot reach Postgres).
+reads the table, so it needs the Supabase service-role key; run it here or in Azure, where that key is kept.
 
 Running it immediately found that **test had drifted from live**: the first-pass migration
 `20261124090000_hsn_keyword_fixes.sql` had never been applied to the test database, so staging still had eight
@@ -287,12 +286,11 @@ A live `POST /auth/vendor/send-otp` for a test phone and email returned HTTP 200
 
 `Deploy to Azure` fails in two places, in order:
 
-1. **`migrate` (first):** the GitHub runner cannot reach the Postgres server. On 25 Nov 2026 the job failed with
-   `connection to server at "margix-test-pg.postgres.database.azure.com" ... Connection timed out` because the
-   Postgres firewall admits Azure services, not GitHub's egress. Every later job is skipped, so the deploy never
-   reaches the Azure login.
-2. **`api`/`ml`/`web` (when `migrate` passes):** the repository's Azure OIDC variables point at the disabled
-   subscription `1c904442-a955-4519-b623-ab64bc6c902c`. The earlier run failed with:
+1. **`api` and `ml`:** the jobs still push to the old registry and fail before the login:
+   `ERROR: Looks like you don't have access to registry 'margixacr7m52h4t5it6og.azurecr.io'`. Live is on
+   `margixacrtw23bcqkuyb4m.azurecr.io`.
+2. **`web`:** the build succeeds, then fetching the Static Web App token hits the disabled subscription
+   `1c904442-a955-4519-b623-ab64bc6c902c`:
 
 ```text
 ERROR: (ReadOnlyDisabledSubscription) The subscription '1c904442-a955-4519-b623-ab64bc6c902c' is disabled
@@ -300,14 +298,14 @@ and therefore marked as read only. You cannot perform any write actions on this 
 re-enabled.
 ```
 
-The live resources are on `f26e3afa-0e86-4953-a563-bf1ed56271ab`. The API and ML jobs also tried to push to
-`margixacr7m52h4t5it6og.azurecr.io`, an old registry from the disabled subscription's last deployment, not the
-live `margixacrtw23bcqkuyb4m.azurecr.io`. The web job built successfully with the live Supabase variables but
-failed when it asked Azure for the Static Web App token. Until this is fixed, every push to `main` produces a
-red deploy and production can drift from the repository.
+The live resources are on `f26e3afa-0e86-4953-a563-bf1ed56271ab`. Until this is fixed, every push to `main`
+produces a red deploy and production can drift from the repository.
 
-- Let the runner reach Postgres: allow GitHub's egress ranges on the server firewall, run the migrate job from a
-  self-hosted runner or Container Apps job inside the VNet, or keep using `az acr run` for migrations.
+`migrate` is mostly fine now: the 16:00Z run on 25 Nov connected and printed `database is up to date`, so the
+GitHub runner can reach Postgres. An earlier 11:41Z run on the same day timed out on
+`margix-test-pg.postgres.database.azure.com`, so that path is intermittent — watch the job, and if it times out
+again allow GitHub's egress ranges or run migrations from inside the VNet.
+
 - Re-run `infra/github-oidc.sh` (or update the federated credential and `AZURE_*` repository variables) against
   the active subscription.
 - Re-run the infra deploy so the deployment outputs name the live ACR again, then confirm the API/ML jobs stop
@@ -337,7 +335,7 @@ codes) can return with any new keyword.
 
 - **Done:** `node scripts/check-hsn-keywords.mjs --stage live|test` flags every duplicated keyword that is not
   allowlisted, and `scripts/hsn-keyword-allowlist.json` records the 26 legitimate ones with a reason. It found
-  and fixed the test/live drift described in 4.2. It cannot run in CI because the runners cannot reach Postgres.
+  and fixed the test/live drift described in 4.2. It is not wired into CI because the runners do not hold the service-role key.
 - Audit the remaining curated rows for the other direction: a word that belongs on a heading but is missing
   from it (`glass` has no entry on `7005`, `steel` none on `7214`).
 - Everyday synonyms (regional words, brand names, plurals) are still thin: `moongfali` and `saria` exist, but
